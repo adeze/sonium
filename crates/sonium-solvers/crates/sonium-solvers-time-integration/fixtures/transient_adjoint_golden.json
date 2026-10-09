@@ -1,0 +1,23 @@
+{
+	"schema_version":1,
+	"case_id":"solvers.transient-adjoint-two-step.v1",
+	"convention":"R_n = 0 residuals; A_n^T Î»_n = Ï_{x_n} - Î£_{m>n} H_{m,n}^T Î»_m; g = Î£(Ï_d - R_d^T Î»)",
+	"generator":"crates\/sonium-solvers\/crates\/sonium-solvers-time-integration\/fixtures\/transient_adjoint.wls",
+	"wolfram_version":"15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+	"working_precision_digits":50,
+	"lambda_1":[
+		1.5000000000000000000000000000000000000000000000000,
+		1.3333333333333333333333333333333333333333333333333
+	],
+	"lambda_0":[
+		0.12500000000000000000000000000000000000000000000000,
+		0.22222222222222222222222222222222222222222222222222
+	],
+	"design_gradient":[
+		-4.6027777777777777777777777777777777777777777777778
+	],
+	"tolerances":{
+		"adjoint_abs":1.0e-10,
+		"gradient_abs":1.0e-10
+	}
+}

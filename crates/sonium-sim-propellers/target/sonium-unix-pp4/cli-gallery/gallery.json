@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "title": "Optimized propeller gallery",
+  "renderer": "sonium-xem deterministic-raster-svg-v1",
+  "width_px": 1920,
+  "height_px": 1080,
+  "git_sha": "d3593b2bf7f5d0bc5e2cb1f4bc07b73ce9c1930a",
+  "conventions": [
+    "Pinned 18,000 RPM two-blade 3 N operating point; actual_backend=CPU; precision=f64; fidelity=PanelGeometrySurrogate",
+    "1920x1080 fixed raster canvas, deterministic colour mapping and SVG axes; all rendered fields are scalar presentation data",
+    "CSV units: frequency Hz, pressure Pa, baseline pressure Pa, area m², radius fraction; SVG units are declared in captions",
+    "rotation.gif is a deterministic panel-loading proxy, not resolved transient flow",
+    "thrust loss -0.032733; calibrated 1–5 kHz reduction 9.974802 dB",
+    "execution evidence: requested_backend=cpu; actual_backend=cpu; precision=f64; dispatch=scalar"
+  ],
+  "figures": [
+    {
+      "filename": "source_spectrum.csv",
+      "kind": "csv",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; scalar=harmonic peak pressure; columns are frequency (Hz), pressure (Pa), and baseline pressure (Pa)",
+      "checksum_fnv1a64": "16e58675fe692293"
+    },
+    {
+      "filename": "blade_load_distribution.csv",
+      "kind": "csv",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; scalar=spanwise loading proxy; columns are radius fraction and area (m²)",
+      "checksum_fnv1a64": "4a128fd5904ba65b"
+    },
+    {
+      "filename": "optimized-blade-loading.png",
+      "kind": "png",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed camera and deterministic colour map; scalar=panel area (m²)",
+      "checksum_fnv1a64": "5be1de8f9f69b29c"
+    },
+    {
+      "filename": "axial-wake-proxy.png",
+      "kind": "png",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed camera and deterministic colour map; scalar=axial wake/loading proxy (dimensionless), not resolved transient flow",
+      "checksum_fnv1a64": "f99f0c3303dadd7b"
+    },
+    {
+      "filename": "spectrum.svg",
+      "kind": "svg",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed 1920x1080 axes; scalar=harmonic peak pressure (Pa) versus frequency (Hz)",
+      "checksum_fnv1a64": "c4278ff2ddf8bb38"
+    },
+    {
+      "filename": "thrust-versus-operating-point.svg",
+      "kind": "svg",
+      "source": "baseline_blade.vtu",
+      "source_checksum_fnv1a64": "aa0ea5f822138117",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed 1920x1080 axes; scalar=thrust (N) versus RPM",
+      "checksum_fnv1a64": "bee04d5300be4439"
+    },
+    {
+      "filename": "torque-versus-operating-point.svg",
+      "kind": "svg",
+      "source": "baseline_blade.vtu",
+      "source_checksum_fnv1a64": "aa0ea5f822138117",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed 1920x1080 axes; scalar=torque (N·m) versus RPM",
+      "checksum_fnv1a64": "eab39cc54108c880"
+    },
+    {
+      "filename": "blade-load-distribution.svg",
+      "kind": "svg",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed 1920x1080 axes; scalar=panel area weighted by radial loading factor (m²), ordered by pinned panel generation",
+      "checksum_fnv1a64": "b402b12c5a341ee7"
+    },
+    {
+      "filename": "conventional-toroidal-comparison.svg",
+      "kind": "svg",
+      "source": "baseline_blade.vtu",
+      "source_checksum_fnv1a64": "aa0ea5f822138117",
+      "caption": "fidelity=PanelGeometrySurrogate; fixed 1920x1080 axes; scalar=peak-pressure reduction (dB) by harmonic; baseline and candidate share the pinned solver configuration",
+      "checksum_fnv1a64": "b91dc69f98b30f65"
+    },
+    {
+      "filename": "rotation.gif",
+      "kind": "gif",
+      "source": "optimized_blade.vtu",
+      "source_checksum_fnv1a64": "0b4d7a5e629e9fa1",
+      "caption": "fidelity=PanelGeometrySurrogate; 320x180 twelve-frame deterministic loading animation derived from production blade panels; not resolved transient flow",
+      "checksum_fnv1a64": "55aea2c191f6d6d6"
+    }
+  ]
+}

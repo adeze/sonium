@@ -1,0 +1,11 @@
+{
+  "provenance": "Generated 2026-08-08 with Wolfram Engine from mass_transport_parallel_plate_reactor.wls",
+  "schema_version": 1,
+  "diffusivity_m2_s": 0.0001,
+  "average_velocity_m_s": 0.005,
+  "inlet_concentration": 1000.0,
+  "active_wall_flux": -0.5,
+  "sample_points": [[0.0, 0.25], [0.1, 0.25], [0.2, 0.25], [0.1, 0.5], [0.1, 0.0]],
+  "samples": [986.7932088896599, 944.4284163410894, 596.0648067414483, 856.2004881767479, 999.9999999999999],
+  "area_integral": 89.19768007624306
+}

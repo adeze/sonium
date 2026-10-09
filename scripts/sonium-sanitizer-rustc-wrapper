@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -eu
+
+# With the current nightly toolchain, instrumenting Cargo's host-side
+# proc-macros (and registry dependencies they load) can fail before the
+# target crate is compiled. Keep the sanitizer on workspace targets while
+# allowing those host-side dependencies to build normally.
+real_rustc=$1
+shift
+
+proc_macro=false
+external_dependency=false
+previous=
+for argument in "$@"; do
+    if [[ "$argument" == "--crate-type=proc-macro" ]] || {
+        [[ "$previous" == "--crate-type" ]] && [[ "$argument" == "proc-macro" ]]
+    }; then
+        proc_macro=true
+    fi
+    [[ "$argument" == *"/.cargo/registry/"* ]] && external_dependency=true
+    previous=$argument
+done
+
+if [[ "$proc_macro" == true || "$external_dependency" == true ]]; then
+    filtered=()
+    for argument in "$@"; do
+        [[ "$argument" == "-Zsanitizer=address" ]] && continue
+        filtered+=("$argument")
+    done
+    exec "$real_rustc" "${filtered[@]}"
+fi
+
+exec "$real_rustc" "$@"

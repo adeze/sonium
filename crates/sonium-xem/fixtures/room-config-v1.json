@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "room": {
+    "type": "rectangular",
+    "width": 5.0,
+    "depth": 4.0,
+    "height": 2.8
+  },
+  "sources": [
+    {
+      "name": "reference-source",
+      "position": {"x": 1.0, "y": 1.0, "z": 1.2},
+      "amplitude": 1.0,
+      "directivity": {"type": "omnidirectional"},
+      "crossover": {"type": "fullrange"}
+    }
+  ],
+  "listening_positions": [
+    {"x": 2.5, "y": 2.0, "z": 1.2}
+  ],
+  "frequencies": {
+    "min_freq": 100.0,
+    "max_freq": 1000.0,
+    "num_points": 4,
+    "spacing": "linear"
+  }
+}

@@ -1,0 +1,57 @@
+[package]
+name = "sonium-fft"
+version = "0.1.0"
+description = "Batched complex / real FFT and STFT on top of sonium-compute"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["fft", "stft", "signal-processing", "linear-algebra"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "sonium_fft"
+path = "src/lib.rs"
+
+[dependencies]
+sonium-compute = { workspace = true }
+sonium-fastmath = { workspace = true }
+num-complex = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+libloading = { workspace = true }
+rustfft = "6.2"
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[features]
+default = ["cpu"]
+cpu = []
+metal = ["sonium-compute/metal"]
+cuda = ["sonium-compute/cuda"]
+
+[[bench]]
+name = "fft_vs_rustfft"
+harness = false
+
+[[bench]]
+name = "fft_vs_accelerate"
+harness = false
+
+[[bin]]
+name = "fft_cuda_benchmark"
+path = "src/bin/fft_cuda_benchmark.rs"
+required-features = ["cuda"]
+
+[[bin]]
+name = "fft_x86_evidence"
+path = "src/bin/fft_x86_evidence.rs"

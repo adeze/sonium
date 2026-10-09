@@ -1,0 +1,121 @@
+{
+  "$id": "https://sonium.dev/xem/multiphysics-problem-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "boundary_conditions": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "constraints": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "conventions": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_frame": {
+          "enum": [
+            "WorldRightHanded",
+            "SourceLocalRightHanded"
+          ]
+        },
+        "harmonic_time": {
+          "enum": [
+            "ExpMinusIwt",
+            "ExpPlusIwt"
+          ]
+        },
+        "outward_normals": {
+          "type": "boolean"
+        },
+        "rms_amplitudes": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "couplings": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "design_variables": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "domains": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "fields": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "interface_conditions": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "material_laws": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "objectives": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "provenance": {
+      "type": "object"
+    },
+    "regions": {
+      "items": {
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "id",
+    "conventions",
+    "domains",
+    "regions",
+    "fields",
+    "boundary_conditions",
+    "interface_conditions",
+    "material_laws",
+    "couplings",
+    "design_variables",
+    "objectives",
+    "constraints",
+    "provenance"
+  ],
+  "title": "Sonium XEM multiphysics problem",
+  "type": "object"
+}

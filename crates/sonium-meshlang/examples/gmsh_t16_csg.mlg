@@ -1,0 +1,80 @@
+/// Gmsh Tutorial 16: Constructive Solid Geometry (OpenCASCADE)
+///
+/// Translation of tutorials/t16.geo — demonstrates boolean operations
+/// (difference, fragment) with mesh size control.
+///
+/// Original: cube minus one-eighth corner, with five conformal sphere inclusions.
+///
+/// Differences from original:
+///   - Physical Surface "Top & right surfaces" (found via Closest{1,1,0.5})
+///     is omitted — MeshLang does not yet support geometric proximity queries.
+///
+/// Reference: https://gmsh.info/doc/textures/t16_geo.png
+
+param lcar1 = 0.1
+param lcar2 = 0.0005
+param lcar3 = 0.055
+
+geometry csg_demo {
+    // Two cubes: full unit cube and a corner eighth
+    let cube = Box(1.0, 1.0, 1.0)
+    let corner = Box(0.5, 0.5, 0.5)
+
+    // Boolean difference: cube minus one eighth
+    let notched = cube - corner
+
+    // Five spheres along a diagonal, for conformal inclusions
+    let s1 = Sphere(r: 0.09) |> translate(0.166, 0.75, 0.166)
+    let s2 = Sphere(r: 0.09) |> translate(0.332, 0.75, 0.332)
+    let s3 = Sphere(r: 0.09) |> translate(0.498, 0.75, 0.498)
+    let s4 = Sphere(r: 0.09) |> translate(0.664, 0.75, 0.664)
+    let s5 = Sphere(r: 0.09) |> translate(0.830, 0.75, 0.830)
+
+    // BooleanFragments: conformal decomposition (no duplicate interfaces)
+    // Pass all 5 spheres as separate volumes — union would merge them into one.
+    let model = notched |> fragment([s1, s2, s3, s4, s5])
+}
+
+mesh for csg_demo {
+    // Coarse on the cube body
+    default_size: lcar1
+    min_size: lcar2
+
+    // Finest mesh at the re-entrant corner (0.5, 0.5, 0.5) where the
+    // eighth-cube was cut — stress/field singularity point.
+    // Original .geo: Point In BoundingBox{0.5±eps} → MeshSize = lcar2
+    refine in(Box(0.01, 0.01, 0.01) |> translate(0.495, 0.495, 0.495)) {
+        size: lcar2
+    }
+
+    // Finer on the sphere inclusions
+    refine near(csg_demo.s1, distance: 0.02) {
+        size: lcar3
+    }
+    refine near(csg_demo.s2, distance: 0.02) {
+        size: lcar3
+    }
+    refine near(csg_demo.s3, distance: 0.02) {
+        size: lcar3
+    }
+    refine near(csg_demo.s4, distance: 0.02) {
+        size: lcar3
+    }
+    refine near(csg_demo.s5, distance: 0.02) {
+        size: lcar3
+    }
+}
+
+physics {
+    group cube_body: volume = csg_demo.model
+    group inclusion_1: volume = csg_demo.s1
+    group inclusion_2: volume = csg_demo.s2
+    group inclusion_3: volume = csg_demo.s3
+    group inclusion_4: volume = csg_demo.s4
+    group inclusion_5: volume = csg_demo.s5
+}
+
+export {
+    format: msh4
+    filename: "t16_csg.msh"
+}

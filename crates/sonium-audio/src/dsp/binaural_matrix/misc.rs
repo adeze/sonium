@@ -1,0 +1,174 @@
+use num_complex::Complex64;
+use sonium_fft::rustfft_compat::FftPlanner;
+use std::cell::RefCell;
+use std::f64::consts::PI;
+
+thread_local! {
+    static FFT_PLANNER: RefCell<FftPlanner<f64>> = RefCell::new(FftPlanner::new());
+}
+
+/// Convert an RFFT half-spectrum into a real FIR.
+///
+/// `half_spectrum.len()` must be `fft_size / 2 + 1`. A non-zero
+/// `bulk_delay_samples` multiplies the spectrum by `e^-jwd` before IFFT.
+pub fn half_spectrum_to_fir(
+    half_spectrum: &[Complex64],
+    fir_taps: usize,
+    bulk_delay_samples: f64,
+) -> Result<Vec<f64>, String> {
+    if half_spectrum.len() < 2 {
+        return Err("half spectrum must contain at least DC and Nyquist".to_string());
+    }
+    if fir_taps == 0 {
+        return Err("fir_taps must be greater than zero".to_string());
+    }
+    let fft_size = (half_spectrum.len() - 1) * 2;
+    if fir_taps > fft_size {
+        return Err(format!(
+            "fir_taps ({}) cannot exceed implied fft_size ({})",
+            fir_taps, fft_size
+        ));
+    }
+
+    let mut spectrum = vec![Complex64::new(0.0, 0.0); fft_size];
+    for (bin, value) in half_spectrum.iter().enumerate() {
+        let phase = -2.0 * PI * bin as f64 * bulk_delay_samples / fft_size as f64;
+        spectrum[bin] = *value * Complex64::from_polar(1.0, phase);
+    }
+    for bin in 1..(half_spectrum.len() - 1) {
+        spectrum[fft_size - bin] = spectrum[bin].conj();
+    }
+
+    let fft = FFT_PLANNER.with(|planner| planner.borrow_mut().plan_fft_inverse(fft_size));
+    fft.process(&mut spectrum);
+
+    Ok(spectrum
+        .into_iter()
+        .take(fir_taps)
+        .map(|value| value.re / fft_size as f64)
+        .collect())
+}
+
+/// Deconvolve a recorded sweep into a real impulse response.
+pub fn deconvolve_sweep_to_ir(
+    recording: &[f64],
+    reference: &[f64],
+    fft_size: usize,
+) -> Result<Vec<f64>, String> {
+    if recording.is_empty() || reference.is_empty() {
+        return Err("recording and reference must be non-empty".to_string());
+    }
+    if recording.len() < reference.len() {
+        return Err(format!(
+            "recording len {} is shorter than reference len {}",
+            recording.len(),
+            reference.len()
+        ));
+    }
+    if fft_size < recording.len().max(reference.len()).next_power_of_two() {
+        return Err("fft_size is too small for recording/reference".to_string());
+    }
+    if recording
+        .iter()
+        .chain(reference)
+        .any(|sample| !sample.is_finite())
+    {
+        return Err("recording and reference must contain only finite samples".to_string());
+    }
+    let mut y =
+        crate::dsp::analysis::deconvolve_sweep_f64_spectrum(recording, reference, fft_size)?;
+    let ifft = FFT_PLANNER.with(|planner| planner.borrow_mut().plan_fft_inverse(fft_size));
+    ifft.process(&mut y);
+    Ok(y.into_iter().map(|v| v.re / fft_size as f64).collect())
+}
+
+/// Circularly shift an IR so `reference_peak` becomes sample zero.
+pub fn align_ir_to_reference_peak(ir: &[f64], reference_peak: usize) -> Vec<f64> {
+    if ir.is_empty() {
+        return Vec::new();
+    }
+    let shift = reference_peak % ir.len();
+    let mut out = Vec::with_capacity(ir.len());
+    out.extend_from_slice(&ir[shift..]);
+    out.extend_from_slice(&ir[..shift]);
+    out
+}
+
+/// Frequency-dependent complex windowed spectrum.
+pub fn fdw_complex_half_spectrum(
+    ir: &[f64],
+    sample_rate: f64,
+    fft_size: usize,
+    direct_sample: usize,
+    cycles: f64,
+    min_window_ms: f64,
+    max_window_ms: f64,
+) -> Result<Vec<Complex64>, String> {
+    if ir.is_empty() || fft_size < 2 {
+        return Err("ir must be non-empty and fft_size >= 2".to_string());
+    }
+    if sample_rate <= 0.0 || !sample_rate.is_finite() {
+        return Err("sample_rate must be positive and finite".to_string());
+    }
+    let num_bins = fft_size / 2 + 1;
+    let mut out = Vec::with_capacity(num_bins);
+    for bin in 0..num_bins {
+        let freq = bin as f64 * sample_rate / fft_size as f64;
+        // At DC (bin 0) cycles/freq is infinite, so the clamp selects
+        // `max_window_ms` and the phase term below is 1: the DC bin is the
+        // same Hann-windowed segment around `direct_sample` as all other bins.
+        let window_ms = ((cycles / freq) * 1000.0).clamp(min_window_ms, max_window_ms);
+        let half = ((window_ms / 1000.0) * sample_rate * 0.5).round().max(1.0) as isize;
+        let center = direct_sample.min(ir.len() - 1) as isize;
+        let mut sum = Complex64::new(0.0, 0.0);
+        for delta in -half..=half {
+            let idx = center + delta;
+            if idx < 0 || idx >= ir.len() as isize {
+                continue;
+            }
+            let t = idx as f64 / sample_rate;
+            let phase = -2.0 * PI * freq * t;
+            let x = delta as f64 / half as f64;
+            let w = 0.5 + 0.5 * (PI * x).cos();
+            sum += Complex64::from_polar(ir[idx as usize] * w, phase);
+        }
+        out.push(sum);
+    }
+    Ok(out)
+}
+
+pub(super) fn apply_direct_window(
+    samples: &mut [f64],
+    sample_rate: f64,
+    start_ms: f64,
+    length_ms: f64,
+    fade_ms: f64,
+) {
+    let start = ((start_ms / 1000.0) * sample_rate).round().max(0.0) as usize;
+    let length = ((length_ms / 1000.0) * sample_rate).round().max(1.0) as usize;
+    let fade = ((fade_ms / 1000.0) * sample_rate).round().max(0.0) as usize;
+    let end = (start + length).min(samples.len());
+    for (idx, sample) in samples.iter_mut().enumerate() {
+        if idx < start || idx >= end {
+            *sample = 0.0;
+            continue;
+        }
+        if fade > 0 && idx >= end.saturating_sub(fade) {
+            let n = end - idx;
+            let phase = PI * n as f64 / fade as f64;
+            *sample *= 0.5 - 0.5 * phase.cos();
+        }
+    }
+}
+
+pub(super) fn real_fft_half_spectrum(input: &[f64], fft_size: usize) -> Vec<Complex64> {
+    let mut buffer = vec![Complex64::new(0.0, 0.0); fft_size];
+    let copy_len = input.len().min(fft_size);
+    for idx in 0..copy_len {
+        buffer[idx] = Complex64::new(input[idx], 0.0);
+    }
+    let fft = FFT_PLANNER.with(|planner| planner.borrow_mut().plan_fft_forward(fft_size));
+    fft.process(&mut buffer);
+    buffer.truncate(fft_size / 2 + 1);
+    buffer
+}

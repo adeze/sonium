@@ -1,0 +1,33 @@
+{
+  "cabinet": {
+    "height": 0.40,
+    "width": 0.22,
+    "depth": 0.28
+  },
+  "woofer": {
+    "radius": 0.065,
+    "y_offset": -0.08,
+    "piston_velocity": 0.001
+  },
+  "tweeter": {
+    "radius": 0.013,
+    "y_offset": 0.10,
+    "piston_velocity": 0.001
+  },
+  "separator": {
+    "y_position": 0.02,
+    "thickness": 0.018
+  },
+  "waveguide": {
+    "horizontal_spline": [[0.0, 0.05], [0.33, 0.04], [0.66, 0.025], [1.0, 0.013]],
+    "vertical_spline": [[0.0, 0.04], [0.33, 0.03], [0.66, 0.02], [1.0, 0.013]],
+    "depth": 0.025
+  },
+  "simulation": {
+    "freq_start": 200.0,
+    "freq_end": 2000.0,
+    "freq_points": 100,
+    "speed_of_sound": 343.0,
+    "air_density": 1.21
+  }
+}

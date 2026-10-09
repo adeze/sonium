@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "id": "cross-language-multiphysics-v1",
+  "conventions": {
+    "harmonic_time": "ExpMinusIwt",
+    "coordinate_frame": "WorldRightHanded",
+    "outward_normals": true,
+    "rms_amplitudes": true
+  },
+  "domains": [
+    {"id": "acoustics", "label": "Acoustics", "kind": "Acoustics"}
+  ],
+  "regions": [
+    {
+      "id": "fluid",
+      "domain_id": "acoustics",
+      "label": "Fluid",
+      "parent_geometry_entity": null,
+      "material_law_id": null
+    }
+  ],
+  "fields": [
+    {
+      "id": "pressure",
+      "name": "Pressure",
+      "domain_id": "acoustics",
+      "kind": "ComplexScalar",
+      "units": "Pa",
+      "layout": {
+        "scalar_type": "ComplexF64",
+        "shape": [1],
+        "strides": [1],
+        "byte_offset": 0,
+        "order": "RowMajor",
+        "complex_storage": "Interleaved",
+        "coordinate_frame": null
+      }
+    }
+  ],
+  "boundary_conditions": [],
+  "interface_conditions": [],
+  "material_laws": [],
+  "couplings": [],
+  "design_variables": [],
+  "objectives": [],
+  "constraints": [],
+  "provenance": {
+    "fidelity": "Synthetic",
+    "producer": "xem-interop-fixture",
+    "code_revision": "fixture-v1",
+    "parent_geometry_entity": null,
+    "design_region_masks": [],
+    "mesh_lineage": null,
+    "state_transfer": null,
+    "derivative_convention": {
+      "method": "None",
+      "coordinate_frame": "WorldRightHanded",
+      "includes_mesh_motion": false
+    }
+  }
+}

@@ -1,0 +1,456 @@
+{
+  "schema": "sonium-compute-gemm-vendor/v1",
+  "version": 1,
+  "status": "passed",
+  "scope": "bounded single-thread warm-median GEMM evidence; Linux x86_64 CPU (f32/f64 sonium AVX2+FMA vs OpenBLAS) plus CUDA f32 backend-vs-raw-cuBLAS wrapper cells",
+  "claims": {
+    "vendor_comparison": "measured_bounded_single_thread_warm_median",
+    "universal_superiority": "not_claimed",
+    "cold_latency": "not_claimed",
+    "energy": "not_claimed",
+    "device_counters": "not_applicable_cpu_in_process"
+  },
+  "provenance": {
+    "base_sha": "7aea99749f10bef8890738edeb6bc4ca87a80b93",
+    "worktree_dirty": true,
+    "diff_sha256": "14e36f75a47f78f3751ff1d657965c74adfb4640b3f5afb3b9b8b591b9713cda",
+    "date_utc": "2026-09-29T16:52:12Z",
+    "compiler": "rustc 1.98.1 (48a229cea 2026-09-01)",
+    "cpu_model": "AMD Ryzen Threadripper PRO 3995WX 64-Cores",
+    "microcode": "0x830107c",
+    "os": "linux-x86_64",
+    "target_features": "avx2,fma (runtime-detected)",
+    "runtime_dispatch": "avx2-fma-native",
+    "thread_policy": "RAYON_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1",
+    "openblas": "OpenBLAS 0.3.26 NO_LAPACKE DYNAMIC_ARCH NO_AFFIN SINGLE_THREADED (/lib/x86_64-linux-gnu/libopenblas.so.0)",
+    "criterion": "sample_size=20 warmup=3s measurement=5s noplot",
+    "profile": "bench (optimized)"
+  },
+  "workload_identity": {
+    "operation": "C := alpha*A*B + beta*C, NoTrans/NoTrans",
+    "alpha": 0.7,
+    "beta": 0.0,
+    "inputs": "deterministic ramp sin(k*0.0123[/0.0177]) per bench source",
+    "sonium_layout": "row-major, lda=k ldb=n ldc=n",
+    "openblas_layout": "column-major pack of the same ramps"
+  },
+  "precision_basis": {
+    "note": "bench cells gate status, not values; numerical parity comes from the suites below, all passing at HEAD",
+    "properties_blas": "8 passed (seeded GEMV/GEMM vs naive reference)",
+    "wolfram_golden": "3 passed (exact gemv transpose variants)",
+    "native_x86_evidence": "3 passed; 1634 observables; 0 failed; max_norm_error 4.44e-16; kernel avx2-fma"
+  },
+  "cells": [
+    {
+      "scalar": "f32",
+      "arm": "sonium",
+      "m": 64,
+      "n": 64,
+      "k": 64,
+      "median_ns": 5422.976434469173,
+      "ci95_low_ns": 5421.858515533568,
+      "ci95_high_ns": 5426.380373334211,
+      "gflops_derived": 96.67901130227202,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "openblas",
+      "m": 64,
+      "n": 64,
+      "k": 64,
+      "median_ns": 6459.888790520294,
+      "ci95_low_ns": 6449.9884811456595,
+      "ci95_high_ns": 6469.465872151094,
+      "gflops_derived": 81.16053031274748,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "sonium",
+      "m": 256,
+      "n": 256,
+      "k": 256,
+      "median_ns": 287975.0889050708,
+      "ci95_low_ns": 287822.4803424223,
+      "ci95_high_ns": 288273.03476764204,
+      "gflops_derived": 116.51852293050602,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "openblas",
+      "m": 256,
+      "n": 256,
+      "k": 256,
+      "median_ns": 300104.2083333334,
+      "ci95_low_ns": 300037.9672008547,
+      "ci95_high_ns": 300397.4870174632,
+      "gflops_derived": 111.80926847493667,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "sonium",
+      "m": 1024,
+      "n": 1024,
+      "k": 1024,
+      "median_ns": 18992652.47857143,
+      "ci95_low_ns": 18966223.5625,
+      "ci95_high_ns": 19034564.604166664,
+      "gflops_derived": 113.06918032765097,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "openblas",
+      "m": 1024,
+      "n": 1024,
+      "k": 1024,
+      "median_ns": 18074115.401515152,
+      "ci95_low_ns": 18065729.0,
+      "ci95_high_ns": 18082695.28125,
+      "gflops_derived": 118.81542196084332,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "sonium",
+      "m": 2048,
+      "n": 128,
+      "k": 2048,
+      "median_ns": 9140419.847058823,
+      "ci95_low_ns": 9135589.222222222,
+      "ci95_high_ns": 9144499.27529762,
+      "gflops_derived": 117.47182754909288,
+      "samples": 20
+    },
+    {
+      "scalar": "f32",
+      "arm": "openblas",
+      "m": 2048,
+      "n": 128,
+      "k": 2048,
+      "median_ns": 9754968.05882353,
+      "ci95_low_ns": 9750663.006493507,
+      "ci95_high_ns": 9763763.388888888,
+      "gflops_derived": 110.07128034917375,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "sonium",
+      "m": 64,
+      "n": 64,
+      "k": 64,
+      "median_ns": 10446.60871253655,
+      "ci95_low_ns": 10444.822251810081,
+      "ci95_high_ns": 10452.357096734893,
+      "gflops_derived": 50.18738754624008,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "openblas",
+      "m": 64,
+      "n": 64,
+      "k": 64,
+      "median_ns": 12133.435473010322,
+      "ci95_low_ns": 12129.473885187082,
+      "ci95_high_ns": 12135.65585799455,
+      "gflops_derived": 43.21018570265849,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "sonium",
+      "m": 256,
+      "n": 256,
+      "k": 256,
+      "median_ns": 595223.5525,
+      "ci95_low_ns": 595099.9625,
+      "ci95_high_ns": 595495.6694444445,
+      "gflops_derived": 56.372823049538184,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "openblas",
+      "m": 256,
+      "n": 256,
+      "k": 256,
+      "median_ns": 638112.5808662281,
+      "ci95_low_ns": 637954.5025062656,
+      "ci95_high_ns": 638388.0096153846,
+      "gflops_derived": 52.58387470507222,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "sonium",
+      "m": 1024,
+      "n": 1024,
+      "k": 1024,
+      "median_ns": 39614889.489473686,
+      "ci95_low_ns": 39592567.005555555,
+      "ci95_high_ns": 39649950.55555555,
+      "gflops_derived": 54.20900261682217,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "openblas",
+      "m": 1024,
+      "n": 1024,
+      "k": 1024,
+      "median_ns": 40177557.75,
+      "ci95_low_ns": 40167069.625,
+      "ci95_high_ns": 40185276.60470085,
+      "gflops_derived": 53.44983040936579,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "sonium",
+      "m": 2048,
+      "n": 128,
+      "k": 2048,
+      "median_ns": 19673584.93482906,
+      "ci95_low_ns": 19665627.782142855,
+      "ci95_high_ns": 19679552.66964286,
+      "gflops_derived": 54.57784270415836,
+      "samples": 20
+    },
+    {
+      "scalar": "f64",
+      "arm": "openblas",
+      "m": 2048,
+      "n": 128,
+      "k": 2048,
+      "median_ns": 22078492.05,
+      "ci95_low_ns": 22071312.44642857,
+      "ci95_high_ns": 22100077.344155844,
+      "gflops_derived": 48.632932972430964,
+      "samples": 20
+    }
+  ],
+  "cuda": {
+    "scope": "sonium CudaBackend::gemm (cublasSgemm_v2) vs raw cublasGemmEx; f32 NoTrans/NoTrans; pre-staged device buffers; 1 synchronize per iteration; matched-precision pair is backend vs fp32_pedantic (tf32 differs numerically, informational only)",
+    "gpu": {
+      "device": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "compute_capability": "12.0",
+      "driver": "610.57.04",
+      "toolkit": "cuda_13.3",
+      "memory_mib": 97887
+    },
+    "loop_accounting_source_verified": {
+      "h2d_in_loop": 0,
+      "d2h_in_loop": 0,
+      "synchronize_per_iter": 1,
+      "cublas_calls_per_iter": 1,
+      "note": "A/B/C uploaded once before timing (benches/blas3_compare.rs setup); timed loop is one GEMM plus one synchronize"
+    },
+    "precision_basis": "compute.operation-matrix.v1 passed on actual_backend=cuda at HEAD (max_relative_error 1.17e-7 over 144 operation + 144 layout + 16 sparse + 24 view + 48 multi_dot cases); per-cell preflights below compare raw arms against the scalar reference",
+    "cells": [
+      {
+        "scalar": "f32",
+        "arm": "cublas",
+        "m": 64,
+        "n": 64,
+        "k": 64,
+        "median_ns": 20783.343466666665,
+        "ci95_low_ns": 20777.58571280052,
+        "ci95_high_ns": 20802.053327635327,
+        "gflops_derived": 25.226354981857398,
+        "samples": 20,
+        "compute": "cublasSgemm_v2 via CudaBackend::gemm",
+        "preflight_vs_scalar_reference": "not_applicable_backend_arm"
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_fp32_pedantic_gemm",
+        "m": 64,
+        "n": 64,
+        "k": 64,
+        "median_ns": 20556.65523992832,
+        "ci95_low_ns": 20546.783189531205,
+        "ci95_high_ns": 20573.95990191181,
+        "gflops_derived": 25.504538256868102,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_PEDANTIC",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 0.0,
+          "max_rel": 0.0
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_tf32_gemm",
+        "m": 64,
+        "n": 64,
+        "k": 64,
+        "median_ns": 15329.753823024055,
+        "ci95_low_ns": 15326.181447326031,
+        "ci95_high_ns": 15347.927428510064,
+        "gflops_derived": 34.200679675140094,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_FAST_TF32",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 0.002172291279,
+          "max_rel": 0.009728603996
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas",
+        "m": 256,
+        "n": 256,
+        "k": 256,
+        "median_ns": 25578.172498992077,
+        "ci95_low_ns": 25574.054935275082,
+        "ci95_high_ns": 25596.53930208815,
+        "gflops_derived": 1311.8385217443597,
+        "samples": 20,
+        "compute": "cublasSgemm_v2 via CudaBackend::gemm",
+        "preflight_vs_scalar_reference": "not_applicable_backend_arm"
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_fp32_pedantic_gemm",
+        "m": 256,
+        "n": 256,
+        "k": 256,
+        "median_ns": 25261.328673386408,
+        "ci95_low_ns": 25247.01030190678,
+        "ci95_high_ns": 25270.717589790154,
+        "gflops_derived": 1328.2924439105466,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_PEDANTIC",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 5.974434316e-07,
+          "max_rel": 0.2264304757
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_tf32_gemm",
+        "m": 256,
+        "n": 256,
+        "k": 256,
+        "median_ns": 22303.185786027276,
+        "ci95_low_ns": 22293.918442915052,
+        "ci95_high_ns": 22318.971458080247,
+        "gflops_derived": 1504.4681204701042,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_FAST_TF32",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 0.005677721463,
+          "max_rel": 2616.950195
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas",
+        "m": 1024,
+        "n": 1024,
+        "k": 1024,
+        "median_ns": 149021.5584280303,
+        "ci95_low_ns": 148964.9232638889,
+        "ci95_high_ns": 149058.10357142857,
+        "gflops_derived": 14410.556906349384,
+        "samples": 20,
+        "compute": "cublasSgemm_v2 via CudaBackend::gemm",
+        "preflight_vs_scalar_reference": "not_applicable_backend_arm"
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_fp32_pedantic_gemm",
+        "m": 1024,
+        "n": 1024,
+        "k": 1024,
+        "median_ns": 149295.580625,
+        "ci95_low_ns": 149273.8042548077,
+        "ci95_high_ns": 149314.15625,
+        "gflops_derived": 14384.107279063002,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_PEDANTIC",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 7.629394531e-06,
+          "max_rel": 0.06857400388
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_tf32_gemm",
+        "m": 1024,
+        "n": 1024,
+        "k": 1024,
+        "median_ns": 70626.36039201183,
+        "ci95_low_ns": 70611.29791658046,
+        "ci95_high_ns": 70638.7474112426,
+        "gflops_derived": 30406.26242213793,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_FAST_TF32",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 0.01438522339,
+          "max_rel": 53.3566246
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas",
+        "m": 2048,
+        "n": 128,
+        "k": 2048,
+        "median_ns": 107390.30357931461,
+        "ci95_low_ns": 107374.89646569647,
+        "ci95_high_ns": 107410.63672060218,
+        "gflops_derived": 9998.498823564392,
+        "samples": 20,
+        "compute": "cublasSgemm_v2 via CudaBackend::gemm",
+        "preflight_vs_scalar_reference": "not_applicable_backend_arm"
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_fp32_pedantic_gemm",
+        "m": 2048,
+        "n": 128,
+        "k": 2048,
+        "median_ns": 107106.88815108658,
+        "ci95_low_ns": 107083.9312656897,
+        "ci95_high_ns": 107139.02724215246,
+        "gflops_derived": 10024.955841172079,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_PEDANTIC",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 2.086162567e-06,
+          "max_rel": 0.2339178324
+        }
+      },
+      {
+        "scalar": "f32",
+        "arm": "cublas_gemmex_tf32_gemm",
+        "m": 2048,
+        "n": 128,
+        "k": 2048,
+        "median_ns": 48472.62669092027,
+        "ci95_low_ns": 48465.15745680894,
+        "ci95_high_ns": 48501.70184862563,
+        "gflops_derived": 22151.508950537846,
+        "samples": 20,
+        "compute": "cublasGemmEx COMPUTE_32F_FAST_TF32",
+        "preflight_vs_scalar_reference": {
+          "max_abs": 0.01558033749,
+          "max_rel": 12164.45898
+        }
+      }
+    ]
+  },
+  "limits": [
+    "warm medians only; no cold-start latency measured",
+    "single-threaded; no scaling or NUMA claim",
+    "NoTrans/NoTrans only; complex/transpose regimes ride CI",
+    "shared host: medians drift run to run; compare within CI bands",
+    "derived GFLOP/s uses 2*m*n*k over the median; model-only"
+  ]
+}

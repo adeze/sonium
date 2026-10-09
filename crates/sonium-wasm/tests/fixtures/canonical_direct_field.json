@@ -1,0 +1,11 @@
+{
+  "room": {"type": "rectangular", "width": 5.0, "depth": 4.0, "height": 3.0},
+  "source": [1.0, 1.0, 1.0],
+  "listener": [3.0, 1.0, 1.0],
+  "frequency_hz": 1000.0,
+  "speed_of_sound": 343.0,
+  "expected_pressure": {
+    "real": 0.019366058840744615,
+    "imag": -0.034757722298625164
+  }
+}

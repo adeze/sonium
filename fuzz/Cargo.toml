@@ -1,0 +1,100 @@
+[package]
+name = "sonium-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+# Keep cargo-fuzz's package independent from the main workspace. This avoids
+# adding libfuzzer-sys to normal workspace builds.
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+num-complex = "0.4"
+serde_json = "1"
+sonium-fastmath = { path = "../crates/sonium-fastmath" }
+sonium-fft = { path = "../crates/sonium-fft" }
+sonium-bem = { path = "../crates/sonium-bem" }
+sonium-xem = { path = "../crates/sonium-xem" }
+sonium-compute = { path = "../crates/sonium-compute" }
+sonium-solvers = { path = "../crates/sonium-solvers" }
+
+[[bin]]
+name = "fastmath_sincos"
+path = "fuzz_targets/fastmath_sincos.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fft_planner"
+path = "fuzz_targets/fft_planner.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bem_nc_parser"
+path = "fuzz_targets/bem_nc_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xem_reader"
+path = "fuzz_targets/xem_reader.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_view_descriptor"
+path = "fuzz_targets/compute_view_descriptor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_csr_descriptor"
+path = "fuzz_targets/compute_csr_descriptor.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_fmm"
+path = "fuzz_targets/compute_fmm.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_perf_models"
+path = "fuzz_targets/compute_perf_models.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_scheduler_sequences"
+path = "fuzz_targets/compute_scheduler_sequences.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_csr_spmv"
+path = "fuzz_targets/compute_csr_spmv.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "solvers_csr_inputs"
+path = "fuzz_targets/solvers_csr_inputs.rs"
+test = false
+doc = false
+bench = false

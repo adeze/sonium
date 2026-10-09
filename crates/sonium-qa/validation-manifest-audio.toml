@@ -1,0 +1,114 @@
+# sonium-qa audio validation manifest: every release-grade Wolfram comparison
+# for the audio crates (merged from math-qa).
+#
+# Only manifest-listed cases may support accuracy claims. Each case needs
+# a `.wls` oracle, a checked-in golden (produced with `just qa-goldens-audio`),
+# and a `tests/` comparison target below.
+
+[[case]]
+id = "audio.biquad-response.v1"
+owner = "sonium-audio"
+script = "biquad_response.wls"
+golden = "biquad_response.json"
+test = "wolfram_biquad_response"
+tolerance = "complex relative error <= 1e-9"
+tier = "smoke"
+
+[[case]]
+id = "audio.fft-peak.v1"
+owner = "sonium-audio"
+script = "fft_peak.wls"
+golden = "fft_peak.json"
+test = "wolfram_fft_peak"
+tolerance = "peak relative error <= 1e-6, off-peak bins <= 0.05 absolute"
+tier = "smoke"
+
+[[case]]
+id = "audio.schroeder-t60.v1"
+owner = "sonium-audio"
+script = "schroeder_t60.wls"
+golden = "schroeder_t60.json"
+test = "wolfram_schroeder_t60"
+tolerance = "T30 relative error <= 1e-4, curve points <= 1e-6 dB absolute"
+tier = "smoke"
+
+[[case]]
+id = "audio.comb-first-dip.v1"
+owner = "sonium-audio"
+script = "comb_first_dip.wls"
+golden = "comb_first_dip.json"
+test = "wolfram_comb_first_dip"
+tolerance = "per-entry oracle tolerance: 5e-3 at 2 ms, 1e-5 above (bandpass-ring overlap)"
+tier = "smoke"
+
+[[case]]
+id = "audio.third-octave-spl.v1"
+owner = "sonium-audio"
+script = "third_octave_spl.wls"
+golden = "third_octave_spl.json"
+test = "wolfram_third_octave_spl"
+tolerance = "peak band exact, 2 kHz band within 0.3 dB, neighbors <= -25 dB"
+tier = "smoke"
+
+[[case]]
+id = "audio.waterfall-spots.v1"
+owner = "sonium-audio"
+script = "waterfall_spots.wls"
+golden = "waterfall_spots.json"
+test = "wolfram_waterfall_spots"
+tolerance = "spot dB differences within 1e-3 dB"
+tier = "deep"
+
+[[case]]
+id = "audio.morlet-spots.v1"
+owner = "sonium-audio"
+script = "morlet_spots.wls"
+golden = "morlet_spots.json"
+test = "wolfram_morlet_spots"
+tolerance = "spot dB differences within 1e-3 dB"
+tier = "deep"
+
+[[case]]
+id = "audio.svf-response.v1"
+owner = "sonium-audio"
+script = "svf_response.wls"
+golden = "svf_response.json"
+test = "wolfram_svf_response"
+tolerance = "complex relative error <= 1e-6"
+tier = "smoke"
+
+[[case]]
+id = "audio.test-functions.v1"
+owner = "sonium-solvers-optimization"
+script = "test_functions.wls"
+golden = "test_functions.json"
+test = "wolfram_test_functions"
+tolerance = "relative error <= 1e-12 (1e-9 absolute at zeros)"
+tier = "smoke"
+
+[[case]]
+id = "audio.kautz-correction.v1"
+owner = "sonium-audio"
+script = "kautz_correction.wls"
+golden = "kautz_correction.json"
+test = "wolfram_kautz_correction"
+tolerance = "complex relative error <= 1e-9 (impulse DTFT <= 1e-6)"
+tier = "smoke"
+
+[[case]]
+id = "audio.capture-tdoa.v1"
+owner = "sonium-audio"
+script = "capture_tdoa.wls"
+golden = "capture_tdoa.json"
+test = "wolfram_capture_tdoa"
+tolerance = "per-entry oracle tolerances: C1 offset/confidence absolute, C2/C4 relative"
+tier = "smoke"
+
+[[case]]
+id = "audio.capture-array.v1"
+owner = "sonium-audio"
+script = "capture_array.wls"
+golden = "capture_array.json"
+test = "wolfram_capture_array"
+tolerance = "per-entry oracle tolerances: C5 angles absolute, C6 scale relative, C3 absolute"
+tier = "smoke"

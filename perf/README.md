@@ -1,0 +1,86 @@
+# Per-platform performance records
+
+One committed markdown file per (platform, workload cell):
+
+| | dense BLAS | dense LAPACK | sparse matrix | dense solvers | sparse solvers + precond |
+|---|---|---|---|---|---|
+| Apple Silicon | `m4-blas.md` | `m4-lapack.md` | `m4-sparse-matrix.md` | `m4-dense-solvers.md` | `m4-sparse-solvers.md` |
+| Linux x86-64 | `x86-blas.md` | `x86-lapack.md` | `x86-sparse-matrix.md` | `x86-dense-solvers.md` | `x86-sparse-solvers.md` |
+| NVIDIA CUDA | `cuda-blas.md` | `cuda-lapack.md` | `cuda-sparse-matrix.md` | `cuda-dense-solvers.md` | `cuda-sparse-solvers.md` |
+
+## Run every benchmark supported by this machine
+
+```bash
+just bench                 # All native CPU targets, then available CUDA arms
+just bench --dry-run       # Inspect hardware detection and exact commands
+just bench --backend cpu   # CPU only
+```
+
+The runner discovers Cargo workspace benchmark targets. It probes a visible
+CUDA device and the cuBLAS/cuSPARSE/cuSOLVER/NVRTC libraries before enabling
+CUDA paths. It enables OpenBLAS comparison arms when the library is installed,
+and skips platform stubs such as Apple Accelerate on Linux. On the current
+x86/CUDA box, the plan contains 44 CPU targets and eight CUDA targets.
+Benchmarks run sequentially. A failure is retained in the summary while the
+remaining targets continue; the command exits unsuccessfully if any target fails.
+
+Logs and a JSON summary are retained under `target/bench-runs/<run>/`.
+Criterion measurements remain under `target/criterion/`, with separate
+`cpu` and `cuda` saved baselines. Thread budgets default to at most 16;
+`RAYON_NUM_THREADS`, `OPENBLAS_NUM_THREADS`, and `OMP_NUM_THREADS` override them.
+
+For a bounded selection:
+
+```bash
+just bench --package sonium-compute --bench blas1_compare --quick
+```
+
+`--package` and `--bench` can be repeated. `--quick` (or `PERF_QUICK=1`) uses
+Criterion quick mode; custom benchmark harnesses retain their normal workload.
+`--filter` selects Criterion benchmark names. The default command runs full
+benchmarks, including expensive FEM/FMM/scaling workloads.
+
+This command runs the benchmark inventory. Use the recipes below to publish
+formatted per-platform performance tables for the website.
+
+## Workflow
+
+Each platform owner regenerates and commits their five files:
+
+```bash
+just perf-m4     # on the Apple Silicon Mac
+just perf-x86    # on the Linux x86-64 box
+just perf-cuda   # on the Linux + NVIDIA GPU box
+just perf-cell x86 blas   # a single cell
+```
+
+`PERF_QUICK=1` selects a bounded run; quick mode is recorded in each file
+header and is not comparable to full runs. `PERF_KEEP_WORK=1` retains raw
+harness logs under `perf/.work/` (git-ignored).
+
+## Cell → harness mapping
+
+All generation goes through `scripts/perf_cells.py`:
+
+| cell | harness | parsed from |
+|---|---|---|
+| `blas` | `cargo bench -p sonium-compute` blas1/2/3_compare (+ `bench-openblas` on x86, `cuda` on CUDA) | `target/criterion/**/new/estimates.json` medians, sonium vs vendor arm |
+| `lapack` | `lapack_compare` criterion bench (potrf/getrf/geqrf + f32, residual-gated) + direct dense section | criterion medians sonium vs vendor + LU table |
+| `sparse-matrix` | `roofline_preflight` bench (+ iterative effective BW) | `csr_spmv` estimates + `sonium_roofline_preflight` byte models |
+| `dense-solvers` | `scripts/direct_solver_perf.sh` dense section | end-to-end factor+solve table |
+| `sparse-solvers` | direct sparse section + `scripts/iterative_solver_perf.sh` JSON | sparse-LU table + scaling/coverage + PETSc KSP comparison (when `ITERATIVE_PERF_PETSC` is set) |
+
+Vendor arms: Accelerate (m4), OpenBLAS/SuperLU/CHOLMOD/PETSc (x86),
+cuBLAS/cuSPARSE/cuSOLVER (cuda). Gap = Sonium ÷ vendor throughout.
+
+Standalone vendor benches (see `just --list`, group `bench`):
+`bench-lapack`, `bench-lapack-cuda`, `bench-sparse-cpu`,
+`bench-gmres-cuda`, `bench-petsc-build`, `bench-petsc-run`.
+
+## Relation to `PERF.md` / `ITERATIVE_PERF.json`
+
+The root `PERF.md` remains the living worklog (per-experiment notes,
+falsified trials). These files are the committed per-platform records the
+showcase website's perf page is built from. Seed content transcribed from
+the worklog is marked `status: seed` until a real `just perf-*` run
+overwrites it.

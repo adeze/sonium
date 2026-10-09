@@ -1,0 +1,95 @@
+name: sonium-sim-propellers native CPU evidence
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-sim-propellers/**"
+      - "crates/sonium-qa/**"
+      - ".gitea/workflows/sonium-sim-propellers-native-cpu.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-sim-propellers/**"
+      - "crates/sonium-qa/**"
+      - ".gitea/workflows/sonium-sim-propellers-native-cpu.yml"
+
+jobs:
+  aarch64-reference:
+    # This is the accepted CPU comparison artifact. Rosetta and cross
+    # compilation are deliberately not accepted as the reference architecture.
+    runs-on: [self-hosted, macos, metal]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native aarch64 runner and record toolchain
+        run: |
+          set -eu
+          test "$(uname -m)" = "arm64"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "aarch64-apple-darwin"
+          rustc -Vv
+          cargo -V
+      - name: Run complete propeller CPU/reference tests
+        run: cargo test -p sonium-sim-propellers --lib --tests
+      - name: Write accepted aarch64 propeller artifact
+        run: cargo test -p sonium-sim-propellers --test native_cpu_evidence -- --exact --nocapture
+        env:
+          SONIUM_OUTPUT_DIR: target/sonium-propeller-aarch64-evidence
+      - name: Validate accepted aarch64 artifact identity
+        run: |
+          test "$(jq -r .schema target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json)" = "1"
+          test "$(jq -r .target_arch target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json)" = "aarch64"
+          test "$(jq -r .status target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json)" = "pass"
+          test "$(jq -r '.observables | length' target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json)" = "$(jq -r '.tolerances | length' target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json)"
+      - name: Upload accepted aarch64 propeller artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-propeller-aarch64-evidence
+          path: target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json
+
+  native-x86-64:
+    needs: aarch64-reference
+    # This runner must execute natively on x86_64 Linux. Rosetta is not a
+    # substitute for this evidence.
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native x86_64 runner and record toolchain
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "x86_64-unknown-linux-gnu"
+          rustc -Vv
+          cargo -V
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw avx2
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw fma
+      - name: Download accepted aarch64 propeller artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-propeller-aarch64-evidence
+          path: target/sonium-propeller-aarch64-evidence
+      - name: Run complete native x86 propeller CPU/reference tests
+        run: cargo test -p sonium-sim-propellers --lib --tests
+      - name: Compare native x86 propeller artifact with aarch64
+        run: cargo test -p sonium-sim-propellers --test native_cpu_evidence -- --exact --nocapture
+        env:
+          SONIUM_OUTPUT_DIR: target/sonium-propeller-x86-evidence
+          SONIUM_AARCH64_REFERENCE: target/sonium-propeller-aarch64-evidence/sonium_propeller_native_cpu_evidence.json
+      - name: Validate native x86 comparison
+        run: |
+          artifact=target/sonium-propeller-x86-evidence/sonium_propeller_native_cpu_evidence.json
+          test "$(jq -r .schema "$artifact")" = "1"
+          test "$(jq -r .target_arch "$artifact")" = "x86_64"
+          test "$(jq -r .status "$artifact")" = "pass"
+          jq -e '.aarch64_comparison_max_abs_error != null and .aarch64_comparison_max_abs_error <= 1e-8' "$artifact"
+          jq -e '.execution.actual_backend == "cpu" and .execution.precision == "f64" and .execution.scalar_or_simd == "scalar"' "$artifact"
+      - name: Run the headless gallery QA gate
+        run: cargo run -p sonium-qa --release --features qa-binaries,sim-propellers --bin qa-propeller-gallery
+      - name: Upload native x86 propeller artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-propeller-native-x86-evidence
+          path: target/sonium-propeller-x86-evidence/sonium_propeller_native_cpu_evidence.json

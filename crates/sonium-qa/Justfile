@@ -1,0 +1,520 @@
+# Use `mbx` (cargo wrapper) when installed, plain `cargo` otherwise.
+cargo := `if command -v mbx >/dev/null 2>&1; then echo mbx; else echo cargo; fi`
+
+qa: qa-full
+
+qa-propeller-panel-refinement:
+	just _qa-run-features qa-propeller-panel-refinement 120 qa-binaries,sim-propellers
+
+qa-propeller-capability-matrix:
+	just _qa-run-features qa-propeller-capability-matrix 120 qa-binaries,sim-propellers
+
+# Focused standalone QA binaries for the bounded propeller reference family.
+qa-propeller-references:
+	just _qa-run-features qa-propeller-capability-matrix 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-dynamic-stall 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-duct-shroud 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-body-fitted-flow 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-body-fitted-turbulence 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-body-fitted-rotating-wall 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-body-fitted-swirl 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-body-fitted-coupled-swirl 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-axisymmetric-flow 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-axisymmetric-meridional-flow 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-fwh 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-viscous-core 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-vortex-lattice 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-measured-calibration 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-fidelity-promotion 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-measured-dataset 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-measured-attestation 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-moving-fwh 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-mean-flow-fwh 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-farassat-fwh 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-measured-uncertainty 120 qa-binaries,sim-propellers
+	just _qa-run-features qa-propeller-mesh-state-transfer 120 qa-binaries,sim-propellers
+
+qa-manifest:
+    #!/usr/bin/env python3
+    import json, pathlib, tomllib
+    root = pathlib.Path("{{justfile_directory()}}").parent.parent
+    manifest = tomllib.loads((root / "crates/sonium-qa/validation-manifest.toml").read_text())
+    cargo = tomllib.loads((root / "crates/sonium-qa/Cargo.toml").read_text())
+    bins = {target["name"] for target in cargo["bin"]}
+    required = {"id", "owner", "crate", "bin", "entry_point", "method", "scalar", "dimension", "reference", "reference_checksum", "norm", "tolerance", "tier", "timeout_seconds", "required_hardware", "artifacts"}
+    seen = set()
+    for case in manifest.get("case", []):
+        assert not (missing := required - case.keys()), f"{case.get('id', '<missing id>')}: missing {sorted(missing)}"
+        assert case["id"] not in seen, f"duplicate case id {case['id']}"
+        assert case["bin"] in bins, f"{case['id']}: unknown Cargo binary {case['bin']}"
+        if case["bin"] in {"qa-wave-1d-analytical-consistency", "qa-wave-cylinder-2d-analytical-consistency"}:
+            assert case["tier"] == "reference-only", f"{case['id']}: analytical-only wave case cannot claim solver validation"
+        seen.add(case["id"])
+    assert seen, "validation manifest must contain a release-critical case"
+    print(json.dumps({"schema": "sonium-qa-validation-manifest/v1", "cases": manifest["case"]}, indent=2))
+
+qa-inventory:
+    python3 ../../scripts/generate_qa_inventory.py
+
+# Execute every non-reference manifest case through the same timeout/marker
+# runner used by the normal QA tiers. This makes release evidence an explicit
+# opt-in list rather than an accidental consequence of Cargo target discovery.
+qa-release-critical:
+    #!/usr/bin/env python3
+    import pathlib, subprocess, sys, tomllib
+    root = pathlib.Path("{{justfile_directory()}}").parent.parent
+    subprocess.run(["just", "qa-manifest"], cwd=root, check=True)
+    manifest = tomllib.loads((root / "crates/sonium-qa/validation-manifest.toml").read_text())
+    failures = []
+    for case in manifest["case"]:
+        if case["tier"] in {"reference-only", "accelerator-gate"}:
+            continue
+        command = ["just", "_qa-run", case["bin"], str(case["timeout_seconds"])]
+        print(f"== {case['id']} ==")
+        if subprocess.run(command, cwd=root).returncode:
+            failures.append(case["id"])
+    if failures:
+        print(f"release-critical failures: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
+    print("SUCCESS")
+
+# Archive a machine-readable release-gate result alongside the manifest. The
+# wrapped gate remains authoritative; this recipe only records its outcome.
+qa-release-evidence:
+    #!/usr/bin/env python3
+    import datetime, json, os, pathlib, platform, subprocess, sys, tomllib
+    root = pathlib.Path("{{justfile_directory()}}").parent.parent
+    output = pathlib.Path(os.environ.get("SONIUM_QA_EVIDENCE_DIR", root / "target" / "sonium-qa-evidence"))
+    output.mkdir(parents=True, exist_ok=True)
+    run = subprocess.run(["just", "qa-release-critical"], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    manifest = tomllib.loads((root / "crates/sonium-qa/validation-manifest.toml").read_text())
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout.strip() or "unavailable"
+    record = {
+        "schema": "sonium-qa-release-evidence/v1",
+        "timestamp_utc": datetime.datetime.now(datetime.UTC).isoformat(),
+        "git_sha": sha,
+        "status": "passed" if run.returncode == 0 else "failed",
+        "environment": {"platform": platform.platform(), "python": platform.python_version(), "rayon_threads": os.environ.get("RAYON_NUM_THREADS", "runtime-default")},
+        "cases": [{"id": case["id"], "bin": case["bin"], "tier": case["tier"], "required_hardware": case["required_hardware"]} for case in manifest.get("case", [])],
+        "gate_output": run.stdout,
+    }
+    (output / "release-evidence.json").write_text(json.dumps(record, indent=2) + "\n")
+    failure = "" if run.returncode == 0 else f"<failure message=\"qa-release-critical failed\"><![CDATA[{run.stdout}]]></failure>"
+    junit = f'<?xml version="1.0" encoding="UTF-8"?>\n<testsuite name="sonium-qa-release-critical" tests="1" failures="{int(run.returncode != 0)}"><testcase classname="sonium.qa" name="release-critical">{failure}</testcase></testsuite>\n'
+    (output / "release-evidence.junit.xml").write_text(junit)
+    print(f"release evidence written to {output / 'release-evidence.json'}")
+    print(run.stdout, end="")
+    sys.exit(run.returncode)
+
+# Compare two macOS evidence bundles. A regression fails only when it exceeds
+# 10% and the empirical intervals are disjoint.
+qa-compute-evidence-compare baseline current:
+    python3 {{justfile_directory()}}/compare_compute_evidence.py {{baseline}} {{current}}
+
+# Render the declared release-evidence inventory for README/release notes.
+qa-manifest-table:
+    #!/usr/bin/env python3
+    import pathlib, tomllib
+    root = pathlib.Path("{{justfile_directory()}}").parent.parent
+    cases = tomllib.loads((root / "crates/sonium-qa/validation-manifest.toml").read_text()).get("case", [])
+    print("| ID | Owner | Binary | Tier | Reference |")
+    print("|---|---|---|---|---|")
+    for case in cases:
+        print(f"| `{case['id']}` | {case['owner']} | `{case['bin']}` | {case['tier']} | {case['reference']} |")
+
+# Fast deterministic validation tier for CI and local pre-merge checks.
+qa-smoke:
+  just _qa-run qa-compute-properties 120
+  just _qa-run qa-compute-operation-matrix 120
+  just _qa-run qa-compute-strided-contract 120
+  just _qa-run qa-compute-batched-dense 120
+  just _qa-run qa-compute-block-workspace 120
+  just _qa-run qa-compute-block-krylov-workspace 120
+  just _qa-run qa-compute-gmres-workspace 120
+  just _qa-run qa-compute-scheduler-contract 120
+  just _qa-run qa-compute-transfer-stats 120
+  just _qa-run qa-compute-nd-view-copy-contract 120
+  just _qa-run qa-compute-fft-view-contract 120
+  just _qa-run qa-fft-family-contracts 120
+  just _qa-run qa-compute-csr-prebake-contract 120
+  just _qa-run qa-xem-artifact-bundle 120
+  just _qa-run qa-xem-consumer-adapters 120
+  just _qa-run qa-compute-backend-parity 120
+  just _qa-run qa-compute-workloads 120
+  just _qa-run qa-compute-fem-adjoint 120
+  just _qa-run qa-compute-bem-adjoint 120
+  just _qa-run qa-compute-performance-contract 120
+  just _qa-run qa-compute-cold-warm-contract 120
+  just _qa-run qa-compute-bem-kernel 120
+  just _qa-run qa-fem-validation-matrix 120
+  just _qa-run qa-fem-element-contracts 120
+  just _qa-run qa-structural-beam-balance 120
+  just _qa-run qa-structural-beam-modal 120
+  just _qa-run qa-structural-beam-convergence 120
+  just _qa-run qa-structural-fem-topology-2d 180
+  just _qa-run qa-structural-solid-topology-3d 180
+  just _qa-run qa-structural-solid-topology-3d-robust 180
+  just _qa-run qa-structural-external-execution-contract 120
+  just _qa-run qa-structural-nafems-reference 120
+  just _qa-run qa-structural-fem-topology-2d-robust 180
+  just _qa-run qa-structural-bounded-references 180
+  just _qa-run qa-structural-family-references 240
+  just _qa-run qa-structural-resolved-coupling-reference 240
+  just _qa-run qa-structural-constrained-topology-reference 180
+  just _qa-run qa-structural-backend-capabilities 120
+  just _qa-run qa-structural-topology-gallery 180
+  just _qa-run qa-bem-basic 180
+  just _qa-run qa-bem-gmres-ir-failure-matrix 120
+  just _qa-run qa-fem-analytical-validation 240
+  just _qa-run qa-solvers-iterative 180
+  just _qa-run qa-solvers-optimization 180
+  just _qa-run qa-solvers-direct 120
+  just _qa-run qa-solvers-direct-scalar-method-reference 120
+  just _qa-run qa-solvers-direct-configured-diagnostics 120
+  just _qa-run qa-solvers-sparse-configured-diagnostics 120
+  just _qa-run qa-solvers-multifrontal-ldlt-reference 120
+  just _qa-run qa-solvers-conformance-matrix 120
+  just _qa-run qa-solvers-factor-solve-reference 120
+  just _qa-run qa-solvers-validation-corpus 120
+  just _qa-run qa-solvers-optimization-kkt-reference 120
+  just _qa-run qa-solvers-validation-corpus-reference 120
+  just _qa-run qa-solvers-validation-corpus-workloads 120
+  just _qa-run qa-solvers-matrix-market-parser 120
+  just _qa-run qa-solvers-failure-exit-matrix 120
+  just _qa-run qa-solvers-preconditioner-contracts 120
+  just _qa-run qa-solvers-preconditioner-mixed-hilu-adjoint 120
+  just _qa-run qa-solvers-robustness 120
+  just _qa-run qa-solvers-saddle-point-contract 120
+  {{cargo}} test -p sonium-fem basis::shape::tests::test_evaluate_shape_p2_tetrahedron_partition_of_unity -- --nocapture
+  {{cargo}} test -p sonium-fem spaces::h1::tests -- --nocapture
+
+# Hermetic subset of Wolfram-derived contracts. This never invokes
+# WOLFRAMSCRIPT and is suitable for the ordinary numerical-code PR gate.
+qa-wolfram-confidence-fast:
+    {{cargo}} test -p sonium-solvers-direct dense_qr
+    {{cargo}} test -p sonium-solvers-direct dense_indefinite_auto_dispatches_to_ldlt
+    {{cargo}} test -p sonium-solvers-direct dense_ldlt_reports_singular_and_dimension_errors
+    {{cargo}} test -p sonium-solvers-eigen shift_invert
+    {{cargo}} test -p sonium-solvers-optimization global_impl
+    {{cargo}} test -p sonium-mesher fitted_
+    {{cargo}} test -p sonium-fem p2_traction_trace_preserves_edge_and_face_resultants
+    {{cargo}} test -p sonium-fem tetrahedron_degree_four_rule_integrates_quartics
+    {{cargo}} test -p sonium-qa --test wolfram_ndeigensystem_option_contracts
+
+# Full scalar/structural eigensystem confidence sweep. Live Wolfram checks are
+# additive when WOLFRAMSCRIPT is configured; hermetic references remain the
+# authoritative CI path.
+qa-wolfram-confidence: qa-wolfram-confidence-fast
+    {{cargo}} test -p sonium-qa --test wolfram_scalar_eigenproblems
+    {{cargo}} test -p sonium-qa --test wolfram_disk_membrane
+    {{cargo}} test -p sonium-qa --test wolfram_structural_eigenproblems
+    {{cargo}} test -p sonium-qa --test wolfram_solid_2d_eigenmode
+    {{cargo}} test -p sonium-qa --test wolfram_solid_3d_eigenmode
+    {{cargo}} test -p sonium-qa --test wolfram_solid_3d_bending
+    {{cargo}} test -p sonium-qa --test wolfram_solid_3d_distributed_load
+    {{cargo}} test -p sonium-qa --test wolfram_hyperelastic_cube
+    {{cargo}} test -p sonium-qa --test wolfram_acoustic_horn
+    {{cargo}} test -p sonium-qa --test wolfram_anemometer
+    {{cargo}} test -p sonium-qa --test wolfram_bem_impedance_sphere
+    {{cargo}} test -p sonium-qa --test wolfram_bem_muffler_port_diagnostic
+    {{cargo}} test -p sonium-qa --test wolfram_bem_rectangular_room
+    {{cargo}} test -p sonium-qa --test wolfram_bem_spheres rigid_sphere_far_field_and_public_rcs_match_receiver_definition
+    {{cargo}} test -p sonium-qa --test wolfram_helmholtz_resonator_axisymmetric
+    {{cargo}} test -p sonium-qa --test wolfram_catalytic_converter
+    {{cargo}} test -p sonium-qa --test wolfram_mass_transport_flux_outflow
+    {{cargo}} test -p sonium-qa --test wolfram_mass_transport_localized_reaction
+    {{cargo}} test -p sonium-qa --test wolfram_mass_transport_parallel_plate_reactor
+    {{cargo}} test -p sonium-qa --test wolfram_mass_transport_surrounding_transfer
+    {{cargo}} test -p sonium-qa --test wolfram_multilayer_sphere_radial_average
+    {{cargo}} test -p sonium-qa --test wolfram_multilayer_sphere_3d
+    {{cargo}} test -p sonium-qa --test wolfram_multiphysics
+    {{cargo}} test -p sonium-qa --test wolfram_spherical_capacitor
+
+# Mandatory physics regression gate for pull requests touching numerical code.
+# Covers analytical observables, dense/hierarchical/FMM parity, FEM convergence,
+# element-order support, and the CPU reference used by accelerator parity jobs.
+qa-physics-gate:
+    just qa-release-critical
+    just qa-wolfram-confidence-fast
+    just _qa-run qa-bem-mie-ci 300
+    just _qa-run qa-bem-sota-validation 300
+    just _qa-run qa-fem-analytical-validation 420
+    {{cargo}} test -p sonium-bem public_builder_matches_explicit_and_dense_across_ka_transition -- --nocapture
+    {{cargo}} test -p sonium-fem basis::shape::tests::test_evaluate_shape_p2_tetrahedron_partition_of_unity -- --nocapture
+    {{cargo}} test -p sonium-fem spaces::h1::tests -- --nocapture
+    just _qa-run qa-fem-cfd-backend-parity 300
+
+# Deeper deterministic physics validation tier. This is intended for nightly CI
+# or explicit release validation, not every cargo test run.
+qa-deep:
+    just qa-smoke
+    just _qa-run qa-bem-mie-validation 300
+    just _qa-run qa-bem-mie-ci 300
+    just _qa-run qa-bem-mesh-convergence 300
+    just _qa-run qa-bem-material-impedance-validation 120
+    just _qa-run qa-bem-sota-validation 300
+    just _qa-run qa-bem-mlfmm-audit 180
+    just _qa-run qa-bem-directional-mlfmm 180
+    just _qa-run qa-bem-mesh2hrtf-parity 300
+    just _qa-run qa-bem-numcalc-parity 300
+    just _qa-run-features qa-bem-freq-sweep-recycling 300 legacy-sims
+    just _qa-run qa-bem-node-scaling 300
+    just _qa-run qa-room-modal-validation 120
+    just _qa-run qa-room-shoebox-fem-benchmark 120
+    just _qa-run qa-speaker-piston-directivity-benchmark 120
+    just _qa-run qa-speaker-vibroacoustic-validation 120
+    just _qa-run qa-speaker-independent-references 120
+    just _qa-run qa-speaker-fem-bem-coupling 300
+    just _qa-run qa-speaker-acoustic-rom 300
+    just _qa-run qa-speaker-projected-reanalysis 120
+    just _qa-run qa-fem-waveholtz-convergence 300
+    just _qa-run qa-fem-schwarz-pml-validation 300
+
+# Expensive application-level validation tier for room/speaker pipelines.
+qa-expensive:
+    {{cargo}} test -p sonium-sim-room --release --test pipeline_test -- --nocapture
+    {{cargo}} test -p sonium-sim-speaker --release simulation::tests::test_run_simulation_single_freq -- --nocapture
+    just _qa-run qa-pipeline-physics-validation 300
+    just _qa-run qa-speaker-rank-preservation 900
+
+# Full standalone QA binary sweep. The manifest is the source of truth so new
+# BLR, room, speaker, pipeline, and solver targets cannot be silently omitted.
+qa-full: _qa-run-all
+
+_qa-run-all:
+    #!/usr/bin/env python3
+    import pathlib
+    import subprocess
+    import sys
+    import tomllib
+
+    root = pathlib.Path("{{justfile_directory()}}").parent.parent
+    manifest = tomllib.loads((root / "crates/sonium-qa/Cargo.toml").read_text())
+    failures = []
+    passes = []
+    targets = sorted(manifest["bin"], key=lambda target: target["name"])
+    for target in targets:
+        name = target["name"]
+        timeout = "900" if name.startswith("qa-bem-") else "300"
+        features = target.get("required-features", [])
+        if features:
+            cmd = ["just", "_qa-run-features", name, timeout, ",".join(features)]
+        else:
+            cmd = ["just", "_qa-run", name, timeout]
+        if subprocess.run(cmd, cwd=root).returncode == 0:
+            passes.append(name)
+        else:
+            failures.append(name)
+
+    print(f"\nqa-full summary: {len(passes)} passed, {len(failures)} failed")
+    for name in failures:
+        print(f"  FAIL: {name}")
+    if failures:
+        sys.exit(1)
+
+qa-solvers:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    failures=()
+    passes=()
+    for t in {{justfile_directory()}}/bin/solvers_*.rs; do
+        tname="qa-$(basename "${t}" .rs | tr '_' '-')"
+        if just _qa-run "${tname}" 300; then
+            passes+=("${tname}")
+        else
+            failures+=("${tname}")
+        fi
+    done
+    echo
+    echo "qa-solvers summary: ${#passes[@]} passed, ${#failures[@]} failed"
+    if [ "${#failures[@]}" -gt 0 ]; then
+        for f in "${failures[@]}"; do echo "  FAIL: ${f}"; done
+        exit 1
+    fi
+
+qa-fem:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    failures=()
+    passes=()
+    for t in {{justfile_directory()}}/bin/fem_*.rs; do
+        tname="qa-$(basename "${t}" .rs | tr '_' '-')"
+        if just _qa-run "${tname}" 300; then
+            passes+=("${tname}")
+        else
+            failures+=("${tname}")
+        fi
+    done
+    echo
+    echo "qa-fem summary: ${#passes[@]} passed, ${#failures[@]} failed"
+    if [ "${#failures[@]}" -gt 0 ]; then
+        for f in "${failures[@]}"; do echo "  FAIL: ${f}"; done
+        exit 1
+    fi
+
+qa-bem:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    failures=()
+    passes=()
+    # 900s per-binary budget: mesh-convergence / mesh-refinement /
+    # optimal-beta sweep across many subdivision×ka combinations and
+    # genuinely need more than the qa-deep tier's 300s.
+    for t in {{justfile_directory()}}/bin/bem_*.rs; do
+        tname="qa-$(basename "${t}" .rs | tr '_' '-')"
+        if [ "${tname}" = "qa-bem-freq-sweep-recycling" ]; then
+            run_cmd=(just _qa-run-features "${tname}" 900 legacy-sims)
+        else
+            run_cmd=(just _qa-run "${tname}" 900)
+        fi
+        if "${run_cmd[@]}"; then
+            passes+=("${tname}")
+        else
+            failures+=("${tname}")
+        fi
+    done
+    echo
+    echo "============================================================"
+    echo "qa-bem summary: ${#passes[@]} passed, ${#failures[@]} failed"
+    echo "============================================================"
+    if [ "${#failures[@]}" -gt 0 ]; then
+        for f in "${failures[@]}"; do echo "  FAIL: ${f}"; done
+        exit 1
+    fi
+
+_qa-run bin timeout_seconds="180":
+    #!/usr/bin/env python3
+    import json
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    bin_name = "{{bin}}"
+    timeout_seconds = int("{{timeout_seconds}}")
+    cmd = ["{{cargo}}", "run", "-p", "sonium-qa", "--release", "--bin", bin_name]
+    env = os.environ.copy()
+    env.setdefault("SONIUM_OUTPUT_DIR", os.path.join(tempfile.gettempdir(), "sonium-qa"))
+
+    def structured_status(output):
+        for line in output.splitlines():
+            prefixed = line.startswith("QA_RESULT:")
+            payload = line.split(":", 1)[1].strip() if prefixed else line.strip()
+            if prefixed or payload.startswith("{"):
+                try:
+                    candidate = json.loads(payload)
+                except json.JSONDecodeError:
+                    if prefixed:
+                        return "failed"
+                    continue
+                if isinstance(candidate, dict) and {
+                    "schema_version", "case_id", "status"
+                }.issubset(candidate):
+                    return candidate["status"]
+        return None
+
+    print(f"== {bin_name} ({timeout_seconds}s timeout) ==")
+    try:
+        result = subprocess.run(
+            cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode(errors="replace")
+        print(output, end="")
+        print(f"\nFAILED: {bin_name} timed out after {timeout_seconds}s", file=sys.stderr)
+        sys.exit(124)
+
+    print(result.stdout, end="")
+    embedded_status = structured_status(result.stdout)
+
+    if result.returncode != 0:
+        print(f"\nFAILED: {bin_name} exited with status {result.returncode}", file=sys.stderr)
+        sys.exit(result.returncode)
+    if "FAILED" in result.stdout:
+        print(f"\nFAILED: {bin_name} reported FAILED", file=sys.stderr)
+        sys.exit(1)
+    if "SUCCESS" not in result.stdout and embedded_status != "passed":
+        print(f"\nFAILED: {bin_name} did not report SUCCESS", file=sys.stderr)
+        sys.exit(1)
+
+# Compile the bounded transient structural reference without running its QA main.
+qa-structural-transient-fem-compile:
+    {{cargo}} check -p sonium-qa --offline --features qa-binaries --bin qa-structural-transient-fem-reference
+
+# Compile the bounded force-controlled structural contact reference without running its QA main.
+qa-structural-hyperelastic-3d-force-contact-compile:
+    {{cargo}} check -p sonium-qa --offline --features qa-binaries --bin qa-structural-hyperelastic-3d-force-contact
+
+_qa-run-features bin timeout_seconds features:
+    #!/usr/bin/env python3
+    import json
+    import os
+    import subprocess
+    import sys
+    import tempfile
+
+    bin_name = "{{bin}}"
+    timeout_seconds = int("{{timeout_seconds}}")
+    features = "{{features}}"
+    cmd = [
+        "{{cargo}}", "run", "-p", "sonium-qa", "--release",
+        "--features", features,
+        "--bin", bin_name,
+    ]
+    env = os.environ.copy()
+    env.setdefault("SONIUM_OUTPUT_DIR", os.path.join(tempfile.gettempdir(), "sonium-qa"))
+
+    def structured_status(output):
+        for line in output.splitlines():
+            prefixed = line.startswith("QA_RESULT:")
+            payload = line.split(":", 1)[1].strip() if prefixed else line.strip()
+            if prefixed or payload.startswith("{"):
+                try:
+                    candidate = json.loads(payload)
+                except json.JSONDecodeError:
+                    if prefixed:
+                        return "failed"
+                    continue
+                if isinstance(candidate, dict) and {
+                    "schema_version", "case_id", "status"
+                }.issubset(candidate):
+                    return candidate["status"]
+        return None
+
+    print(f"== {bin_name} ({timeout_seconds}s timeout, features={features}) ==")
+    try:
+        result = subprocess.run(
+            cmd,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            timeout=timeout_seconds,
+            env=env,
+        )
+    except subprocess.TimeoutExpired as exc:
+        output = exc.stdout or ""
+        if isinstance(output, bytes):
+            output = output.decode(errors="replace")
+        print(output, end="")
+        print(f"\nFAILED: {bin_name} timed out after {timeout_seconds}s", file=sys.stderr)
+        sys.exit(124)
+
+    print(result.stdout, end="")
+    embedded_status = structured_status(result.stdout)
+
+    if result.returncode != 0:
+        print(f"\nFAILED: {bin_name} exited with status {result.returncode}", file=sys.stderr)
+        sys.exit(result.returncode)
+    if "FAILED" in result.stdout:
+        print(f"\nFAILED: {bin_name} reported FAILED", file=sys.stderr)
+        sys.exit(1)
+    if "SUCCESS" not in result.stdout and embedded_status != "passed":
+        print(f"\nFAILED: {bin_name} did not report SUCCESS", file=sys.stderr)
+        sys.exit(1)

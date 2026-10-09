@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sonium RoomSim web gallery</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #101820; color: #dfe7ef; }
+    header { padding: 2rem 3rem 1rem; }
+    main { display: grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap: 1rem; padding: 1rem 3rem 3rem; }
+    figure { margin: 0; padding: .75rem; background: #1b2d3a; border-radius: .5rem; }
+    img, object { display: block; width: 100%; min-height: 180px; background: #0b1116; border: 0; }
+    figcaption { padding-top: .6rem; font-size: .9rem; }
+    a { color: #8fd3ff; }
+ .meta { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: .8rem; }
+ .provenance { padding: .75rem 3rem; border-top: 1px solid #315064; border-bottom: 1px solid #315064; }
+ .provenance strong { color: #f9c74f; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Sonium RoomSim web gallery</h1>
+    <p>Static, deterministic presentation of the exported RoomSimulatorWasm data. Linked JSON remains authoritative for numerical use.</p>
+<p><a href="gallery.json">visual manifest and checksums</a> · <a href="web-gallery-provenance.json">scenario provenance</a> · <a href="scenario.json">simulation configuration</a> · <a href="results.json">simulation results</a> · <a href="pressure_slice_250hz.json">pressure-slice data</a> · <a href="progressive_state.json">progressive state</a></p>
+<div id="meta" class="meta">Loading manifest…</div>
+<div id="integrity" class="meta" data-status="pending">Checking artifact integrity…</div>
+</header>
+<section id="provenance" class="provenance" aria-label="simulation provenance">Loading provenance…</section>
+<main id="figures"></main>
+  <script>
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    const safeAssetPath = value => typeof value === "string" && value.length > 0 && !value.startsWith("/") && !value.includes("..") && !value.includes("\\");
+    async function fnv1a64(bytes) {
+      let hash = 0xcbf29ce484222325n;
+      for (const byte of bytes) hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n);
+      return `fnv1a64:${hash.toString(16).padStart(16, "0")}`;
+    }
+    async function verifyArtifactChecksums(manifest) {
+      const status = document.getElementById("integrity");
+      const figures = Array.isArray(manifest.figures) ? manifest.figures : [];
+      const checks = [];
+      for (const figure of figures) {
+        if (!safeAssetPath(figure.filename) || typeof figure.checksum_fnv1a64 !== "string") {
+          checks.push({filename: String(figure.filename || "<missing>"), ok: false, detail: "invalid manifest entry"});
+          continue;
+        }
+        checks.push({filename: figure.filename, path: figure.filename, expected: figure.checksum_fnv1a64});
+        if (figure.source_checksum_fnv1a64 !== undefined) {
+          if (!safeAssetPath(figure.source) || typeof figure.source_checksum_fnv1a64 !== "string") {
+            checks.push({filename: `${figure.filename} source`, ok: false, detail: "invalid source entry"});
+          } else {
+            checks.push({filename: `${figure.filename} source`, path: figure.source, expected: figure.source_checksum_fnv1a64});
+          }
+        }
+      }
+      if (checks.length === 0) {
+        status.dataset.status = "missing";
+        status.textContent = "Artifact integrity: no checksums were published";
+        return false;
+      }
+      const results = await Promise.all(checks.map(async check => {
+        if (check.ok === false) return check;
+        try {
+          const response = await fetch(check.path, {cache: "no-store"});
+          if (!response.ok) return {filename: check.filename, ok: false, detail: `HTTP ${response.status}`};
+          const actual = await fnv1a64(new Uint8Array(await response.arrayBuffer()));
+          return {filename: check.filename, ok: actual === check.expected, detail: actual};
+        } catch (error) {
+          return {filename: check.filename, ok: false, detail: String(error)};
+        }
+      }));
+      const failed = results.filter(result => !result.ok);
+      status.dataset.status = failed.length === 0 ? "ok" : "failed";
+      status.textContent = failed.length === 0
+        ? `Artifact integrity: ${results.length} checks passed`
+        : `Artifact integrity failed: ${failed.map(result => `${result.filename} (${result.detail})`).join(", ")}`;
+      return failed.length === 0;
+    }
+ Promise.all([fetch("gallery.json"), fetch("web-gallery-provenance.json")]).then(async ([manifestResponse, provenanceResponse]) => {
+  if (!manifestResponse.ok || !provenanceResponse.ok) throw new Error("gallery manifest or provenance unavailable");
+  const [manifest, provenance] = await Promise.all([manifestResponse.json(), provenanceResponse.json()]);
+  if (!await verifyArtifactChecksums(manifest)) {
+    document.getElementById("meta").textContent = "Gallery withheld until artifact integrity passes";
+    return;
+  }
+  document.getElementById("provenance").innerHTML = `<strong>Provenance:</strong> ${escapeHtml(provenance.provenance || "unspecified")} · <strong>Scenario:</strong> ${escapeHtml(provenance.scenario || "unspecified")} · <strong>Git:</strong> ${escapeHtml(provenance.git_sha || "unknown")} · <strong>Viewport:</strong> ${escapeHtml(`${provenance.viewport?.width || "?"}×${provenance.viewport?.height || "?"} @${provenance.device_scale || "?"}x`)} · <strong>Colour scale:</strong> ${escapeHtml(provenance.colour_scale || "unspecified")}`;
+      document.title = `${manifest.title || "Sonium RoomSim web gallery"} · Sonium`;
+      document.querySelector("h1").textContent = manifest.title || "Sonium RoomSim web gallery";
+      document.getElementById("meta").textContent = JSON.stringify({
+        schema_version: manifest.schema_version,
+        renderer: manifest.renderer,
+        viewport: [manifest.width_px, manifest.height_px],
+        figures: manifest.figures.length,
+        git_sha: manifest.git_sha
+      }, null, 2);
+      const root = document.getElementById("figures");
+      for (const figure of manifest.figures) {
+        const card = document.createElement("figure");
+        const caption = document.createElement("figcaption");
+        caption.innerHTML = `<strong>${escapeHtml(figure.filename)}</strong><br>${escapeHtml(figure.caption || "")}`;
+        if (figure.kind === "png" || figure.kind === "gif") {
+          const image = document.createElement("img"); image.src = figure.filename; image.alt = figure.caption || figure.filename; card.append(image);
+        } else if (figure.kind === "svg") {
+          const object = document.createElement("object"); object.data = figure.filename; object.type = "image/svg+xml"; object.title = figure.filename; card.append(object);
+        } else {
+          const link = document.createElement("a"); link.href = figure.filename; link.textContent = `open ${figure.filename}`; card.append(link);
+        }
+  card.append(caption);
+  if (typeof figure.source === "string" && figure.source.length > 0) {
+   const source = document.createElement("a");
+   source.href = figure.source;
+   source.textContent = `source data: ${figure.source}`;
+   card.append(source);
+  }
+  root.append(card);
+      }
+    }).catch(error => { document.getElementById("meta").textContent = `Manifest load failed: ${error}`; });
+  </script>
+</body>
+</html>

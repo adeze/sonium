@@ -1,0 +1,136 @@
+# rust
+/target
+/target-static
+.target-*
+target-*
+/coverage
+/.tokensave
+/menuet.db*
+mutants.out
+*.profraw
+
+# installers
+/appimage-builder-*
+/dist
+/.docker-target
+/tools
+/tmp
+
+# signing certificates (NEVER commit private keys)
+/certs/
+
+# python
+__pycache__
+*.pyc
+/venv
+/.venv
+.venv/
+# PyO3 debug extension modules are rebuilt locally, never committed.
+*.so
+*.pyd
+# Nested crate build outputs (workspace root Cargo.lock is the source of truth).
+crates/sonium-py/target/
+crates/*/Cargo.lock
+
+# generated data
+/data
+/data_cached
+/data_generated
+/*.csv
+/*.html
+/*.json
+/*.wav
+/*.json.bz2
+/todos.md
+
+# node
+/site/node_modules
+/site/dist
+/website/node_modules
+/website/dist
+.sass-cache
+
+# docs
+.jekyll-cache
+.jekyll-metadata
+_site
+/README.html
+/README_files
+
+# MCP and Agents
+/.chunkhound
+autoeq_*.html
+autoeq_*.png
+bugs.md
+src/unused.rs
+/plans
+check_output_*.txt
+/.claude/worktrees
+/.worktrees
+/worktrees
+/.tokensave
+/.opencode
+/menuet.db
+/progress
+
+# R2factor
+.r2factor
+*.bak
+
+# Logs
+logs
+*.log
+/*.csv
+/*.wav
+
+
+# Editor directories and files
+/.vs
+/.vscode/*
+/.zed
+/.idea
+/.fleet
+.DS_Store
+
+# cargo-fuzz output is generated locally and should not enter source control.
+# Keep the small, reviewed compute seed corpora below versioned so the
+# registered targets have reproducible smoke inputs.
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
+!/fuzz/corpus/
+!/fuzz/corpus/compute_view_descriptor/
+/fuzz/corpus/compute_view_descriptor/*
+!/fuzz/corpus/compute_view_descriptor/zero-rank
+!/fuzz/corpus/compute_csr_descriptor/
+/fuzz/corpus/compute_csr_descriptor/*
+!/fuzz/corpus/compute_csr_descriptor/empty-matrix
+!/fuzz/corpus/compute_scheduler_sequences/
+/fuzz/corpus/compute_scheduler_sequences/*
+!/fuzz/corpus/compute_scheduler_sequences/empty-requests
+/fuzz/corpus/fastmath_sincos/
+/fuzz/corpus/fft_planner/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+vendor
+TAGS
+ETAGS
+CTAGS
+*~
+.*~
+*#
+.#*
+.idea
+.qwen
+.worktrees
+
+# specific
+/*.vtu
+/*.vtk
+/*.png
+/output
+/viz_output
+/data_tests

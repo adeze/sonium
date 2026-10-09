@@ -1,0 +1,12 @@
+[package]
+name = "sonium-solvers-sys"
+version = "0.4.5"
+description = "Runtime detection, NUMA topology, and lane executor for sonium solvers"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+rayon = { workspace = true }
+libc = "0.2"

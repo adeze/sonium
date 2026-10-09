@@ -1,0 +1,15 @@
+[package]
+name = "sonium-roomeq"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "RoomEQ configuration types and CEA-2034 spinorama scoring"
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "meshlang-ast"
+version = "0.2.1"
+edition = { workspace = true }
+license = { workspace = true }
+description = "Abstract Syntax Tree types for MeshLang"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+meshlang-parser = { workspace = true }
+
+[[bench]]
+name = "ast_bench"
+harness = false

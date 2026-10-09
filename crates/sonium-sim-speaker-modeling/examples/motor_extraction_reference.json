@@ -1,0 +1,28 @@
+{
+  "magnet": {
+    "magnet_type": {
+      "Neodymium": {
+        "br": 1.2
+      }
+    },
+    "inner_radius": 0.018,
+    "outer_radius": 0.03,
+    "height": 0.015
+  },
+  "pole_piece": {
+    "mu_r": 2000.0,
+    "conductivity": 6990000.0,
+    "radius": 0.012,
+    "height": 0.006
+  },
+  "coil": {
+    "radius": 0.0155,
+    "height": 0.012,
+    "n_turns": 56,
+    "wire_diameter": 0.0002,
+    "layers": 2
+  },
+  "air_gap": 0.001,
+  "coil_displacement_m": 0.0,
+  "conductive_insert": null
+}

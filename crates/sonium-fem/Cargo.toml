@@ -1,0 +1,198 @@
+[package]
+name = "sonium-fem"
+version = "0.5.30"
+description = "Generic multi-physics finite element method library"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["fem", "finite-element", "acoustics", "electromagnetics", "mechanics"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_fem"
+path = "src/lib.rs"
+
+[dependencies]
+# Common types shared with BEM
+sonium-xem = { workspace = true }
+
+# Mesh generation and partitioning
+sonium-mesher = { workspace = true }
+
+# Solver infrastructure
+# Library users do not need the solver CLI, networking, or TLS dependencies.
+sonium-solvers = { path = "../sonium-solvers", default-features = false }
+sonium-wave = { workspace = true }
+spec_math = { workspace = true }
+
+# Backend abstraction for GPU offload (CPU/CUDA/Metal). Used by the
+# Navier-Stokes Picard loop's optional backend-aware path.
+sonium-compute = { workspace = true }
+meshlang-ast = { workspace = true, optional = true }
+
+# Core numerical computing
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+
+# Parallel processing
+rayon = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# CLI
+clap = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[example]]
+name = "stokes_flow"
+required-features = ["cli"]
+
+[[example]]
+name = "hbeam_shape_opt"
+required-features = ["cli"]
+
+[[example]]
+name = "shell_beam_shape_opt"
+required-features = ["cli"]
+
+[[example]]
+name = "stokes_shape_opt"
+required-features = ["cli"]
+
+[[bench]]
+name = "helmholtz_3d_scaling"
+harness = false
+
+[[bench]]
+name = "scaling_3d"
+harness = false
+
+[[bench]]
+name = "waveholtz_scaling"
+harness = false
+
+[[bench]]
+name = "waveholtz_vs_solvers"
+harness = false
+
+# Meshlang-transfer integration tests need the `meshlang` feature (they use
+# `meshlang_ast` and the feature-gated `mesh::meshlang_transfer` module).
+# Without these stanzas `cargo check --all-targets` on default features
+# fails with E0432; with them cargo skips the files cleanly.
+[[test]]
+name = "meshlang_adaptive_h1_chain_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_adaptive_h1_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_h1_curved_p2_hexa_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_h1_curved_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_h1_mixed_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_h1_p2_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_h1_p3_adaptive_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_h1_p3_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hcurl_complex_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hcurl_curved_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hcurl_mixed_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hcurl_order1_chain_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hcurl_order2_consumer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hcurl_order2_curved_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt0_chain_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt0_complex_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt0_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt1_3d_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt1_chain_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt1_curved_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_hdiv_rt1_transfer"
+required-features = ["meshlang"]
+
+[[test]]
+name = "meshlang_partitioned_adaptive_h1_transfer"
+required-features = ["meshlang"]
+
+[features]
+default = ["cli"]
+
+# CLI requires mesh I/O
+cli = ["dep:clap", "mshio"]
+
+# Gmsh .msh file support — forwarded to sonium-mesher
+mshio = ["sonium-mesher/mshio"]
+
+# MeshLang source compilation + Gmsh mesh loading — forwarded to sonium-mesher
+meshlang = ["sonium-mesher/meshlang", "dep:meshlang-ast"]
+
+# GPU backends — forwarded to sonium-compute. Activates the
+# CUDA/Metal arms in `physics::stokes::navier_stokes::solve_iterative_via_backend`.
+cuda = ["sonium-compute/cuda"]
+metal = ["sonium-compute/metal"]

@@ -1,0 +1,5581 @@
+[package]
+name = "sonium-qa"
+version = "0.1.4"
+description = "Quality assurance suite: accuracy validation binaries for sonium"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+name = "sonium_qa"
+path = "src/lib.rs"
+
+[dependencies]
+# Internal crates
+sonium-solvers = { workspace = true }
+sonium-solvers-core = { workspace = true }
+sonium-solvers-direct = { workspace = true }
+sonium-solvers-sparse = { workspace = true }
+sonium-solvers-preconditioners = { workspace = true }
+sonium-bem = { workspace = true }
+sonium-fem = { workspace = true, features = ["meshlang"] }
+sonium-wave = { workspace = true }
+sonium-xem = { workspace = true }
+sonium-mesher = { workspace = true }
+sonium-roomsim = { workspace = true, optional = true, features = ["meshlang"] }
+meshlang-compiler = { workspace = true }
+ed25519-zebra = { workspace = true }
+meshlang-ast = { workspace = true }
+meshlang-parser = { workspace = true }
+sonium-compute = { workspace = true }
+sonium-bench = { workspace = true }
+sonium-sim-room = { workspace = true, optional = true }
+sonium-sim-pcfan = { workspace = true }
+sonium-sim-propellers = { workspace = true, optional = true }
+sonium-sim-speaker = { workspace = true }
+sonium-sim-speaker-modeling = { workspace = true }
+sonium-coupling = { workspace = true }
+sonium-sim-structural-mechanics = { workspace = true }
+sonium-fft = { workspace = true }
+sonium-fastmath = { workspace = true }
+sonium-audio = { workspace = true }
+sonium-solvers-optimization = { workspace = true }
+
+# Numerical
+num-complex = { workspace = true }
+num-traits = { workspace = true }
+approx = { workspace = true }
+
+# Parallel
+rayon = { workspace = true }
+
+# Half-precision
+half = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+sha2 = { workspace = true }
+
+# Misc
+rand = { workspace = true }
+
+# Logging
+env_logger = { workspace = true }
+log = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+chrono = { workspace = true }
+
+# Special functions
+spec_math = { workspace = true }
+
+# Directories
+directories = { workspace = true }
+
+# Optional FFTW differential test
+libloading = { workspace = true }
+
+# Temp files
+tempfile = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[[bin]]
+name = "qa-wave-1d-analytical-consistency"
+path = "bin/wave_1d_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-slfmm-checked-admission"
+path = "bin/bem_slfmm_checked_admission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-block-rows"
+path = "bin/bem_fmm_block_rows.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-hmatrix-transpose-block"
+path = "bin/bem_hmatrix_transpose_block.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-hmatrix-operator-accuracy"
+path = "bin/bem_hmatrix_operator_accuracy.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-operator-accuracy"
+path = "bin/bem_fmm_operator_accuracy.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-slfmm-transpose-block"
+path = "bin/bem_slfmm_transpose_block.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mlfmm-transpose-block"
+path = "bin/bem_mlfmm_transpose_block.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mlfmm-checked-admission"
+path = "bin/bem_mlfmm_checked_admission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-dense-operator-checked-admission"
+path = "bin/bem_dense_operator_checked_admission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mlfmm-curved-quad4-normals"
+path = "bin/bem_mlfmm_curved_quad4_normals.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-layered-porous-validation"
+path = "bin/bem_layered_porous_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-thin-shell-validation"
+path = "bin/bem_thin_shell_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-operator-checked-admission"
+path = "bin/bem_operator_checked_admission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-incident-field-admission"
+path = "bin/bem_incident_field_admission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-schwarz-checkpoint"
+path = "bin/solvers_schwarz_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-amg-checkpoint"
+path = "bin/solvers_amg_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-saddle-point-checkpoint"
+path = "bin/solvers_saddle_point_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-refinement-variants"
+path = "bin/solvers_sparse_lu_refinement_variants.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-preconditioner-scalar"
+path = "bin/solvers_sparse_lu_preconditioner_scalar.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-multifrontal-blr-config"
+path = "bin/solvers_multifrontal_blr_config.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-amg-diagonal-adjoint"
+path = "bin/solvers_amg_diagonal_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-recycled-resume"
+path = "bin/solvers_recycled_resume.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-block-gmres-rank-deficiency"
+path = "bin/solvers_block_gmres_rank_deficiency.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-order1-refinement-transfer"
+path = "bin/fem_hcurl_order1_refinement_transfer_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-order1-curved-transfer-contract"
+path = "bin/fem_hcurl_order1_curved_transfer_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-rt1-curved-p2-transfer"
+path = "bin/fem_hdiv_rt1_curved_p2_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-order2-curved-p2-transfer"
+path = "bin/fem_hcurl_order2_curved_p2_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-rt0-refinement-transfer"
+path = "bin/fem_hdiv_rt0_refinement_transfer_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-rt1-refinement-transfer"
+path = "bin/fem_hdiv_rt1_refinement_transfer_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-cross-source-vector-transfer"
+path = "bin/fem_cross_source_vector_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-adaptive-lineage-transfer"
+path = "bin/fem_adaptive_lineage_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-adaptive-lineage-chain"
+path = "bin/fem_adaptive_lineage_chain.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-adaptive-mpc-transfer"
+path = "bin/fem_adaptive_mpc_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-spatial-source-locator"
+path = "bin/fem_spatial_source_locator.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-complex-dirichlet-elimination"
+path = "bin/fem_complex_dirichlet_elimination.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-cross-space-assembly"
+path = "bin/fem_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-cross-space-assembly"
+path = "bin/fem_hcurl_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-curved-cross-space-assembly"
+path = "bin/fem_hcurl_curved_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-curved-cross-space-assembly"
+path = "bin/fem_hdiv_curved_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-curl-cross-space-assembly"
+path = "bin/fem_hcurl_curl_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-divergence-cross-space-assembly"
+path = "bin/fem_hdiv_divergence_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-curved-curl-cross-space-assembly"
+path = "bin/fem_hcurl_curved_curl_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-curved-divergence-cross-space-assembly"
+path = "bin/fem_hdiv_curved_divergence_cross_space_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-mixed-full-assembly"
+path = "bin/fem_mixed_full_assembly.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-h1-mixed-order-transfer"
+path = "bin/fem_h1_mixed_order_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-h1-curved-p3-transfer"
+path = "bin/fem_h1_curved_p3_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-h1-curved-p2-transfer"
+path = "bin/fem_h1_curved_p2_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-curved-transfer-reference"
+path = "bin/meshlang_fem_h1_curved_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries", "meshlang"]
+[[bin]]
+name = "qa-fem-hcurl-order2-periodic-face-contract"
+path = "bin/fem_hcurl_order2_periodic_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-cylinder-2d-analytical-consistency"
+path = "bin/wave_cylinder_2d_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-special-golden"
+path = "bin/wave_special_golden.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-diffusion-manufactured"
+path = "bin/wave_diffusion_manufactured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-diffusion-manufactured-2d"
+path = "bin/wave_diffusion_manufactured_2d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-diffusion-manufactured-3d"
+path = "bin/wave_diffusion_manufactured_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-helmholtz-manufactured"
+path = "bin/wave_helmholtz_manufactured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-helmholtz-manufactured-2d"
+path = "bin/wave_helmholtz_manufactured_2d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-helmholtz-manufactured-3d"
+path = "bin/wave_helmholtz_manufactured_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-elasticity-manufactured"
+path = "bin/wave_elasticity_manufactured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-transport-manufactured"
+path = "bin/wave_transport_manufactured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-maxwell-manufactured"
+path = "bin/wave_maxwell_manufactured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-incompressible-flow-manufactured"
+path = "bin/wave_incompressible_flow_manufactured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-acoustic-interface"
+path = "bin/wave_acoustic_interface.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-acoustic-duct"
+path = "bin/wave_acoustic_duct.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-rigid-duct-mode"
+path = "bin/wave_rigid_duct_mode.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-axisymmetric-rigid-cavity"
+path = "bin/wave_axisymmetric_rigid_cavity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-wave-azimuthal-rigid-cavity"
+path = "bin/wave_azimuthal_rigid_cavity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fastmath-accuracy"
+path = "bin/fastmath_accuracy.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-3d-sphere"
+path = "bin/bem_3d_sphere.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-sphere-field-pattern"
+path = "bin/bem_sphere_field_pattern.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-sphere-reciprocity"
+path = "bin/bem_sphere_reciprocity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-sphere-hmatrix"
+path = "bin/bem_sphere_hmatrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-sphere-formulation-matrix"
+path = "bin/bem_sphere_formulation_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-cuda-matrix"
+path = "bin/bem_cuda_matrix.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-bem-cuda-pair-field"
+path = "bin/bem_cuda_pair_field.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-bem-cuda-quad4-real"
+path = "bin/bem_cuda_quad4_real.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-bem-cuda-hmatrix-fmm"
+path = "bin/bem_cuda_hmatrix_fmm.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-bem-cuda-hmatrix-view"
+path = "bin/bem_cuda_hmatrix_view.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-compute-specialized-cuda-matrix"
+path = "bin/compute_specialized_cuda_matrix.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-compute-c2-breadth"
+path = "bin/compute_c2_breadth_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-cuda-workload"
+path = "bin/speaker_cuda_workload.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-driver-cuda-reference"
+path = "bin/speaker_driver_cuda_reference.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-driver-sm2-cuda-reference"
+path = "bin/speaker_driver_sm2_cuda_reference.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-modeling-cuda-failure-contract"
+path = "bin/speaker_modeling_cuda_failure_contract.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-modeling-cuda-production-frequency"
+path = "bin/speaker_modeling_cuda_production_frequency.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-modeling-sm2-breadth-cuda"
+path = "bin/speaker_modeling_sm2_breadth_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-typed-cuda-workload"
+path = "bin/speaker_typed_cuda_workload.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-cuda-failure-contract"
+path = "bin/speaker_cuda_failure_contract.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-speaker-native-x86-golden"
+path = "bin/speaker_x86_golden.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-accelerator-fault-contract"
+path = "bin/accelerator_fault_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-formulation-equivalence-reference"
+path = "bin/bem_formulation_equivalence_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-linear-basis-execution"
+path = "bin/bem_linear_basis_execution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-formulation-reference"
+path = "bin/bem_higher_order_formulation_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-2d-fluid-cylinder-convergence"
+path = "bin/bem_2d_fluid_cylinder_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-2d-fluid-cylinder-batch"
+path = "bin/bem_2d_fluid_cylinder_batch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-2d-rigid-cylinder-batch"
+path = "bin/bem_2d_rigid_cylinder_batch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-2d-rigid-cylinder-reference"
+path = "bin/bem_2d_rigid_cylinder_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-2d-fluid-cylinder-reference"
+path = "bin/bem_2d_fluid_cylinder_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-2d-transmission-adjoint"
+path = "bin/bem_2d_transmission_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-adjoint"
+path = "bin/bem_transmission_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-reciprocity"
+path = "bin/bem_transmission_reciprocity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-operator-contract"
+path = "bin/bem_transmission_operator_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-higher-order"
+path = "bin/bem_transmission_higher_order.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-continuous-quadratic"
+path = "bin/bem_transmission_continuous_quadratic.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-compressed-parity"
+path = "bin/bem_transmission_compressed_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-compressed-block-action"
+path = "bin/bem_transmission_compressed_block_action.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-compressed-adjoint-block-action"
+path = "bin/bem_transmission_compressed_adjoint_block_action.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-kernel-native-parity"
+path = "bin/bem_transmission_kernel_native_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-kernel-native-shared-higher-order-parity"
+path = "bin/bem_transmission_kernel_native_shared_higher_order.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-kernel-native-exact-residual"
+path = "bin/bem_transmission_kernel_native_exact_residual.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-distributed-rows"
+path = "bin/bem_transmission_distributed_rows.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-distributed-block-rows"
+path = "bin/bem_transmission_distributed_block_rows.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-distributed-hermitian-block-rows"
+path = "bin/bem_transmission_distributed_hermitian_block_rows.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-distributed-higher-order-rows"
+path = "bin/bem_transmission_distributed_higher_order_rows.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-single-layer"
+path = "bin/bem_galerkin_single_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-pair"
+path = "bin/bem_galerkin_quad4_pair.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-transmission"
+path = "bin/bem_galerkin_quad4_transmission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-transmission-self"
+path = "bin/bem_galerkin_quad4_transmission_self.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-compressed-native"
+path = "bin/bem_galerkin_quad4_compressed_native.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-linear-single-layer"
+path = "bin/bem_galerkin_linear_single_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quadratic-single-layer"
+path = "bin/bem_galerkin_quadratic_single_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-conforming-linear-single-layer"
+path = "bin/bem_galerkin_conforming_linear_single_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-double-layer"
+path = "bin/bem_galerkin_double_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quadratic-double-layer"
+path = "bin/bem_galerkin_quadratic_double_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-hypersingular"
+path = "bin/bem_galerkin_hypersingular.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-hypersingular-open"
+path = "bin/bem_galerkin_hypersingular_open.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-hypersingular-open-compressed"
+path = "bin/bem_galerkin_hypersingular_open_compressed.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quadratic-hypersingular"
+path = "bin/bem_galerkin_quadratic_hypersingular.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-muller-transmission"
+path = "bin/bem_galerkin_muller_transmission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-curved-quad4-compressed-field"
+path = "bin/bem_galerkin_curved_quad4_compressed_field.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-muller-mie-convergence"
+path = "bin/bem_galerkin_muller_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-compressed-field-parity"
+path = "bin/bem_transmission_compressed_field_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-quadrature-policy"
+path = "bin/bem_transmission_quadrature_policy.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-adjoint-many"
+path = "bin/bem_adjoint_many.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-adjoint-frequency-batch"
+path = "bin/bem_adjoint_frequency_batch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-adjoint-compressed-backends"
+path = "bin/bem_adjoint_compressed_backends.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-driver-loads"
+path = "bin/bem_driver_loads.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-driver-loads-compressed"
+path = "bin/bem_driver_loads_compressed.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-exact-residual"
+path = "bin/bem_higher_order_exact_residual.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-forward-frequency-batch-compressed"
+path = "bin/bem_forward_frequency_batch_compressed.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-wavenumber-objective-gradient"
+path = "bin/bem_wavenumber_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-wavenumber-objective-gradient-batch"
+path = "bin/bem_wavenumber_objective_gradient_batch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-hmatrix-wavenumber-objective-gradient"
+path = "bin/bem_hmatrix_wavenumber_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-field-parity"
+path = "bin/bem_compressed_field_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-checked-field-evaluation"
+path = "bin/bem_checked_field_evaluation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-field-gradient"
+path = "bin/bem_field_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-density-objective-gradient"
+path = "bin/bem_density_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-objective-gradients"
+path = "bin/bem_higher_order_objective_gradients.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-hmatrix-material-objective-gradients"
+path = "bin/bem_hmatrix_material_objective_gradients.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-impedance-material-objective-gradient"
+path = "bin/bem_compressed_impedance_material_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-higher-order-material-objective-gradients"
+path = "bin/bem_higher_order_material_objective_gradients.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-higher-order-wavenumber-objective-gradient"
+path = "bin/bem_compressed_higher_order_wavenumber_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-mlfmm-wavenumber-derivative"
+path = "bin/bem_higher_order_mlfmm_wavenumber_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-soft-dirichlet"
+path = "bin/bem_higher_order_soft_dirichlet.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-near-singular-quadrature-reference"
+path = "bin/bem_near_singular_quadrature_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-distributed-ownership"
+path = "bin/bem_distributed_ownership.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-bem-distributed-krylov"
+path = "bin/bem_distributed_krylov.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-wavenumber-derivative"
+path = "bin/bem_compressed_wavenumber_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-cuda-hmatrix-wavenumber-update"
+path = "bin/bem_cuda_hmatrix_wavenumber_update.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-bem-compressed-fmm-wavenumber-derivative"
+path = "bin/bem_compressed_fmm_wavenumber_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-batch-schedule"
+path = "bin/bem_batch_schedule.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-accuracy-parity"
+path = "bin/bem_accuracy_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-adaptive-beta"
+path = "bin/bem_adaptive_beta.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-angular-validation"
+path = "bin/bem_angular_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-audio-frequency-sweep"
+path = "bin/bem_audio_frequency_sweep.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-basic"
+path = "bin/bem_basic.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-beta-comparison"
+path = "bin/bem_beta_comparison.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-bounded-beta"
+path = "bin/bem_bounded_beta.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-convergence-study"
+path = "bin/bem_convergence_study.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-convergence-test"
+path = "bin/bem_convergence_test.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-eaa-validation"
+path = "bin/bem_eaa_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fastbem-validation"
+path = "bin/bem_fastbem_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-solver-validation"
+path = "bin/bem_fmm_solver_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-hierarchical-preconditioner"
+path = "bin/bem_fmm_hierarchical_preconditioner.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-gmres-ir-failure-matrix"
+path = "bin/bem_gmres_ir_failure_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mlfmm-nearfield-ilu"
+path = "bin/bem_mlfmm_nearfield_ilu.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-slfmm-nearfield-ilu"
+path = "bin/bem_slfmm_nearfield_ilu.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-slfmm-adjoint-preconditioners"
+path = "bin/bem_slfmm_adjoint_preconditioners.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mlfmm-adjoint-preconditioners"
+path = "bin/bem_mlfmm_adjoint_preconditioners.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-high-level-hilu-dispatch"
+path = "bin/bem_high_level_hilu_dispatch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-test"
+path = "bin/bem_fmm_test.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-slow-validation"
+path = "bin/bem_fmm_slow_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-frequency-sweep-backends"
+path = "bin/bem_frequency_sweep_backends.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fmm-validation"
+path = "bin/bem_fmm_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-high-order-quad"
+path = "bin/bem_high_order_quad.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-hypersingular"
+path = "bin/bem_hypersingular.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mesh-comparison"
+path = "bin/bem_mesh_comparison.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mesh-convergence"
+path = "bin/bem_mesh_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mesh-refinement"
+path = "bin/bem_mesh_refinement.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mesh-topology"
+path = "bin/bem_mesh_topology.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-material-impedance-validation"
+path = "bin/bem_material_impedance_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mie-ci"
+path = "bin/bem_mie_ci.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mlfmm-audit"
+path = "bin/bem_mlfmm_audit.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-directional-mlfmm"
+path = "bin/bem_directional_mlfmm.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-mlfmm-quad4"
+path = "bin/bem_higher_order_mlfmm_quad4.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mesh2hrtf-parity"
+path = "bin/bem_mesh2hrtf_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-node-scaling"
+path = "bin/bem_node_scaling.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-assembly-metal-bench"
+path = "bin/bem_assembly_metal_bench.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-assembly-crossover"
+path = "bin/bem_assembly_crossover.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mie-convergence"
+path = "bin/bem_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-mie-validation"
+path = "bin/bem_mie_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-neighbor-integration"
+path = "bin/bem_neighbor_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-optimal-beta"
+path = "bin/bem_optimal_beta.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-quadrature-integration"
+path = "bin/bem_quadrature_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-residual-check"
+path = "bin/bem_residual_check.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-row-sum-correction"
+path = "bin/bem_row_sum_correction.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-simple-sphere"
+path = "bin/bem_simple_sphere.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-sphere-integration"
+path = "bin/bem_sphere_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-sota-validation"
+path = "bin/bem_sota_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-validation-batch2"
+path = "bin/bem_validation_batch2.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-validation-batch3"
+path = "bin/bem_validation_batch3.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-acoustics-integration"
+path = "bin/fem_acoustics_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-analytical-validation"
+path = "bin/fem_analytical_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-drp"
+path = "bin/fem_aeroacoustics_drp.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-integration"
+path = "bin/fem_beam_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity"
+path = "bin/fem_elasticity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-cantilever"
+path = "bin/fem_elasticity_cantilever.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-integration"
+path = "bin/fem_elasticity_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-validation"
+path = "bin/fem_elasticity_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-magnetostatics-validation"
+path = "bin/fem_magnetostatics_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-validation"
+path = "bin/fem_maxwell_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-solid-validation"
+path = "bin/fem_nonlinear_solid_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-3d-channel"
+path = "bin/fem_ns_3d_channel.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-cavity-obstacle"
+path = "bin/fem_ns_cavity_obstacle.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-flow-past-cylinder"
+path = "bin/fem_ns_flow_past_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-lid-driven-cavity"
+path = "bin/fem_ns_lid_driven_cavity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-poiseuille"
+path = "bin/fem_ns_poiseuille.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-validation"
+path = "bin/fem_ns_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-2d-poiseuille-low-re"
+path = "bin/fem_ns_2d_poiseuille_low_re.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-kovasznay"
+path = "bin/fem_ns_kovasznay.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-taylor-green"
+path = "bin/fem_ns_taylor_green.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-1d-burgers"
+path = "bin/fem_ns_1d_burgers.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ns-mms"
+path = "bin/fem_ns_mms.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-schwarz-pml-validation"
+path = "bin/fem_schwarz_pml_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-lid-driven-cavity"
+path = "bin/fem_stokes_lid_driven_cavity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-poiseuille"
+path = "bin/fem_stokes_poiseuille.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-taylor-couette"
+path = "bin/fem_stokes_taylor_couette.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-validation"
+path = "bin/fem_stokes_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-pml-open-boundary-reference"
+path = "bin/fem_pml_open_boundary_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-pml-directional-contract"
+path = "bin/fem_pml_directional_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-checked-boundary"
+path = "bin/solvers_eigen_checked_boundary.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-mesh-transfer"
+path = "bin/fem_mesh_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal"
+path = "bin/fem_thermal.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal-integration"
+path = "bin/fem_thermal_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-waveholtz-convergence"
+path = "bin/fem_waveholtz_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-helmholtz-plane-wave-pollution"
+path = "bin/fem_helmholtz_plane_wave_pollution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-p3-tetra-trace-orientation"
+path = "bin/fem_p3_tetra_trace_orientation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-coefficient-reference"
+path = "bin/fem_maxwell_coefficient_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-h1-hcurl-commuting-reference"
+path = "bin/fem_h1_hcurl_commuting_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-h1-hcurl-p2-commuting-reference"
+path = "bin/fem_h1_hcurl_p2_commuting_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-p2-poisson-convergence-3d"
+path = "bin/fem_p2_poisson_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-curved-p2-geometry-reference"
+path = "bin/fem_curved_p2_geometry_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-curved-p2-assembly-reference"
+path = "bin/fem_curved_p2_assembly_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt0-reference"
+path = "bin/fem_hdiv_rt0_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt0-3d-reference"
+path = "bin/fem_hdiv_rt0_3d_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-frequency-quantities"
+path = "bin/speaker_frequency_quantities.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-waveholtz-validation"
+path = "bin/fem_waveholtz_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-room-modal-validation"
+path = "bin/room_modal_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-room-fast-modal-reference"
+path = "bin/room_fast_modal_reference.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-modal-convergence"
+path = "bin/room_modal_convergence.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-treatment-decay-constraint"
+path = "bin/room_treatment_decay_constraint.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-treatment-spatial-constraint"
+path = "bin/room_treatment_spatial_constraint.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-treatment-density-filter"
+path = "bin/room_treatment_density_filter.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-treatment-projection"
+path = "bin/room_treatment_projection.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-spatial-field-reference"
+path = "bin/room_spatial_field_reference.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-source-calibration"
+path = "bin/room_source_calibration.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-source-calibration-fit"
+path = "bin/room_source_calibration_fit.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-source-power-calibration"
+path = "bin/room_source_power_calibration.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-source-signal-ownership"
+path = "bin/room_source_signal_ownership.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-treatment-optimization"
+path = "bin/room_treatment_optimization.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-measured-response-correlation"
+path = "bin/room_measured_response_correlation.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-backend-parity-contract"
+path = "bin/room_backend_parity_contract.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-mesh-convergence-contract"
+path = "bin/room_mesh_convergence_contract.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-fem-mesh-convergence"
+path = "bin/room_fem_mesh_convergence.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-reciprocity-contract"
+path = "bin/room_reciprocity_contract.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-energy-balance-contract"
+path = "bin/room_energy_balance_contract.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-frequency-segment-merge"
+path = "bin/room_frequency_segment_merge.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-shoebox-fem-benchmark"
+path = "bin/room_shoebox_fem_benchmark.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-room-reference-correlation"
+path = "bin/room_reference_correlation.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-multi-listener-reference-correlation"
+path = "bin/room_multi_listener_reference_correlation.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-spatial-metrics-reference"
+path = "bin/room_spatial_metrics_reference.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-cross-backend-correlation"
+path = "bin/room_cross_backend_correlation.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-gallery-artifacts"
+path = "bin/room_gallery_artifacts.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-fem-nodal-gallery"
+path = "bin/room_fem_nodal_gallery.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-room-fem-spatial-field-reference"
+path = "bin/room_fem_spatial_field_reference.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-speaker-vibroacoustic-validation"
+path = "bin/speaker_vibroacoustic_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-piston-directivity-benchmark"
+path = "bin/speaker_piston_directivity_benchmark.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-modeling-validation"
+path = "bin/speaker_modeling_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-independent-references"
+path = "bin/speaker_independent_references.rs"
+test = true
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-port-flow-promotion"
+path = "bin/speaker_port_flow_promotion.rs"
+test = true
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-port-nonlinear"
+path = "bin/speaker_port_nonlinear.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-port-noise"
+path = "bin/speaker_port_noise.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-rank-preservation"
+path = "bin/speaker_rank_preservation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-fem-bem-coupling"
+path = "bin/speaker_fem_bem_coupling.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-acoustic-rom"
+path = "bin/speaker_acoustic_rom.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-conservative-power"
+path = "bin/conservative_power.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-body-fitted-monolithic"
+path = "bin/body_fitted_monolithic.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-body-fitted-ported-monolithic"
+path = "bin/body_fitted_ported_monolithic.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-reproducible-workload"
+path = "bin/reproducible_workload.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-scheduler-preconditioner"
+path = "bin/scheduler_preconditioner.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-fem-iterative"
+path = "bin/speaker_fem_iterative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-speaker-projected-reanalysis"
+path = "bin/speaker_projected_reanalysis.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative"
+path = "bin/solvers_iterative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct"
+path = "bin/solvers_direct.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct-scalar-execution"
+path = "bin/solvers_direct_scalar_execution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct-scalar-method-reference"
+path = "bin/solvers_direct_scalar_extended.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct-configured-diagnostics"
+path = "bin/solvers_direct_configured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-configured-diagnostics"
+path = "bin/solvers_sparse_configured.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-multifrontal-ldlt-reference"
+path = "bin/solvers_multifrontal_ldlt_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-conformance-matrix"
+path = "bin/solvers_conformance_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-factor-solve-reference"
+path = "bin/solvers_factor_solve_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-factor-solve-properties"
+path = "bin/solvers_factor_solve_properties.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct-breakdown-matrix"
+path = "bin/solvers_direct_breakdown_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-breakdown-matrix"
+path = "bin/solvers_eigen_breakdown_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-breakdown-matrix"
+path = "bin/solvers_iterative_breakdown_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-adaptive-failure-matrix"
+path = "bin/solvers_adaptive_failure_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differentiable-checkpoint-replay"
+path = "bin/solvers_differentiable_checkpoint_replay.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differential-reference"
+path = "bin/solvers_differential_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-parallel"
+path = "bin/solvers_sparse_lu_parallel.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-permutation-parallel"
+path = "bin/solvers_sparse_lu_permutation_parallel.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-adjoint"
+path = "bin/solvers_sparse_lu_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-adjoint-block"
+path = "bin/solvers_sparse_lu_adjoint_block.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-cholesky-adjoint"
+path = "bin/solvers_sparse_cholesky_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-factor-solve-complex-permutation"
+path = "bin/solvers_factor_solve_complex_permutation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-validation-corpus"
+path = "bin/solvers_validation_corpus.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-kkt-reference"
+path = "bin/solvers_optimization_kkt_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-kkt-matrix"
+path = "bin/solvers_optimization_kkt_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-kkt-gate-family"
+path = "bin/solvers_optimization_kkt_gate_family.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-scaled-kkt"
+path = "bin/solvers_optimization_scaled_kkt.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-validation-corpus-reference"
+path = "bin/solvers_validation_corpus_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-validation-corpus-workloads"
+path = "bin/solvers_validation_corpus_workloads.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-matrix-market-parser"
+path = "bin/solvers_matrix_market_parser.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-failure-exit-matrix"
+path = "bin/solvers_failure_exit_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-robustness"
+path = "bin/solvers_robustness.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-failure-matrix"
+path = "bin/solvers_failure_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-breakdown-matrix"
+path = "bin/solvers_breakdown_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-time-integration"
+path = "bin/solvers_time_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-convergence-spectrum"
+path = "bin/solvers_convergence_spectrum.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-reference"
+path = "bin/solvers_eigen_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-complex-reference"
+path = "bin/solvers_eigen_complex_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-generalized-reference"
+path = "bin/solvers_eigen_generalized_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mesher-box-quality"
+path = "bin/mesher_box_quality.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mesher-pathological"
+path = "bin/mesher_pathological.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-product-plc"
+path = "bin/product_plc.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mesher-adaptive-refinement"
+path = "bin/mesher_adaptive_refinement.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mesher-high-order-refinement-reference"
+path = "bin/mesher_high_order_refinement_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mesher-coarsening"
+path = "bin/mesher_coarsening.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mesher-motion"
+path = "bin/mesher_motion.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-nonlinear"
+path = "bin/solvers_nonlinear.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-nonlinear-generated-residual"
+path = "bin/solvers_nonlinear_generated_residual.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization"
+path = "bin/solvers_optimization.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-bobyqa"
+path = "bin/solvers_optimization_bobyqa.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-differential-reference"
+path = "bin/solvers_optimization_differential_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-status"
+path = "bin/solvers_optimization_status.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-epsilon-kkt"
+path = "bin/solvers_optimization_epsilon_kkt.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-line-search-boundary"
+path = "bin/solvers_optimization_line_search_boundary.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-line-search-generated"
+path = "bin/solvers_optimization_line_search_generated.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-risk"
+path = "bin/solvers_optimization_risk.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-risk-bfgs"
+path = "bin/solvers_optimization_risk_bfgs.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-gcmma"
+path = "bin/solvers_optimization_gcmma.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-ipm-state"
+path = "bin/solvers_optimization_ipm_state.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioners"
+path = "bin/solvers_preconditioners.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-contracts"
+path = "bin/solvers_preconditioner_contracts.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-chebyshev-finite-setup"
+path = "bin/solvers_chebyshev_finite_setup.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-submatrix-checked"
+path = "bin/solvers_sparse_submatrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-setup-diagnostics"
+path = "bin/solvers_preconditioner_setup_diagnostics.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-boundary-fuzz"
+path = "bin/solvers_boundary_fuzz.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-runtime-diagnostics"
+path = "bin/solvers_preconditioner_runtime_diagnostics.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-partition-boundary-matrix"
+path = "bin/solvers_preconditioner_partition_boundary_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-lobpcg"
+path = "bin/test_lobpcg.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal-validation"
+path = "bin/fem_thermal_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-validation"
+path = "bin/fem_beam_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-validation"
+path = "bin/fem_aeroacoustics_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-analogies-drp"
+path = "bin/fem_aeroacoustics_analogies_drp.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-wavy-wall"
+path = "bin/fem_aeroacoustics_wavy_wall.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-convected-duct"
+path = "bin/fem_aeroacoustics_convected_duct.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-cylinder-potential"
+path = "bin/fem_aeroacoustics_cylinder_potential.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-mms"
+path = "bin/fem_aeroacoustics_mms.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-zero-flow"
+path = "bin/fem_aeroacoustics_zero_flow.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-validation"
+path = "bin/fem_biharmonic_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eddy-current-validation"
+path = "bin/fem_eddy_current_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrostatic-validation"
+path = "bin/fem_electrostatic_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electroacoustics-validation"
+path = "bin/fem_electroacoustics_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electroacoustics-piston-tube"
+path = "bin/fem_electroacoustics_piston_tube.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electroacoustics-piston-baffle"
+path = "bin/fem_electroacoustics_piston_baffle.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electroacoustics-pulsating-sphere"
+path = "bin/fem_electroacoustics_pulsating_sphere.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electroacoustics-oscillating-sphere"
+path = "bin/fem_electroacoustics_oscillating_sphere.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electroacoustics-lumped"
+path = "bin/fem_electroacoustics_lumped.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-lumped-circuit-validation"
+path = "bin/fem_lumped_circuit_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-lumped-circuit-rc-step"
+path = "bin/fem_lumped_circuit_rc_step.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-lumped-circuit-rlc-resonance"
+path = "bin/fem_lumped_circuit_rlc_resonance.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-lumped-circuit-op-amp-gain"
+path = "bin/fem_lumped_circuit_op_amp_gain.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-lumped-circuit-filter-bode"
+path = "bin/fem_lumped_circuit_filter_bode.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-lumped-circuit-bridge-balance"
+path = "bin/fem_lumped_circuit_bridge_balance.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-plasticity-validation"
+path = "bin/fem_plasticity_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-validation"
+path = "bin/fem_shell_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-cfd-backend-parity"
+path = "bin/fem_cfd_backend_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-validation-matrix"
+path = "bin/fem_validation_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-element-contracts"
+path = "bin/fem_element_contracts.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-dg-p3-contract"
+path = "bin/fem_dg_p3_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-h1-p3-curved-geometry-reference"
+path = "bin/fem_h1_p3_curved_geometry_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-high-order-orientation-patch"
+path = "bin/fem_high_order_orientation_patch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-vector-laplacian-convergence"
+path = "bin/fem_vector_laplacian_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-transparent-limit"
+path = "bin/bem_transmission_transparent_limit.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-p3-tetra-reproduction"
+path = "bin/fem_p3_tetra_reproduction.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-p3-h1-triangle-quad-reproduction"
+path = "bin/fem_p3_h1_triangle_quad_reproduction.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fluid-interface-transmission"
+path = "bin/bem_fluid_interface_transmission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-operator"
+path = "bin/bem_transmission_operator.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-material-derivatives"
+path = "bin/bem_transmission_material_derivatives.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-impedance-speed-derivative"
+path = "bin/bem_impedance_speed_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-transmission-material-derivative"
+path = "bin/bem_compressed_transmission_material_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-transmission-material-derivatives"
+path = "bin/bem_galerkin_transmission_material_derivatives.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-compressed-transmission-material-derivative"
+path = "bin/bem_galerkin_compressed_transmission_material_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-pair-material-derivative"
+path = "bin/bem_galerkin_quad4_pair_material_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-material-derivative"
+path = "bin/bem_galerkin_quad4_material_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-self-wavenumber-derivative"
+path = "bin/bem_galerkin_quad4_self_wavenumber_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-galerkin-quad4-global-wavenumber-derivative"
+path = "bin/bem_galerkin_quad4_global_wavenumber_derivative.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-typed-raw-transmission-reference"
+path = "bin/bem_typed_raw_transmission_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-operator-invariants"
+path = "bin/fem_operator_invariants.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-tangent"
+path = "bin/fem_nonlinear_tangent.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-3d"
+path = "bin/fem_biharmonic_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-mms-3d"
+path = "bin/fem_biharmonic_mms_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-battery-3d"
+path = "bin/fem_battery_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-compressible-ns-3d"
+path = "bin/fem_compressible_ns_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-compressible-conservation-3d"
+path = "bin/fem_compressible_conservation_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-conjugate-heat-transfer-3d"
+path = "bin/fem_conjugate_heat_transfer_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrochemistry-3d"
+path = "bin/fem_electrochemistry_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrothermal-3d"
+path = "bin/fem_electrothermal_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-fracture-3d"
+path = "bin/fem_fracture_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-fsi-mortar-3d"
+path = "bin/fem_fsi_mortar_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-fsi-mortar-modes-3d"
+path = "bin/fem_fsi_mortar_modes_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-mhd-3d"
+path = "bin/fem_mhd_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-phase-field-flow-3d"
+path = "bin/fem_phase_field_flow_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-porous-flow-3d"
+path = "bin/fem_porous_flow_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-radiation-transport-3d"
+path = "bin/fem_radiation_transport_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-reacting-flow-3d"
+path = "bin/fem_reacting_flow_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-semiconductor-3d"
+path = "bin/fem_semiconductor_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermoelasticity-3d"
+path = "bin/fem_thermoelasticity_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermoelectric-3d"
+path = "bin/fem_thermoelectric_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-transport-3d"
+path = "bin/fem_transport_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-turbulence-3d"
+path = "bin/fem_turbulence_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-properties"
+path = "bin/compute_properties.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-operation-matrix"
+path = "bin/compute_operation_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-strided-contract"
+path = "bin/compute_strided_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-batched-dense"
+path = "bin/compute_batched_dense_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-block-workspace"
+path = "bin/compute_block_workspace.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-block-krylov-workspace"
+path = "bin/compute_block_krylov_workspace.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-gmres-workspace"
+path = "bin/compute_gmres_workspace.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-gmres-residual-contract"
+path = "bin/compute_gmres_residual_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-scheduler-contract"
+path = "bin/compute_scheduler_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-memory-pool-contract"
+path = "bin/compute_memory_pool_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-csr-spmv-contract"
+path = "bin/compute_csr_spmv_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-csr-spmm-contract"
+path = "bin/compute_csr_spmm_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-fmm-contract"
+path = "bin/compute_fmm_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-transfer-stats"
+path = "bin/compute_transfer_stats.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-perf-contract"
+path = "bin/compute_perf_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-performance-contract"
+path = "bin/compute_performance_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-cold-warm-contract"
+path = "bin/compute_cold_warm_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-csr-prebake-contract"
+path = "bin/compute_csr_prebake_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-xem-artifact-bundle"
+path = "bin/xem_artifact_bundle.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-xem-consumer-adapters"
+path = "bin/xem_consumer_adapters.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-xem-consumer-provenance"
+path = "bin/xem_consumer_provenance.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-xem-schema-compatibility"
+path = "bin/xem_schema_compatibility.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-xem-duplicate-key-rejection"
+path = "bin/xem_duplicate_key_rejection.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-backend-parity"
+path = "bin/compute_backend_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-workloads"
+path = "bin/compute_workloads.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-bem-kernel"
+path = "bin/compute_bem_kernel.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-blas"
+path = "bin/compute_blas.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-complex-gemv-parity"
+path = "bin/compute_complex_gemv_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-operator-tape"
+path = "bin/compute_operator_tape.rs"
+test = false
+required-features = ["qa-binaries"]
+
+# Multifrontal BLR validation binaries — exercise sonium-solvers'
+# MultifrontalBlrFactorization end-to-end on BEM / FEM systems and gate
+# residuals / analytical errors against the parity test bounds.
+[[bin]]
+name = "qa-blr-bem-sphere-scattering"
+path = "bin/blr_bem_sphere_scattering.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-blr-fem-helmholtz"
+path = "bin/blr_fem_helmholtz.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-blr-fem-elasticity"
+path = "bin/blr_fem_elasticity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal-1d-heat-generation"
+path = "bin/fem_thermal_1d_heat_generation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal-2d-disk"
+path = "bin/fem_thermal_2d_disk.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-1d-bar"
+path = "bin/fem_elasticity_1d_bar.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-couette"
+path = "bin/fem_stokes_couette.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-poiseuille-couette"
+path = "bin/fem_stokes_poiseuille_couette.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-acoustics-1d-duct"
+path = "bin/fem_acoustics_1d_duct.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-cantilever-uniform"
+path = "bin/fem_beam_cantilever_uniform.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrostatics-coaxial"
+path = "bin/fem_electrostatics_coaxial.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal-2d-rectangle-fourier"
+path = "bin/fem_thermal_2d_rectangle_fourier.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-ss-uniform-load"
+path = "bin/fem_beam_ss_uniform_load.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-ss-central-load"
+path = "bin/fem_beam_ss_central_load.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-thick-cylinder"
+path = "bin/fem_elasticity_thick_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-acoustics-2d-standing-wave"
+path = "bin/fem_acoustics_2d_standing_wave.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-propped-cantilever"
+path = "bin/fem_beam_propped_cantilever.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-stokes-hagen-poiseuille"
+path = "bin/fem_stokes_hagen_poiseuille.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-acoustics-impedance-tube"
+path = "bin/fem_acoustics_impedance_tube.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-1d-pec-cavity"
+path = "bin/fem_maxwell_1d_pec_cavity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-2d-waveguide-te10"
+path = "bin/fem_maxwell_2d_waveguide_te10.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-2d-waveguide-te11"
+path = "bin/fem_maxwell_2d_waveguide_te11.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-plane-wave"
+path = "bin/fem_maxwell_plane_wave.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-maxwell-pec-cylinder-scattering"
+path = "bin/fem_maxwell_pec_cylinder_scattering.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrostatics-sphere-uniform-field"
+path = "bin/fem_electrostatics_sphere_uniform_field.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrostatics-point-charge-image"
+path = "bin/fem_electrostatics_point_charge_image.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrostatics-two-cylinder"
+path = "bin/fem_electrostatics_two_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-ss-rectangular-sinusoidal"
+path = "bin/fem_biharmonic_ss_rectangular_sinusoidal.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-clamped-circular"
+path = "bin/fem_biharmonic_clamped_circular.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-ss-circular-point-load"
+path = "bin/fem_biharmonic_ss_circular_point_load.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-corner-supported-square"
+path = "bin/fem_biharmonic_corner_supported_square.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-biharmonic-levy-rectangle"
+path = "bin/fem_biharmonic_levy_rectangle.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-clamped-circular-plate"
+path = "bin/fem_shell_clamped_circular_plate.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-ss-circular-plate"
+path = "bin/fem_shell_ss_circular_plate.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-cylindrical-pressure"
+path = "bin/fem_shell_cylindrical_pressure.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-spherical-pressure"
+path = "bin/fem_shell_spherical_pressure.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-cylindrical-ring-load"
+path = "bin/fem_shell_cylindrical_ring_load.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-magnetostatics-solenoid"
+path = "bin/fem_magnetostatics_solenoid.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-magnetostatics-cylinder-dc"
+path = "bin/fem_magnetostatics_cylinder_dc.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-magnetostatics-dipole"
+path = "bin/fem_magnetostatics_dipole.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-magnetostatics-air-gap"
+path = "bin/fem_magnetostatics_air_gap.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-magnetostatics-mms"
+path = "bin/fem_magnetostatics_mms.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eddy-current-1d-skin-effect"
+path = "bin/fem_eddy_current_1d_skin_effect.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eddy-current-cylinder-ac"
+path = "bin/fem_eddy_current_cylinder_ac.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eddy-current-slab-filament"
+path = "bin/fem_eddy_current_slab_filament.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eddy-current-thin-sheet"
+path = "bin/fem_eddy_current_thin_sheet.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eddy-current-mms"
+path = "bin/fem_eddy_current_mms.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-solid-neo-hookean-tension"
+path = "bin/fem_nonlinear_solid_neo_hookean_tension.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-solid-simple-shear"
+path = "bin/fem_nonlinear_solid_simple_shear.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-solid-sphere-inflation"
+path = "bin/fem_nonlinear_solid_sphere_inflation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-solid-tube-inflation"
+path = "bin/fem_nonlinear_solid_tube_inflation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-nonlinear-solid-compression"
+path = "bin/fem_nonlinear_solid_compression.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-plasticity-1d-perfect"
+path = "bin/fem_plasticity_1d_perfect.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-plasticity-1d-isotropic-hardening"
+path = "bin/fem_plasticity_1d_isotropic_hardening.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-plasticity-thick-cylinder"
+path = "bin/fem_plasticity_thick_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-plasticity-mms"
+path = "bin/fem_plasticity_mms.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-plasticity-cyclic-bauschinger"
+path = "bin/fem_plasticity_cyclic_bauschinger.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-piezoelectric-1d-thickness-mode"
+path = "bin/fem_piezoelectric_1d_thickness_mode.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-piezoelectric-1d-axial-load"
+path = "bin/fem_piezoelectric_1d_axial_load.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-piezoelectric-bimorph"
+path = "bin/fem_piezoelectric_bimorph.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-piezoelectric-radial-cylinder"
+path = "bin/fem_piezoelectric_radial_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-piezoelectric-mms"
+path = "bin/fem_piezoelectric_mms.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-contact-hertz-sphere"
+path = "bin/fem_contact_hertz_sphere.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-contact-hertz-cylinder"
+path = "bin/fem_contact_hertz_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-contact-rigid-punch"
+path = "bin/fem_contact_rigid_punch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-contact-winkler-layer"
+path = "bin/fem_contact_winkler_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-contact-mms-penalty"
+path = "bin/fem_contact_mms_penalty.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermal-1d-transient"
+path = "bin/fem_thermal_1d_transient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-plate-hole"
+path = "bin/fem_elasticity_plate_hole.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-torsion-rectangle"
+path = "bin/fem_elasticity_torsion_rectangle.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-acoustics-cylinder-scattering"
+path = "bin/fem_acoustics_cylinder_scattering.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-acoustics-sphere-scattering"
+path = "bin/fem_acoustics_sphere_scattering.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-elasticity-beam-modal"
+path = "bin/fem_elasticity_beam_modal.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-eigenphysics-wrappers"
+path = "bin/fem_eigenphysics_wrappers.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-physics-assembly-integration"
+path = "bin/fem_physics_assembly_integration.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-convection-diffusion-1d"
+path = "bin/fem_convection_diffusion_1d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-topology-cantilever"
+path = "bin/fem_topology_cantilever.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-beam-timoshenko-cantilever"
+path = "bin/fem_beam_timoshenko_cantilever.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-mindlin-plate-ss-sinusoidal"
+path = "bin/fem_mindlin_plate_ss_sinusoidal.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem1-element-local-cuda"
+path = "bin/fem1_element_local_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-fem1-matrix-free-cuda"
+path = "bin/fem1_matrix_free_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-fem1-p2-cuda"
+path = "bin/fem1_p2_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-fem3-stokes-cuda"
+path = "bin/compute_fem_stokes_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[features]
+default = []
+qa-binaries = []
+meshlang = []
+meshlang-wasm = ["dep:sonium-roomsim"]
+# Binary-local unit tests are opt-in. Ordinary `cargo test -p sonium-qa`
+# exercises the lightweight integration contracts without compiling the full
+# QA executable graph; `just qa-bin-tests` retains these focused tests.
+qa-bin-tests = ["qa-binaries"]
+# Re-enable the legacy room simulation binaries (qa-bem-freq-sweep-recycling
+# and qa-pipeline-physics-validation), which depend on sonium-sim-room.
+legacy-sims = ["dep:sonium-sim-room"]
+# Independent Wolfram Engine reference checks for every `sonium-sim-*`
+# application crate. Kept opt-in so ordinary sonium-qa builds do not pull in
+# the propeller and room application dependency graph (PC-fan production QA
+# is part of the default manifest).
+sim-wolfram = [
+    "dep:sonium-sim-propellers",
+    "dep:sonium-sim-room",
+]
+# Deterministic production-surrogate checks for the propeller application.
+# Separate from `sim-wolfram`: no external Wolfram Engine is involved.
+sim-propellers = ["dep:sonium-sim-propellers"]
+# Validate the CUDA backend GMRES path against the CPU baseline. Requires
+# the `cuda` feature on `sonium-compute` (mature cuBLAS/cuSPARSE via
+# cudarc) and a CUDA driver at runtime.
+cuda = [
+    "sonium-compute/cuda",
+    "sonium-bem/cuda",
+    "sonium-fem/cuda",
+    "sonium-sim-pcfan/cuda",
+    "sonium-sim-speaker/cuda",
+    "sonium-sim-speaker-modeling/cuda",
+]
+# Validate the Metal backend GMRES path against the CPU baseline. Also
+# enables the Phase 1.3 Metal-backed BEM tbem assembly path consumed by
+# `qa-bem-assembly-metal-bench`.
+metal = ["sonium-compute/metal", "sonium-bem/metal"]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "qa-fem-potential-flow-cylinder"
+path = "bin/fem_potential_flow_cylinder.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-porous-flow-1d-pressure-driven"
+path = "bin/fem_porous_flow_1d_pressure_driven.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-transport-gaussian-diffusion"
+path = "bin/fem_transport_gaussian_diffusion.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-transport-1d-adr-steady"
+path = "bin/fem_transport_1d_adr_steady.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-electrochemistry-diffusion-layer"
+path = "bin/fem_electrochemistry_diffusion_layer.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-semiconductor-carrier-diffusion"
+path = "bin/fem_semiconductor_carrier_diffusion.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermoelasticity-bar"
+path = "bin/fem_thermoelasticity_bar.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-composites-tension"
+path = "bin/fem_composites_tension.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-fracture-damage-profile"
+path = "bin/fem_fracture_damage_profile.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shallow-water-standing-wave"
+path = "bin/fem_shallow_water_standing_wave.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-turbulence-scalar-transport"
+path = "bin/fem_turbulence_scalar_transport.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-compressible-flow-euler"
+path = "bin/fem_compressible_flow_euler.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shallow-water-lake-at-rest"
+path = "bin/fem_shallow_water_lake_at_rest.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-transport-supg-1d"
+path = "bin/fem_transport_supg_1d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-thermoelasticity-constrained-stress"
+path = "bin/fem_thermoelasticity_constrained_stress.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-compressible-flow-sod-shock-tube"
+path = "bin/fem_compressible_flow_sod_shock_tube.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-porous-flow-terzaghi-consolidation"
+path = "bin/fem_porous_flow_terzaghi_consolidation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-beam-balance"
+path = "bin/structural_beam_balance.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-cfd-invariants"
+path = "bin/pcfan_cfd_invariants.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-forward-cuda-contract"
+path = "bin/pcfan_forward_cuda_contract.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-pcfan-bdf-cuda-breadth"
+path = "bin/pcfan_bdf_cuda_breadth.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-pcfan-mesh-convergence-reference"
+path = "bin/pcfan_mesh_convergence_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-actuator-loading-reference"
+path = "bin/pcfan_actuator_loading_reference.rs"
+
+[[bin]]
+name = "qa-pcfan-mass-balance-reference"
+path = "bin/pcfan_mass_balance_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-cfd-independence-reference"
+path = "bin/pcfan_cfd_independence_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-measured-correlation-reference"
+path = "bin/pcfan_measured_correlation_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-predicted-correlation-pipeline-reference"
+path = "bin/pcfan_predicted_correlation_pipeline_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-structural-fatigue-reference"
+path = "bin/pcfan_structural_fatigue_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-fidelity-promotion-reference"
+path = "bin/pcfan_fidelity_promotion_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-gallery-image-contract"
+path = "bin/pcfan_gallery_image_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-propeller-load-power"
+path = "bin/propeller_load_power.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-operating-envelope"
+path = "bin/propeller_operating_envelope.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-reference-correlation"
+path = "bin/propeller_reference_correlation.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-gallery"
+path = "bin/propeller_gallery.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-capability-matrix"
+path = "bin/propeller_capability_matrix.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-rotating-dipole"
+path = "bin/propeller_rotating_dipole.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-multipoint-envelope"
+path = "bin/propeller_multipoint_envelope.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-dynamic-stall"
+path = "bin/propeller_dynamic_stall.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-duct-shroud"
+path = "bin/propeller_duct_shroud.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-body-fitted-flow"
+path = "bin/propeller_body_fitted_flow.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-body-fitted-turbulence"
+path = "bin/propeller_body_fitted_turbulence.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-body-fitted-rotating-wall"
+path = "bin/propeller_body_fitted_rotating_wall.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-body-fitted-swirl"
+path = "bin/propeller_body_fitted_swirl.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-body-fitted-coupled-swirl"
+path = "bin/propeller_body_fitted_coupled_swirl.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-axisymmetric-flow"
+path = "bin/propeller_axisymmetric_flow.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-axisymmetric-meridional-flow"
+path = "bin/propeller_axisymmetric_meridional_flow.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-fwh"
+path = "bin/propeller_fwh.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-viscous-core"
+path = "bin/propeller_viscous_core.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-vortex-lattice"
+path = "bin/propeller_vortex_lattice.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-measured-calibration"
+path = "bin/propeller_measured_calibration.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-fidelity-promotion"
+path = "bin/propeller_fidelity_promotion.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-measured-dataset"
+path = "bin/propeller_measured_dataset.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-measured-attestation"
+path = "bin/propeller_measured_attestation.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-moving-fwh"
+path = "bin/propeller_moving_fwh.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-mean-flow-fwh"
+path = "bin/propeller_mean_flow_fwh.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-farassat-fwh"
+path = "bin/propeller_farassat_fwh.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-measured-uncertainty"
+path = "bin/propeller_measured_uncertainty.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-mesh-state-transfer"
+path = "bin/propeller_mesh_state_transfer.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-propeller-panel-refinement"
+path = "bin/propeller_panel_refinement.rs"
+test = false
+required-features = ["qa-binaries", "sim-propellers"]
+
+[[bin]]
+name = "qa-structural-beam-modal"
+path = "bin/structural_beam_modal.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-beam-convergence"
+path = "bin/structural_beam_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-numcalc-parity"
+path = "bin/bem_numcalc_parity.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "compare-freefem-room"
+path = "bin/compare_freefem_room.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-bem-freq-sweep-recycling"
+path = "bin/bem_freq_sweep_recycling.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+
+[[bin]]
+name = "qa-pipeline-physics-validation"
+path = "bin/pipeline_physics_validation.rs"
+test = false
+required-features = ["qa-binaries", "legacy-sims"]
+[[bin]]
+name = "qa-fft-checked-execution"
+path = "bin/fft_checked_execution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fft-family-contracts"
+path = "bin/fft_contracts.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-template-reference"
+path = "bin/meshlang_template_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-ported-template-reference"
+path = "bin/meshlang_ported_template_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-mixed-control-flow-reference"
+path = "bin/meshlang_mixed_control_flow_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-source-provenance-reference"
+path = "bin/meshlang_source_provenance_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-imported-provenance-reference"
+path = "bin/meshlang_imported_provenance_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-materialized-span-reference"
+path = "bin/meshlang_materialized_span_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-provenance-admission-reference"
+path = "bin/meshlang_provenance_admission_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-dynamic-loop-reference"
+path = "bin/meshlang_dynamic_loop_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-hessian-provider-reference"
+path = "bin/meshlang_hessian_provider_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-nested-control-flow-reference"
+path = "bin/meshlang_nested_control_flow_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-dynamic-binding-reference"
+path = "bin/meshlang_dynamic_binding_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-static-dynamic-binding-reference"
+path = "bin/meshlang_static_dynamic_binding_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-multi-statement-function-reference"
+path = "bin/meshlang_multi_statement_function_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-inline-control-flow-reference"
+path = "bin/meshlang_inline_control_flow_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-parser-contract-reference"
+path = "bin/meshlang_parser_contract_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-topology-diff-reference"
+path = "bin/meshlang_topology_diff_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-nested-ported-template-reference"
+path = "bin/meshlang_nested_ported_template_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-capability-contract-reference"
+path = "bin/meshlang_capability_contract_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-parser-mutation-reference"
+path = "bin/meshlang_mutation_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-recovery-fuzz-reference"
+path = "bin/meshlang_recovery_fuzz_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-parser-subtree-reference"
+path = "bin/meshlang_parser_subtree_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-import-policy-reference"
+path = "bin/meshlang_import_policy_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-tooling-contract-reference"
+path = "bin/meshlang_tooling_contract_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-visitor-reference"
+path = "bin/meshlang_visitor_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-state-transfer-reference"
+path = "bin/meshlang_state_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-state-transfer-apply-reference"
+path = "bin/meshlang_state_transfer_apply_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-state-transfer-chain-reference"
+path = "bin/meshlang_state_transfer_chain_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-spatial-interpolation-reference"
+path = "bin/meshlang_spatial_interpolation_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-state-transfer-reference"
+path = "bin/meshlang_fem_state_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-adaptive-h1-transfer-reference"
+path = "bin/meshlang_fem_adaptive_h1_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-adaptive-h1-chain-transfer-reference"
+path = "bin/meshlang_fem_adaptive_h1_chain_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-partitioned-adaptive-h1-transfer-reference"
+path = "bin/meshlang_fem_partitioned_adaptive_h1_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p2-transfer-reference"
+path = "bin/meshlang_fem_h1_p2_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p2-adaptive-history-reference"
+path = "bin/meshlang_fem_h1_p2_adaptive_history_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p2-adaptive-chain-reference"
+path = "bin/meshlang_fem_h1_p2_adaptive_chain_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p3-transfer-reference"
+path = "bin/meshlang_fem_h1_p3_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p3-adaptive-history-reference"
+path = "bin/meshlang_fem_h1_p3_adaptive_history_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p3-adaptive-chain-reference"
+path = "bin/meshlang_fem_h1_p3_adaptive_chain_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p3-q3-adaptive-reference"
+path = "bin/meshlang_fem_h1_p3_q3_adaptive_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p3-tetra-adaptive-reference"
+path = "bin/meshlang_fem_h1_p3_tetra_adaptive_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-curved-p2-tetra-refinement-reference"
+path = "bin/meshlang_fem_h1_curved_p2_tetra_refinement_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-curved-p2-hexa-reference"
+path = "bin/meshlang_fem_h1_curved_p2_hexa_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-p3-hexa-adaptive-reference"
+path = "bin/meshlang_fem_h1_p3_hexa_adaptive_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-expression-emission-reference"
+path = "bin/meshlang_expression_emission_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-mixed-transfer-reference"
+path = "bin/meshlang_fem_h1_mixed_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-h1-mixed-adaptive-reference"
+path = "bin/meshlang_fem_h1_mixed_adaptive_reference.rs"
+test = false
+required-features = ["qa-binaries", "meshlang"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-state-transfer-reference"
+path = "bin/meshlang_fem_hcurl_state_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-order2-transfer-reference"
+path = "bin/meshlang_fem_hcurl_order2_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-mixed-transfer-reference"
+path = "bin/meshlang_fem_hcurl_mixed_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-order2-lineage-transfer-reference"
+path = "bin/meshlang_fem_hcurl_order2_lineage_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-order1-lineage-transfer-reference"
+path = "bin/meshlang_fem_hcurl_order1_lineage_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-complex-transfer-reference"
+path = "bin/meshlang_fem_hcurl_complex_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-curved-transfer-reference"
+path = "bin/meshlang_fem_hcurl_curved_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hcurl-order2-curved-transfer-reference"
+path = "bin/meshlang_fem_hcurl_order2_curved_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hdiv-rt0-transfer-reference"
+path = "bin/meshlang_fem_hdiv_rt0_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hdiv-rt0-complex-transfer-reference"
+path = "bin/meshlang_fem_hdiv_rt0_complex_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hdiv-rt1-transfer-reference"
+path = "bin/meshlang_fem_hdiv_rt1_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hdiv-rt1-curved-transfer-reference"
+path = "bin/meshlang_fem_hdiv_rt1_curved_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries", "meshlang"]
+
+[[bin]]
+name = "qa-meshlang-fem-hdiv-rt1-chain-transfer-reference"
+path = "bin/meshlang_fem_hdiv_rt1_chain_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-fem-hdiv-rt1-3d-transfer-reference"
+path = "bin/meshlang_fem_hdiv_rt1_3d_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-registry-reference"
+path = "bin/meshlang_registry_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-registry-signature-reference"
+path = "bin/meshlang_registry_signature_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-projection-reference"
+path = "bin/meshlang_projection_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-grammar-contract-reference"
+path = "bin/meshlang_grammar_contract_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-wasm-boundary-reference"
+path = "bin/meshlang_wasm_boundary_reference.rs"
+test = false
+required-features = ["qa-binaries", "meshlang-wasm"]
+
+[[bin]]
+name = "qa-meshlang-wasm-package-reference"
+path = "bin/meshlang_wasm_package_reference.rs"
+test = false
+required-features = ["qa-binaries", "meshlang-wasm"]
+
+[[bin]]
+name = "qa-meshlang-registry-package-reference"
+path = "bin/meshlang_registry_package_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-registry-filesystem-transport-reference"
+path = "bin/meshlang_registry_filesystem_transport_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-registry-key-transport-reference"
+path = "bin/meshlang_registry_key_transport_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-projection-native-reference"
+path = "bin/meshlang_projection_native_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-projection-native-volume-reference"
+path = "bin/meshlang_projection_volume_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-compound-reference"
+path = "bin/meshlang_compound_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-mesh-controls-reference"
+path = "bin/meshlang_mesh_controls_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-shipping-corpus-reference"
+path = "bin/meshlang_shipping_corpus_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-reference"
+path = "bin/solvers_iterative_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-family-reference"
+path = "bin/solvers_iterative_family_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-extended-reference"
+path = "bin/solvers_iterative_extended_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-prebaked-checked-contract"
+path = "bin/fem_prebaked_checked_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-solver-failure-contract"
+path = "bin/fem_solver_failure_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-failure-contract"
+path = "bin/solvers_preconditioner_failure_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-iterative-result-contract"
+path = "bin/solvers_iterative_result_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-block-result-contract"
+path = "bin/solvers_iterative_block_result_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-scalar-contract"
+path = "bin/solvers_iterative_scalar_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-scalar-execution"
+path = "bin/solvers_iterative_scalar_execution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-compatibility-scalar-execution"
+path = "bin/solvers_compatibility_scalar_execution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-compatibility-cg-execution"
+path = "bin/solvers_compatibility_cg_execution.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-checked-dense-constructor"
+path = "bin/solvers_checked_dense_constructor.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-compatibility-failure-matrix"
+path = "bin/solvers_compatibility_failure_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-facade-result-contract"
+path = "bin/solvers_facade_result_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-extended-result-contract"
+path = "bin/solvers_extended_result_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-mixed-hdiv-conservation"
+path = "bin/fem_mixed_hdiv_conservation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-triangle-reference"
+path = "bin/fem_hdiv_rt1_triangle_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-quadrilateral-reference"
+path = "bin/fem_hdiv_rt1_quadrilateral_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-tetra-reference"
+path = "bin/fem_hdiv_rt1_tetra_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-hexa-reference"
+path = "bin/fem_hdiv_rt1_hexa_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-curved-p2-reference"
+path = "bin/fem_hdiv_curved_p2_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hcurl-curved-p2-reference"
+path = "bin/fem_hcurl_curved_p2_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-piola-consumer-contract"
+path = "bin/fem_piola_consumer_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-natural-boundary-contract"
+path = "bin/fem_natural_boundary_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-mpc-system-contract"
+path = "bin/fem_mpc_system_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-hanging-node-contract"
+path = "bin/fem_hanging_node_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-higher-order-natural-boundary-contract"
+path = "bin/fem_higher_order_natural_boundary_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-higher-order-hanging-node-contract"
+path = "bin/fem_higher_order_hanging_node_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-higher-order-hexa-hanging-node-contract"
+path = "bin/fem_higher_order_hexa_hanging_node_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-vector-h1-hanging-node-contract"
+path = "bin/fem_vector_h1_hanging_node_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-hcurl-hanging-edge-contract"
+path = "bin/fem_hcurl_hanging_edge_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-hdiv-rt0-hanging-edge-contract"
+path = "bin/fem_hdiv_rt0_hanging_edge_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-hdiv-rt0-hanging-tri-face-contract"
+path = "bin/fem_hdiv_rt0_hanging_tri_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-hanging-tri-face-contract"
+path = "bin/fem_hdiv_rt1_hanging_tri_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-hcurl-order2-hanging-edge-contract"
+path = "bin/fem_hcurl_order2_hanging_edge_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hcurl-order1-3d-hanging-edge-contract"
+path = "bin/fem_hcurl_order1_3d_hanging_edge_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hcurl-order1-3d-hanging-face-contract"
+path = "bin/fem_hcurl_order1_3d_hanging_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hcurl-order2-3d-hanging-face-contract"
+path = "bin/fem_hcurl_order2_3d_hanging_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hcurl-order2-3d-hanging-face-interior-contract"
+path = "bin/fem_hcurl_order2_3d_hanging_face_interior_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-hanging-edge-contract"
+path = "bin/fem_hdiv_rt1_hanging_edge_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+
+name = "qa-fem-vector-natural-boundary-contract"
+path = "bin/fem_vector_natural_boundary_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-h1-hcurl-curved-p2-commuting-reference"
+path = "bin/fem_h1_hcurl_curved_p2_commuting_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hcurl-tensor-curved-reference"
+path = "bin/fem_hcurl_tensor_curved_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-external-deck-provenance"
+path = "bin/structural_external_deck_provenance.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-linear-euler-buckling-reference"
+path = "bin/structural_buckling_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-fem-topology-2d"
+path = "bin/structural_fem_topology_2d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-solid-topology-3d"
+path = "bin/structural_solid_topology_3d.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-solid-topology-3d-robust"
+path = "bin/structural_solid_topology_3d_robust.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-external-execution-contract"
+path = "bin/structural_external_execution_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-nafems-reference"
+path = "bin/structural_nafems_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-fem-topology-2d-robust"
+path = "bin/structural_fem_topology_2d_robust.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-bounded-references"
+path = "bin/structural_bounded_references.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-family-references"
+path = "bin/structural_family_references.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-resolved-coupling-reference"
+path = "bin/structural_resolved_coupling_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-constrained-topology-reference"
+path = "bin/structural_constrained_topology_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-backend-capabilities"
+path = "bin/structural_backend_capabilities.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-topology-gallery"
+path = "bin/structural_topology_gallery.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-solid-topology-gallery"
+path = "bin/structural_solid_topology_gallery.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-solid-topology-convergence"
+path = "bin/structural_solid_topology_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-hyperelastic-3d-contact"
+path = "bin/structural_hyperelastic_3d_contact.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-hyperelastic-3d-force"
+path = "bin/structural_hyperelastic_3d_force.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-hyperelastic-3d-force-contact"
+path = "bin/structural_hyperelastic_3d_force_contact.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-structural-transient-fem-reference"
+path = "bin/structural_transient_fem_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-continuous-quadratic-topology"
+path = "bin/bem_continuous_quadratic_topology.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-continuous-quadratic-quad4"
+path = "bin/bem_continuous_quadratic_quad4.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-hmatrix"
+path = "bin/bem_higher_order_hmatrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-hmatrix-quad4"
+path = "bin/bem_higher_order_hmatrix_quad4.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-continuous-higher-order-hmatrix-quad4"
+path = "bin/bem_continuous_higher_order_hmatrix_quad4.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-continuous-linear-hmatrix-quad4"
+path = "bin/bem_continuous_linear_hmatrix_quad4.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-continuous-quadratic-mie-convergence"
+path = "bin/bem_continuous_quadratic_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-axisymmetric-ring-mie-convergence"
+path = "bin/bem_axisymmetric_ring_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-axisymmetric-penetrable-sphere-mie-convergence"
+path = "bin/bem_axisymmetric_penetrable_sphere_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-axisymmetric-profile-transmission"
+path = "bin/bem_axisymmetric_profile_transmission.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-axisymmetric-profile-forward-batch"
+path = "bin/bem_axisymmetric_profile_forward_batch.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-tbem-quadrature-policy-reference"
+path = "bin/bem_tbem_quadrature_policy_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-continuous-quadratic-quad4-mie-convergence"
+path = "bin/bem_continuous_quadratic_quad4_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-transmission-continuous-quadratic-quad4-mie-convergence"
+path = "bin/bem_transmission_continuous_quadratic_quad4_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-penetrable-sphere-mie-convergence"
+path = "bin/bem_penetrable_sphere_mie_convergence.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-mixed-conservation"
+path = "bin/fem_hdiv_rt1_mixed_conservation.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-optimization-result-contract"
+path = "bin/solvers_optimization_result_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct-compatibility-normalization"
+path = "bin/solvers_direct_normalization.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-direct-result-contract"
+path = "bin/solvers_direct_result_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-lu-transpose-transactional"
+path = "bin/solvers_lu_transpose_transactional.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-cholesky-transactional"
+path = "bin/solvers_cholesky_transactional.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-operator-boundaries"
+path = "bin/solvers_operator_boundaries.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-saddle-point-contract"
+path = "bin/solvers_saddle_point_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-saddle-point-adjoint"
+path = "bin/solvers_saddle_point_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-curved-rt1-mixed-physical-reference"
+path = "bin/fem_hdiv_curved_rt1_mixed_physical_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-iterative-block-workload-reference"
+path = "bin/solvers_iterative_block_workload_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-meshlang-transformed-parent-topology-reference"
+path = "bin/meshlang_transformed_parent_topology_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-quad4-higher-order-kernel-reference"
+path = "bin/bem_quad4_higher_order_kernel_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-field-evaluation-reference"
+path = "bin/bem_higher_order_field_evaluation_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-operating-envelope-reference"
+path = "bin/pcfan_operating_envelope_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-operating-envelope-optimization-reference"
+path = "bin/pcfan_operating_envelope_optimization_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-reduced-adjoint-reference"
+path = "bin/pcfan_reduced_adjoint_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-structural-calibration-reference"
+path = "bin/pcfan_structural_calibration_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-accelerator-parity-reference"
+path = "bin/pcfan_accelerator_parity_reference.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-pcfan-adjoint-cuda-contract"
+path = "bin/pcfan_adjoint_cuda_contract.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-pcfan-resolved-adjoint-reference"
+path = "bin/pcfan_resolved_adjoint_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-turbulent-transient-adjoint-reference"
+path = "bin/pcfan_turbulent_transient_adjoint_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-measured-product-evidence-reference"
+path = "bin/pcfan_measured_product_evidence_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-measured-product-validation-reference"
+path = "bin/pcfan_measured_product_validation_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-pcfan-topology-chain-transfer-reference"
+path = "bin/pcfan_topology_chain_transfer_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-fem-adjoint"
+path = "bin/compute_fem_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-fem-structural-cuda"
+path = "bin/compute_fem_structural_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-compute-fem-maxwell-cuda"
+path = "bin/compute_fem_maxwell_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-compute-cuda-vendor-comparison"
+path = "bin/compute_cuda_vendor_comparison.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-compute-c6-breadth-cuda"
+path = "bin/compute_c6_breadth_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-fem-device-solver"
+path = "bin/fem_device_solver.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-compute-bem-adjoint"
+path = "bin/compute_bem_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-external-differential-reference"
+path = "bin/solvers_external_differential_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-compatibility-method-matrix"
+path = "bin/solvers_compatibility_method_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-fem-bem-workload"
+path = "bin/solvers_fem_bem_workload.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-optimization-scipy-reference"
+path = "bin/solvers_optimization_scipy_reference.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gmres-checkpoint"
+path = "bin/solvers_gmres_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gmres-basis-checkpoint"
+path = "bin/solvers_gmres_basis_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gmres-basis-checkpoint-scalars"
+path = "bin/solvers_gmres_basis_checkpoint_scalars.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gmres-basis-checkpoint-adaptive"
+path = "bin/solvers_gmres_basis_checkpoint_adaptive.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gmres-basis-operator-boundary"
+path = "bin/solvers_gmres_basis_operator_boundary.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differentiable-block"
+path = "bin/solvers_differentiable_block.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differentiable-continuation"
+path = "bin/solvers_differentiable_continuation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-adjoint-continuation"
+path = "bin/solvers_mixed_precision_adjoint_continuation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-checkpoint-portable"
+path = "bin/solvers_mixed_precision_checkpoint_portable.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differentiable-lifecycle"
+path = "bin/solvers_differentiable_lifecycle.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differentiable-taylor-replay"
+path = "bin/solvers_differentiable_taylor_replay.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-differentiable-native-eigen"
+path = "bin/solvers_differentiable_native_eigen.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-refinement-many"
+path = "bin/solvers_sparse_lu_refinement_many.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-pivot-reuse"
+path = "bin/solvers_sparse_lu_pivot_reuse.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-preprocessing"
+path = "bin/solvers_sparse_lu_preprocessing.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-csr-index-width"
+path = "bin/solvers_csr_index_width.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-bsr-generated-nonfinite"
+path = "bin/solvers_bsr_generated_nonfinite.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-csr-generated-nonfinite"
+path = "bin/solvers_csr_generated_nonfinite.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-csr-mutation-generated-nonfinite"
+path = "bin/solvers_csr_mutation_generated_nonfinite.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-csr-spmv-transactional"
+path = "bin/solvers_csr_spmv_transactional.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-spd-certificate"
+path = "bin/solvers_spd_certificate.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-hpd-certificate"
+path = "bin/solvers_hpd_certificate.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-spd-duplicate-csr"
+path = "bin/solvers_spd_duplicate_csr.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-factor-solve-complex-cholesky"
+path = "bin/solvers_factor_solve_complex_cholesky.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-adjoint-matrix"
+path = "bin/solvers_preconditioner_adjoint_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-coarse-adjoint"
+path = "bin/solvers_preconditioner_coarse_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-numa-partitioning-report"
+path = "bin/solvers_numa_partitioning_report.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-cuda"
+path = "bin/solvers_preconditioner_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-failure-cuda"
+path = "bin/solvers_preconditioner_failure_cuda.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-solvers-iterative-cuda-throughput"
+path = "bin/solvers_iterative_cuda_throughput.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-solvers-iterative-cuda-failure-matrix"
+path = "bin/solvers_iterative_cuda_failure_matrix.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-solvers-facade-support-matrix"
+path = "bin/solvers_facade_support_matrix.rs"
+test = false
+required-features = ["qa-binaries", "cuda"]
+
+[[bin]]
+name = "qa-solvers-facade-native-x86"
+path = "bin/solvers_facade_native_x86.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-lu-checkpoint"
+path = "bin/solvers_sparse_lu_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-ilu-checkpoint"
+path = "bin/solvers_ilu_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-chebyshev-checkpoint"
+path = "bin/solvers_chebyshev_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-ilut-checkpoint"
+path = "bin/solvers_ilut_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-parilut-checkpoint"
+path = "bin/solvers_parilut_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-parallel-ilu-checkpoint"
+path = "bin/solvers_parallel_ilu_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-block-jacobi-checkpoint"
+path = "bin/solvers_block_jacobi_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-hilu-checkpoint"
+path = "bin/solvers_hilu_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-checkpoint"
+path = "bin/solvers_mixed_precision_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-block-checkpoint"
+path = "bin/solvers_mixed_precision_block_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-block-checkpoint-portable"
+path = "bin/solvers_mixed_precision_block_checkpoint_portable.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-block-fgmres-checkpoint-scalars"
+path = "bin/solvers_block_fgmres_checkpoint_scalars.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-distributed-checkpoint-manifest"
+path = "bin/solvers_distributed_checkpoint_manifest.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gcro-dr-checkpoint"
+path = "bin/solvers_gcro_dr_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gcro-dr-checkpoint-scalars"
+path = "bin/solvers_gcro_dr_checkpoint_scalars.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gcro-dr-transactional"
+path = "bin/solvers_gcro_dr_transactional.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-gmres-deflated-operator-boundary"
+path = "bin/solvers_gmres_deflated_operator_boundary.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-deflated-checkpoint"
+path = "bin/solvers_deflated_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-recycled-checkpoint"
+path = "bin/solvers_recycled_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-adjoint-randomized"
+path = "bin/solvers_preconditioner_adjoint_randomized.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-adjoint-capability-matrix"
+path = "bin/solvers_preconditioner_adjoint_capability_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-operator-adjoint-randomized"
+path = "bin/solvers_operator_adjoint_randomized.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-hilu-coupled-adjoint"
+path = "bin/solvers_preconditioner_hilu_coupled_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-mixed-block-adjoint"
+path = "bin/solvers_preconditioner_mixed_block_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-preconditioner-mixed-hilu-adjoint"
+path = "bin/solvers_preconditioner_mixed_hilu_adjoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-transient-checkpoint"
+path = "bin/solvers_transient_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-quadratic-vtu-export"
+path = "bin/bem_quadratic_vtu_export.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-source-position-objective-gradient"
+path = "bin/bem_source_position_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-higher-order-source-position-objective-gradient"
+path = "bin/bem_higher_order_source_position_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-source-position-objective-gradient"
+path = "bin/bem_compressed_source_position_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-higher-order-source-position-objective-gradient"
+path = "bin/bem_compressed_higher_order_source_position_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-geometry-translation-objective-gradient"
+path = "bin/bem_geometry_translation_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-geometry-translation-objective-gradient"
+path = "bin/bem_compressed_geometry_translation_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-compressed-higher-order-geometry-translation-objective-gradient"
+path = "bin/bem_compressed_higher_order_geometry_translation_objective_gradient.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-operator-cache-reuse"
+path = "bin/bem_operator_cache_reuse.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-operator-cache-hmatrix-reuse"
+path = "bin/bem_operator_cache_hmatrix_reuse.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-operator-cache-soft-dirichlet"
+path = "bin/bem_operator_cache_soft_dirichlet.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-continuation"
+path = "bin/solvers_eigen_continuation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-eigen-pseudo-arclength"
+path = "bin/solvers_eigen_pseudo_arclength.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-mixed-precision-failure-diagnostics"
+path = "bin/solvers_mixed_precision_failure_diagnostics.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-adjoint-capability"
+path = "bin/solvers_mixed_precision_adjoint_capability.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-mixed-precision-block-failure-diagnostics"
+path = "bin/solvers_mixed_precision_block_failure_diagnostics.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-mixed-precision-promoted-residual"
+path = "bin/solvers_mixed_precision_promoted_residual.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-mixed-precision-recycled-deflated"
+path = "bin/solvers_mixed_precision_recycled_deflated.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-factor-solve-seeded-matrix"
+path = "bin/solvers_factor_solve_seeded_matrix.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-solvers-factor-solve-near-singular"
+path = "bin/solvers_factor_solve_near_singular.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hcurl-order2-periodic-contract"
+path = "bin/fem_hcurl_order2_periodic_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt0-periodic-face-contract"
+path = "bin/fem_hdiv_rt0_periodic_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-periodic-face-contract"
+path = "bin/fem_hdiv_rt1_periodic_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fem-bem-trace-transfer"
+path = "bin/bem_fem_bem_trace_transfer.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-rt1-periodic-quad-face-contract"
+path = "bin/fem_hdiv_rt1_periodic_quad_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-fem-hdiv-rt1-periodic-mixed-face-contract"
+path = "bin/fem_hdiv_rt1_periodic_mixed_face_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+[[bin]]
+name = "qa-compute-capability-contract"
+path = "bin/compute_capability_contract.rs"
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-capability-modes"
+path = "bin/compute_capability_modes.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-fft-view-contract"
+path = "bin/compute_fft_view_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-view-copy-contract"
+path = "bin/compute_view_copy_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-nd-view-copy-contract"
+path = "bin/compute_nd_view_copy_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-compute-compatibility-contract"
+path = "bin/compute_compatibility_contract.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-hdiv-rt1-multielement-ownership"
+path = "bin/fem_hdiv_rt1_multielement_ownership.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-solvers-sparse-cholesky-checkpoint"
+path = "bin/solvers_sparse_cholesky_checkpoint.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-dual-basis-field"
+path = "bin/bem_dual_basis_field.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fem-bem-trace-operator"
+path = "bin/bem_fem_bem_trace_operator.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fem-bem-preconditioner"
+path = "bin/bem_fem_bem_preconditioner.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-nested-trace-operator"
+path = "bin/bem_nested_trace_operator.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-nested-trace-preconditioner"
+path = "bin/bem_nested_trace_preconditioner.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-nested-trace-solve"
+path = "bin/bem_nested_trace_solve.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-bem-fem-bem-trace-solve"
+path = "bin/bem_fem_bem_trace_solve.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mfem-poisson-action"
+path = "bin/mfem_poisson_action.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mfem-helmholtz"
+path = "bin/mfem_helmholtz.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-mfem-aperture"
+path = "bin/mfem_aperture.rs"
+test = false
+required-features = ["qa-binaries"]

@@ -1,0 +1,40 @@
+[package]
+name = "meshlang-compiler"
+version = "0.1.8"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "MeshLang compiler: AST → Gmsh .geo / Python API"
+
+[features]
+default = ["wasm-exports"]
+wasm-exports = []
+
+[[bin]]
+name = "meshlang"
+path = "src/main.rs"
+
+[dependencies]
+meshlang-ast = { workspace = true }
+meshlang-parser = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+ed25519-zebra = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ureq = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "compiler_bench"
+harness = false

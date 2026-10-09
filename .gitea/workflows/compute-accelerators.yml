@@ -1,0 +1,602 @@
+name: sonium-compute accelerators
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-bem/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-fft/**"
+      - "crates/sonium-qa/**"
+      - "crates/sonium-sim-speaker/**"
+      - "crates/sonium-sim-speaker-modeling/**"
+      - "crates/sonium-solvers/**"
+      - "Justfile"
+      - "scripts/**"
+      - ".gitea/workflows/compute-accelerators.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-bem/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-fft/**"
+      - "crates/sonium-qa/**"
+      - "crates/sonium-sim-speaker/**"
+      - "crates/sonium-sim-speaker-modeling/**"
+      - "crates/sonium-solvers/**"
+      - "Justfile"
+      - "scripts/**"
+      - ".gitea/workflows/compute-accelerators.yml"
+
+jobs:
+  cuda-required:
+    runs-on: [self-hosted, linux, cuda]
+    env:
+      SONIUM_REQUIRE_CUDA: "1"
+      SONIUM_OUTPUT_DIR: target/sonium-cuda-evidence
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record CUDA hardware and toolchain
+        run: |
+          set -eu
+          command -v nvidia-smi
+          command -v nvcc
+          device="$(nvidia-smi --query-gpu=name --format=csv,noheader | head -n1)"
+          driver="$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -n1)"
+          memory="$(nvidia-smi --query-gpu=memory.total --format=csv,noheader | head -n1)"
+          topology="$(nvidia-smi topo -m | tr '\n' ';' | sed 's/;*$//')"
+          test -n "$device"
+          test -n "$driver"
+          test -n "$memory"
+          test -n "$topology"
+          nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+          rustc -Vv
+          cargo -V
+          test -n "${GITHUB_ENV:-}"
+          echo "SONIUM_QA_CUDA_DEVICE_NAME=$device" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_CUDA_DRIVER_VERSION=$driver" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_CUDA_TOOLKIT_VERSION=$(nvcc --version | tail -n1)" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_CUDA_TOPOLOGY=$topology" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_COMPILER=$(rustc --version)" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_TARGET_FEATURES=cuda" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_RUNTIME_DISPATCH=cuda-native" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_THREAD_POLICY=rayon-default" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_AFFINITY_POLICY=runner-default" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_NUMA_POLICY=runner-default" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_DETERMINISTIC_MODE=enabled" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_MICROCODE=$(grep -m1 microcode /proc/cpuinfo | cut -d: -f2- | xargs)" >> "$GITHUB_ENV"
+      - name: Require provisioned CUDA vendor roofline baseline
+        run: |
+          set -eu
+          test -n "${SONIUM_QA_CUDA_PEAK_FLOPS:-}"
+          test -n "${SONIUM_QA_CUDA_MEMORY_BANDWIDTH:-}"
+          python3 - "$SONIUM_QA_CUDA_PEAK_FLOPS" "$SONIUM_QA_CUDA_MEMORY_BANDWIDTH" <<'PY'
+          import math
+          import sys
+
+          for name, value in zip(("peak FLOP/s", "memory bandwidth B/s"), sys.argv[1:]):
+              number = float(value)
+              if not math.isfinite(number) or number <= 0:
+                  raise SystemExit(f"{name} baseline must be a finite positive number")
+          PY
+          test -n "${GITHUB_ENV:-}"
+          echo "SONIUM_QA_CUDA_PEAK_FLOPS=$SONIUM_QA_CUDA_PEAK_FLOPS" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_CUDA_MEMORY_BANDWIDTH=$SONIUM_QA_CUDA_MEMORY_BANDWIDTH" >> "$GITHUB_ENV"
+      - name: Check CUDA backend
+        run: cargo check -p sonium-compute --features cuda
+      - name: Test CUDA parity
+        run: cargo test -p sonium-compute --features cuda --test parity
+      - name: Run CUDA operation matrix
+        run: just _qa-run-features qa-compute-operation-matrix 120 cuda compute.operation-matrix.v1
+        env:
+          SONIUM_REQUIRE_BACKEND: cuda
+      - name: Run CUDA sparse workload
+        run: just _qa-run-features qa-compute-workloads 120 cuda compute.sparse-workload.v1
+        env:
+          SONIUM_REQUIRE_BACKEND: cuda
+      - name: Probe missing CUDA device fails closed
+        run: |
+          if SONIUM_REQUIRE_BACKEND=cuda SONIUM_CUDA_DEVICE_ORDINAL=999999 \
+            cargo run -p sonium-qa --features qa-binaries,cuda --bin qa-compute-operation-matrix; then
+            echo "missing-device probe unexpectedly passed" >&2
+            exit 1
+          fi
+      - name: Probe forced CUDA fallback fails closed
+        run: |
+          if SONIUM_REQUIRE_BACKEND=cuda SONIUM_CUDA_FORCE_FALLBACK=1 \
+            cargo run -p sonium-qa --features qa-binaries,cuda --bin qa-compute-operation-matrix; then
+            echo "forced-fallback probe unexpectedly passed" >&2
+            exit 1
+          fi
+      - name: Aggregate required CUDA QA evidence
+        run: just qa-release-accelerators nvidia-cuda
+      - name: Upload CUDA release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-cuda-release-evidence
+          path: target/sonium-qa-accelerators/nvidia-cuda/**
+      - name: Check FFT CUDA feature
+        run: cargo check -p sonium-fft --features cuda
+      - name: Test FFT CUDA feature
+        run: cargo test -p sonium-fft --features cuda --lib
+
+  metal-required:
+    runs-on: [self-hosted, macos, metal]
+    env:
+      SONIUM_REQUIRE_METAL: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record Metal hardware and toolchain
+        run: |
+          system_profiler SPDisplaysDataType
+          sw_vers
+          rustc -Vv
+          cargo -V
+      - name: Check Metal backend
+        run: cargo check -p sonium-compute --features metal
+      - name: Test Metal parity
+        run: cargo test -p sonium-compute --features metal --test parity
+      - name: Run Metal operation matrix
+        run: cargo run -p sonium-qa --features qa-binaries,metal --bin qa-compute-operation-matrix
+        env:
+          SONIUM_REQUIRE_BACKEND: metal
+      - name: Run Metal sparse workload
+        run: cargo run -p sonium-qa --features qa-binaries,metal --bin qa-compute-workloads
+        env:
+          SONIUM_REQUIRE_BACKEND: metal
+      - name: Check FFT Metal feature
+        run: cargo check -p sonium-fft --features metal
+      - name: Test FFT Metal feature
+        run: cargo test -p sonium-fft --features metal --lib
+
+  aarch64-bem-reference:
+    # The accepted comparison artifact is produced on a native Apple
+    # aarch64 runner.  Rosetta and cross compilation are deliberately not
+    # accepted as the reference architecture.
+    runs-on: [self-hosted, macos, metal]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native aarch64 runner and record toolchain
+        run: |
+          test "$(uname -m)" = "arm64"
+          rustc -Vv
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "aarch64-apple-darwin"
+          cargo -V
+          sysctl -n hw.model || true
+      - name: Run native aarch64 BEM SIMD parity evidence
+        run: |
+          SONIUM_OUTPUT_DIR="$PWD/target/sonium-aarch64-bem-evidence" \
+            cargo test -p sonium-compute --test native_x86_evidence -- --nocapture
+      - name: Validate accepted aarch64 artifact identity
+        run: |
+          test "$(jq -r .schema target/sonium-aarch64-bem-evidence/sonium_native_x86_evidence.json)" = "2"
+          test "$(jq -r .target_arch target/sonium-aarch64-bem-evidence/sonium_native_x86_evidence.json)" = "aarch64"
+          test "$(jq -r .status target/sonium-aarch64-bem-evidence/sonium_native_x86_evidence.json)" = "pass"
+          test "$(jq -r '.observables | length' target/sonium-aarch64-bem-evidence/sonium_native_x86_evidence.json)" = "1634"
+      - name: Upload accepted aarch64 BEM evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-aarch64-bem-evidence
+          path: target/sonium-aarch64-bem-evidence/sonium_native_x86_evidence.json
+
+  native-x86-bem:
+    # Native x86 execution is a separate lane from the macOS/Rosetta
+    # cross-target recipe.  It consumes the accepted native-aarch64 artifact
+    # and records the cross-architecture numerical comparison in its log.
+    needs:
+      - aarch64-bem-reference
+      - aarch64-speaker-reference
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    env:
+      SONIUM_REQUIRE_AVX2_FMA: "1"
+      SONIUM_QA_THREAD_POLICY: rayon-default
+      SONIUM_QA_AFFINITY_POLICY: runner-default
+      SONIUM_QA_NUMA_POLICY: runner-default
+      SONIUM_QA_DETERMINISTIC_MODE: enabled
+      SONIUM_AARCH64_GOLDEN: target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json
+      SONIUM_REQUIRE_AARCH64_GOLDEN: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native x86_64 runner and record toolchain
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          rustc -Vv
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "x86_64-unknown-linux-gnu"
+          cargo -V
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw avx2
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw fma
+          test -n "${GITHUB_ENV:-}"
+          echo "SONIUM_QA_CPU_MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_MICROCODE=$(grep -m1 microcode /proc/cpuinfo | cut -d: -f2- | xargs)" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_COMPILER=$(rustc --version)" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_TARGET_FEATURES=avx2,fma,sse4.2" >> "$GITHUB_ENV"
+          echo "SONIUM_QA_RUNTIME_DISPATCH=avx2-fma-native" >> "$GITHUB_ENV"
+      - name: Download accepted aarch64 BEM evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-aarch64-bem-evidence
+          path: target/sonium-aarch64-bem-evidence
+      - name: Download accepted aarch64 speaker evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-speaker-native-aarch64-reference
+          path: target/sonium-aarch64-speaker-evidence
+      - name: Verify accepted native aarch64 speaker checksum
+        run: |
+          set -eu
+          cd target/sonium-aarch64-speaker-evidence
+          sha256sum -c speaker_native_x86_golden.json.sha256
+      - name: Run native x86 BEM SIMD parity evidence
+        run: |
+          SONIUM_OUTPUT_DIR="$PWD/target/sonium-native-x86-evidence" \
+          SONIUM_AARCH64_REFERENCE="$PWD/target/sonium-aarch64-bem-evidence/sonium_native_x86_evidence.json" \
+          SONIUM_REQUIRE_AVX2_FMA=1 \
+            cargo test -p sonium-compute --test native_x86_evidence -- --nocapture
+      - name: Run native x86 forced-scalar comparison evidence
+        env:
+          SONIUM_COMPUTE_FORCE_SCALAR: "1"
+          SONIUM_REQUIRE_AVX2_FMA: "0"
+        run: |
+          SONIUM_OUTPUT_DIR="$PWD/target/sonium-native-x86-scalar" \
+            cargo test -p sonium-compute --test native_x86_evidence -- --nocapture --test-threads=1
+      - name: Run native x86 FastMath AVX2/FMA evidence
+        run: cargo test -p sonium-fastmath --test x86_validation -- --nocapture
+        env:
+          SONIUM_FASTMATH_REQUIRE_AVX2: "1"
+      - name: Run native x86 FastMath regime performance evidence
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw avx2
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw fma
+          mkdir -p target/sonium-fastmath-native-x86
+          SONIUM_FASTMATH_REQUIRE_AVX2=1 SONIUM_FASTMATH_FORCE_AVX2=1 \
+            CARGO_TARGET_DIR="$PWD/.target-unix-f3" \
+            cargo run --release -p sonium-fastmath --bin fastmath_benchmark \
+            > target/sonium-fastmath-native-x86/native-avx2.json
+          SONIUM_FASTMATH_FORCE_SCALAR=1 \
+            CARGO_TARGET_DIR="$PWD/.target-unix-f3" \
+            cargo run --release -p sonium-fastmath --bin fastmath_benchmark \
+            > target/sonium-fastmath-native-x86/scalar.json
+          python3 crates/sonium-fastmath/benchmarks/check_x86_baseline.py \
+            crates/sonium-fastmath/benchmarks/x86_64-baseline.json \
+            target/sonium-fastmath-native-x86/native-avx2.json \
+            --output target/sonium-fastmath-native-x86/statistical-gate.json
+      - name: Validate native FastMath performance artifacts
+        run: |
+          set -eu
+          jq -e '.schema_version == 1 and .architecture == "x86_64" and .dispatch == "avx2" and .correctness_gate == "passed" and (.runtime_features | contains("avx2=true")) and (.runtime_features | contains("fma=true"))' \
+            target/sonium-fastmath-native-x86/native-avx2.json
+          jq -e '.dispatch == "scalar" and .correctness_gate == "passed"' \
+            target/sonium-fastmath-native-x86/scalar.json
+          jq -e '.schema_version == 1 and .status == "pass" and (.failures | length == 0)' \
+            target/sonium-fastmath-native-x86/statistical-gate.json
+      - name: Upload native FastMath performance artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-fastmath-native-x86-performance
+          path: target/sonium-fastmath-native-x86/**
+      - name: Run native x86 FFT reference coverage
+        run: cargo test -p sonium-fft --lib
+      - name: Run native x86 speaker golden
+        run: cargo run -p sonium-qa --release --features qa-binaries --bin qa-speaker-native-x86-golden
+        env:
+          SONIUM_OUTPUT_DIR: target/sonium-native-x86-speaker
+      - name: Run native x86 BLAS cache and vendor baselines
+        env:
+          RAYON_NUM_THREADS: "1"
+          OPENBLAS_NUM_THREADS: "1"
+          OMP_NUM_THREADS: "1"
+        run: |
+          cargo bench -p sonium-compute --bench blas1_compare --features bench-openblas -- --noplot
+          cargo bench -p sonium-compute --bench blas2_compare --features bench-openblas -- --noplot
+          cargo bench -p sonium-compute --bench blas3_compare --features bench-openblas -- --noplot
+      - name: Upload native x86 BLAS performance evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-native-x86-blas-performance
+          path: target/criterion/**
+      - name: Aggregate required native x86 QA evidence
+        run: just qa-release-accelerators native-x86_64
+      - name: Upload native x86 release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-native-x86-release-evidence
+          path: target/sonium-qa-accelerators/native-x86_64/**
+      - name: Validate native x86 AVX2/FMA artifact identity
+        run: |
+          test "$(jq -r .schema target/sonium-native-x86-evidence/sonium_native_x86_evidence.json)" = "2"
+          test "$(jq -r .target_arch target/sonium-native-x86-evidence/sonium_native_x86_evidence.json)" = "x86_64"
+          test "$(jq -r .status target/sonium-native-x86-evidence/sonium_native_x86_evidence.json)" = "pass"
+          test "$(jq -r '.observables | length' target/sonium-native-x86-evidence/sonium_native_x86_evidence.json)" = "1634"
+          jq -e '(.features | contains("avx2=true")) and (.features | contains("fma=true"))' target/sonium-native-x86-evidence/sonium_native_x86_evidence.json
+          jq -e '.aarch64_comparison_max_abs_error != null and .aarch64_comparison_max_abs_error <= 5e-5' target/sonium-native-x86-evidence/sonium_native_x86_evidence.json
+      - name: Validate native x86 forced-scalar artifact identity
+        run: |
+          set -eu
+          artifact=target/sonium-native-x86-scalar/sonium_native_x86_evidence.json
+          test "$(jq -r .schema "$artifact")" = "2"
+          test "$(jq -r .target_arch "$artifact")" = "x86_64"
+          test "$(jq -r .status "$artifact")" = "scalar-baseline"
+          test "$(jq -r .selected_kernel "$artifact")" = "scalar-fallback"
+          test "$(jq -r .force_scalar "$artifact")" = "true"
+          test "$(jq -r '.observables | length' "$artifact")" = "1634"
+          test "$(jq -r .cases_failed "$artifact")" = "0"
+      - name: Validate native x86 speaker artifact identity
+        run: |
+          set -eu
+          artifact=target/sonium-native-x86-speaker/speaker_native_x86_golden.json
+          test "$(jq -r .schema_version "$artifact")" = "3"
+          test "$(jq -r .target_arch "$artifact")" = "x86_64"
+          test "$(jq -r '.directivity | length' "$artifact")" = "2"
+          test "$(jq -r '.driver_model_reference.schema_version' "$artifact")" = "2"
+          test "$(jq -r '.projected_driver_model_reference.schema_version' "$artifact")" = "2"
+          jq -e '(.dispatch | contains(["avx2=true"])) and (.dispatch | contains(["fma=true"]))' "$artifact"
+      - name: Upload native x86 BEM evidence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-native-x86-bem-evidence
+          path: |
+            target/sonium-native-x86-evidence/sonium_native_x86_evidence.json
+            target/sonium-native-x86-scalar/sonium_native_x86_evidence.json
+
+  native-x86-sanitizer:
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert nightly sanitizer toolchain
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          test "$(rustc +nightly -vV | sed -n 's/^host: //p')" = "x86_64-unknown-linux-gnu"
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw avx2
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw fma
+      - name: Configure compute sanitizer toolchain
+        run: |
+          chmod +x scripts/sonium-sanitizer-rustc-wrapper
+          echo "RUSTC_WRAPPER=$PWD/scripts/sonium-sanitizer-rustc-wrapper" >> "$GITHUB_ENV"
+      - name: Run native x86 unsafe boundaries under AddressSanitizer
+        env:
+          ASAN_OPTIONS: detect_leaks=0
+          LSAN_OPTIONS: detect_leaks=0
+          RUSTFLAGS: -Zsanitizer=address
+          SONIUM_REQUIRE_AVX2_FMA: "1"
+        run: |
+          mkdir -p target/sonium-native-x86-asan
+          SONIUM_OUTPUT_DIR="$PWD/target/sonium-native-x86-asan" \
+            cargo +nightly test --release -p sonium-compute --test native_x86_evidence -- --test-threads=1 --nocapture
+      - name: Validate native x86 sanitizer artifact
+        run: |
+          set -eu
+          jq -e '.schema == 2 and .target_arch == "x86_64" and .status == "pass" and (.cases_failed == 0) and (.max_norm_error <= 1e-12) and (.observables | length == 1634)' \
+            target/sonium-native-x86-asan/sonium_native_x86_evidence.json
+      - name: Upload native x86 sanitizer evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-native-x86-sanitizer
+          path: target/sonium-native-x86-asan/sonium_native_x86_evidence.json
+
+  aarch64-speaker-reference:
+    # The accepted speaker comparison artifact is generated on the native
+    # aarch64 host, never through Rosetta or cross compilation.
+    runs-on: [self-hosted, macos, metal]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native aarch64 runner and record toolchain
+        run: |
+          set -eu
+          test "$(uname -m)" = "arm64"
+          rustc -Vv
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "aarch64-apple-darwin"
+          cargo -V
+          sysctl -n hw.model || true
+      - name: Run native aarch64 speaker reference producer
+        run: cargo run -p sonium-qa --release --features qa-binaries --bin qa-speaker-native-x86-golden
+        env:
+          SONIUM_AARCH64_REFERENCE_ONLY: "1"
+          SONIUM_OUTPUT_DIR: target/sonium-aarch64-speaker-evidence
+      - name: Validate accepted aarch64 speaker artifact identity
+        run: |
+          test "$(jq -r .schema_version target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json)" = "3"
+          test "$(jq -r .target_arch target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json)" = "aarch64"
+          test "$(jq -r '.directivity | length' target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json)" = "2"
+          test "$(jq -r '.driver_model_reference.schema_version' target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json)" = "2"
+          test "$(jq -r '.projected_driver_model_reference.schema_version' target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json)" = "2"
+          jq -e '(.dispatch | contains(["simd=neon"])) and any(.dispatch[]; startswith("vendor=") and (.[7:] | length > 0) and ((.[7:] | ascii_downcase) != "unknown"))' target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json
+          (
+            cd target/sonium-aarch64-speaker-evidence
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum speaker_native_x86_golden.json > speaker_native_x86_golden.json.sha256
+              sha256sum -c speaker_native_x86_golden.json.sha256
+            else
+              shasum -a 256 speaker_native_x86_golden.json > speaker_native_x86_golden.json.sha256
+              shasum -a 256 -c speaker_native_x86_golden.json.sha256
+            fi
+          )
+      - name: Upload accepted native aarch64 speaker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-speaker-native-aarch64-reference
+          path: |
+            target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json
+            target/sonium-aarch64-speaker-evidence/speaker_native_x86_golden.json.sha256
+
+  avx512-required:
+    runs-on: [self-hosted, linux, x86_64, avx512]
+    env:
+      SONIUM_FASTMATH_REQUIRE_AVX512: "1"
+      SONIUM_QA_THREAD_POLICY: rayon-default
+      SONIUM_QA_AFFINITY_POLICY: runner-default
+      SONIUM_QA_NUMA_POLICY: runner-default
+      SONIUM_QA_DETERMINISTIC_MODE: enabled
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native AVX-512 runner
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw avx512f
+          rustc -Vv
+      - name: Record native AVX-512 provenance
+        run: |
+          set -eu
+          mkdir -p target/sonium-avx512-evidence
+          cpu_model="$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          microcode="$(grep -m1 microcode /proc/cpuinfo | cut -d: -f2- | xargs)"
+          test -n "$cpu_model"
+          test -n "$microcode"
+          export SONIUM_QA_CPU_MODEL="$cpu_model"
+          export SONIUM_QA_MICROCODE="$microcode"
+          python3 - <<'PY'
+          import json, os, platform, subprocess
+          from pathlib import Path
+          payload = {
+              "schema": "sonium-qa-platform-evidence/v1",
+              "hardware": "native-x86_64-avx512",
+              "target_arch": platform.machine(),
+              "cpu_model": os.environ["SONIUM_QA_CPU_MODEL"],
+              "microcode": os.environ["SONIUM_QA_MICROCODE"],
+              "os": platform.platform(),
+              "compiler": subprocess.check_output(["rustc", "--version"], text=True).strip(),
+              "target_features": "avx512f",
+              "runtime_dispatch": "avx512-required",
+              "thread_policy": os.environ["SONIUM_QA_THREAD_POLICY"],
+              "affinity_policy": os.environ["SONIUM_QA_AFFINITY_POLICY"],
+              "numa_policy": os.environ["SONIUM_QA_NUMA_POLICY"],
+              "deterministic_mode": os.environ["SONIUM_QA_DETERMINISTIC_MODE"],
+          }
+          Path("target/sonium-avx512-evidence/provenance.json").write_text(json.dumps(payload, indent=2) + "\n")
+          PY
+      - name: Run required AVX-512 FastMath evidence
+        run: cargo test -p sonium-fastmath --test x86_validation -- --nocapture
+      - name: Run AVX-512 FFT reference coverage
+        run: cargo test -p sonium-fft --lib
+      - name: Run AVX-512 compute reference coverage
+        run: cargo test -p sonium-compute --lib
+      - name: Upload AVX-512 provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-avx512-platform-evidence
+          path: target/sonium-avx512-evidence/provenance.json
+
+  windows-x86-portable:
+    runs-on: [self-hosted, windows, x86_64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record Windows x86 toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([System.Environment]::Is64BitOperatingSystem -eq $false) { throw 'x86_64 Windows is required' }
+          rustc -Vv
+          cargo -V
+      - name: Test FastMath portable/reference coverage
+        shell: pwsh
+        run: cargo test -p sonium-fastmath --lib
+      - name: Test FFT portable/reference coverage
+        shell: pwsh
+        run: cargo test -p sonium-fft --lib
+      - name: Test compute portable/reference coverage
+        shell: pwsh
+        run: cargo test -p sonium-compute --lib
+      - name: Test QA result portable/reference contract
+        shell: pwsh
+        run: cargo test -p sonium-qa --lib
+      - name: Record Windows x86 portable provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force target/sonium-windows-x86-evidence | Out-Null
+          $processor = Get-CimInstance Win32_Processor | Select-Object -First 1
+          $payload = @{
+            schema = 'sonium-qa-platform-evidence/v1'
+            hardware = 'portable-x86_64-windows'
+            target_arch = 'x86_64'
+            cpu_model = [string]$processor.Name
+            microcode = ('processor-revision=' + [string]$processor.Revision)
+            os = [System.Environment]::OSVersion.VersionString
+            compiler = (rustc --version)
+            target_features = 'portable-reference'
+            runtime_dispatch = 'portable-reference'
+            thread_policy = 'runner-default'
+            affinity_policy = 'runner-default'
+            numa_policy = 'runner-default'
+            deterministic_mode = 'enabled'
+          }
+          $payload | ConvertTo-Json | Set-Content target/sonium-windows-x86-evidence/provenance.json
+      - name: Upload Windows x86 provenance
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-windows-x86-platform-evidence
+          path: target/sonium-windows-x86-evidence/provenance.json
+
+  qa-release-final:
+    if: ${{ always() }}
+    needs:
+      - cuda-required
+      - metal-required
+      - aarch64-bem-reference
+      - aarch64-speaker-reference
+      - native-x86-bem
+      - native-x86-sanitizer
+      - avx512-required
+      - windows-x86-portable
+    runs-on: [self-hosted, linux]
+    env:
+      SONIUM_REQUIRE_ACCELERATOR_EVIDENCE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require every platform lane to succeed
+        if: ${{ needs.cuda-required.result != 'success' || needs.metal-required.result != 'success' || needs.aarch64-bem-reference.result != 'success' || needs.aarch64-speaker-reference.result != 'success' || needs.native-x86-bem.result != 'success' || needs.native-x86-sanitizer.result != 'success' || needs.avx512-required.result != 'success' || needs.windows-x86-portable.result != 'success' }}
+        run: |
+          echo "one or more required accelerator/platform lanes failed" >&2
+          exit 1
+      - name: Download CUDA shard evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-cuda-release-evidence
+          path: target/sonium-qa-accelerators/nvidia-cuda
+      - name: Download native x86 shard evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-native-x86-release-evidence
+          path: target/sonium-qa-accelerators/native-x86_64
+      - name: Download native x86 sanitizer evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-native-x86-sanitizer
+          path: target/sonium-native-x86-asan
+      - name: Download AVX-512 platform evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-avx512-platform-evidence
+          path: target/sonium-avx512-evidence
+      - name: Download Windows x86 platform evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-windows-x86-platform-evidence
+          path: target/sonium-windows-x86-evidence
+      - name: Test strict QA runner policy
+        run: just qa-policy-test
+      - name: Validate serialized accelerator fan-in
+        run: python3 scripts/validate_accelerator_fan_in.py
+      - name: Run final workspace check
+        run: cargo check --workspace
+      - name: Run final workspace Clippy
+        run: cargo clippy --workspace
+      - name: Archive final release evidence
+        run: just qa-release-evidence
+      - name: Upload final release evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-qa-final-release-evidence
+          path: target/sonium-qa-evidence/**

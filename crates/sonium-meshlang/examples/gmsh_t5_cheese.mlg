@@ -1,0 +1,83 @@
+/// "Cheese block" — OCC reinterpretation of Gmsh Tutorial 5
+///
+/// The original t5.geo uses the built-in kernel to construct a truncated
+/// cube (14 explicit points, 21 lines, 9 surfaces) with 5 spherical holes
+/// built from circle arcs and a macro. That geometry is inherently
+/// built-in-kernel and cannot be directly expressed in MeshLang/OCC.
+///
+/// This example recreates the same *concept* (cube with spherical holes)
+/// using OCC CSG: Box + Sphere + BooleanDifference. Gmsh's own t16.geo
+/// takes the same approach: "using solid modelling with the OpenCASCADE
+/// geometry kernel, the same geometry could be built quite differently."
+///
+/// Reference: https://gmsh.info/doc/textures/t5_geo.png
+
+param lcar1 = 0.1
+param lcar2 = 0.0005
+param lcar3 = 0.055
+
+// Sphere hole parameters (matches the original for-loop)
+param hole_r = 0.09
+param hole_y = 0.75
+
+geometry cheese {
+    // The truncated cube is approximated here as a full unit cube.
+    // (The original t5.geo defines a chamfered cube via 14 explicit points;
+    //  the OCC kernel lets us model that with a box minus corner wedge
+    //  if desired, but we keep it simple here.)
+    let block = Box(1.0, 1.0, 1.0)
+
+    // Five spherical holes along a diagonal (x and z both advance by 0.166)
+    let h1 = Sphere(r: hole_r) |> translate(0.166, hole_y, 0.166)
+    let h2 = Sphere(r: hole_r) |> translate(0.332, hole_y, 0.332)
+    let h3 = Sphere(r: hole_r) |> translate(0.498, hole_y, 0.498)
+    let h4 = Sphere(r: hole_r) |> translate(0.664, hole_y, 0.664)
+    let h5 = Sphere(r: hole_r) |> translate(0.830, hole_y, 0.830)
+
+    // Punch all holes via boolean difference
+    let swiss = block - h1 - h2 - h3 - h4 - h5
+}
+
+mesh for cheese {
+    default_size: lcar1
+    min_size: lcar2
+    algorithm_2d: frontal
+
+    // Finest mesh at point (0.5, 0.5, 0.5) — the truncated corner vertex
+    // in the original geometry. Original: Point(1) = {0.5,0.5,0.5,lcar2}
+    refine in(Box(0.01, 0.01, 0.01) |> translate(0.495, 0.495, 0.495)) {
+        size: lcar2
+    }
+
+    // Fine mesh near the hole surfaces
+    refine near(cheese.h1, distance: 0.03) {
+        size: lcar3
+    }
+    refine near(cheese.h2, distance: 0.03) {
+        size: lcar3
+    }
+    refine near(cheese.h3, distance: 0.03) {
+        size: lcar3
+    }
+    refine near(cheese.h4, distance: 0.03) {
+        size: lcar3
+    }
+    refine near(cheese.h5, distance: 0.03) {
+        size: lcar3
+    }
+}
+
+physics {
+    group outer_surface: neumann = cheese.swiss.faces
+    group hole_1: volume = cheese.h1
+    group hole_2: volume = cheese.h2
+    group hole_3: volume = cheese.h3
+    group hole_4: volume = cheese.h4
+    group hole_5: volume = cheese.h5
+    group block_body: volume = cheese.swiss
+}
+
+export {
+    format: msh4
+    filename: "t5_cheese.msh"
+}

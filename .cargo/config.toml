@@ -1,0 +1,17 @@
+[build]
+# Optimize for the host CPU (mirrors math-audio).
+rustflags = ["-Ctarget-cpu=native"]
+
+# ----------------------------------------------------------------------
+# Linux x86_64: use mold via clang for lightning-fast parallel linking
+# Requires `clang` and `mold` on the runner, e.g.:
+#   sudo apt install -y clang mold
+# ----------------------------------------------------------------------
+
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
+rustflags = [
+  "-C", "link-arg=-fuse-ld=mold",  # Force the mold linker
+  "-C", "target-cpu=native",
+  "-C", "symbol-mangling-version=v0", # Faster mangling, better demangling
+]

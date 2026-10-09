@@ -1,0 +1,30 @@
+[package]
+name = "sonium-solvers-sparse"
+version = "0.4.5"
+description = "Sparse matrix formats (CSR, BSR, triplet) and SpMV plans for sonium solvers"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+sonium-solvers-core = { workspace = true }
+sonium-solvers-sys = { workspace = true }
+sonium-compute = { workspace = true }
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+sonium-solvers-core = { workspace = true }
+sonium-solvers-sys = { workspace = true }
+
+[[bench]]
+name = "sparse_x86"
+harness = false

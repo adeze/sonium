@@ -1,0 +1,17 @@
+/// Represents a single filter in a parametric equalizer.
+#[derive(Debug, Clone, Default)]
+///
+/// Center frequency in Hz
+/// Q factor (quality factor)
+/// Gain in dB
+/// Type of filter (e.g., "PK", "LP", "HP")
+pub struct FilterRow {
+    /// Center frequency in Hz
+    pub freq: f64,
+    /// Q factor (quality factor)
+    pub q: f64,
+    /// Gain in dB
+    pub gain: f64,
+    /// Type of filter (e.g., "PK", "LP", "HP")
+    pub kind: &'static str,
+}

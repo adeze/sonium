@@ -1,0 +1,106 @@
+name: MeshLang executed backend parity
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/meshlang-gmsh-parity.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-meshlang/**"
+      - "crates/sonium-bem/tests/meshlang_smoke.rs"
+      - "crates/sonium-fem/tests/meshlang_smoke.rs"
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitea/workflows/meshlang-gmsh-parity.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-meshlang/**"
+      - "crates/sonium-bem/tests/meshlang_smoke.rs"
+      - "crates/sonium-fem/tests/meshlang_smoke.rs"
+
+jobs:
+  executed-gmsh-parity:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Gmsh Python API
+        run: |
+          set -euo pipefail
+          if ! command -v gmsh >/dev/null 2>&1; then
+            brew install gmsh
+          fi
+          python3 -m venv "$RUNNER_TEMP/meshlang-gmsh-venv"
+          "$RUNNER_TEMP/meshlang-gmsh-venv/bin/pip" install gmsh
+          gmsh_version="$(gmsh --version | tr '\n' ' ')"
+          python_gmsh_version="$($RUNNER_TEMP/meshlang-gmsh-venv/bin/python -c 'import gmsh; print(gmsh.__version__)')"
+          printf 'gmsh=%s\npython_gmsh=%s\n' "$gmsh_version" "$python_gmsh_version" \
+            > "$RUNNER_TEMP/meshlang-gmsh-toolchain.txt"
+          echo "MESHLANG_GMSH_VERSION=$gmsh_version" >> "$GITHUB_ENV"
+          echo "MESHLANG_PYTHON_GMSH_VERSION=$python_gmsh_version" >> "$GITHUB_ENV"
+          echo "MESHLANG_ARTIFACT_DIR=$RUNNER_TEMP/meshlang-artifacts" >> "$GITHUB_ENV"
+          echo "MESHLANG_REQUIRE_GMSH=1" >> "$GITHUB_ENV"
+          echo "MESHLANG_PYTHON=$RUNNER_TEMP/meshlang-gmsh-venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Execute GEO backend against Gmsh
+        env:
+          MESHLANG_GMSH: gmsh
+        run: >-
+          cargo test --offline
+          --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/Cargo.toml
+          --test integration
+          real_gmsh_mesh_contains_entities_groups_markers_and_topology_when_configured
+
+      - name: Execute GEO shipping geometry corpus
+        env:
+          MESHLANG_GMSH: gmsh
+        run: >-
+          cargo test --offline
+          --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/Cargo.toml
+          --test integration
+          configured_gmsh_executes_shipping_geometry_corpus
+
+      - name: Execute Python backend against Gmsh
+        env:
+          MESHLANG_PYTHON: ${{ runner.temp }}/meshlang-gmsh-venv/bin/python
+        run: >-
+          cargo test --offline
+          --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/Cargo.toml
+          --test integration
+          generated_python_mesh_can_be_validated_when_python_gmsh_is_configured
+
+      - name: Execute Python ported-template Gmsh
+        env:
+          MESHLANG_PYTHON: ${{ runner.temp }}/meshlang-gmsh-venv/bin/python
+        run: >-
+          cargo test --offline
+          --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/Cargo.toml
+          --test integration
+          configured_python_gmsh_executes_ported_shipping_template
+
+      - name: Execute BEM MeshLang consumer smoke
+        env:
+          MESHLANG_GMSH: gmsh
+        run: >-
+          cargo test --offline -p sonium-bem --features meshlang
+          --test meshlang_smoke
+          meshlang_geometry_reaches_a_bem_scattering_solve_when_gmsh_is_configured
+
+      - name: Execute FEM MeshLang consumer smoke
+        env:
+          MESHLANG_GMSH: gmsh
+        run: >-
+          cargo test --offline -p sonium-fem --features meshlang
+          --test meshlang_smoke
+          meshlang_geometry_reaches_a_fem_helmholtz_solve_when_gmsh_is_configured
+
+      - name: Upload executed-artifact evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meshlang-gmsh-toolchain-and-artifacts
+          path: |
+            ${{ runner.temp }}/meshlang-gmsh-toolchain.txt
+            ${{ runner.temp }}/meshlang-artifacts

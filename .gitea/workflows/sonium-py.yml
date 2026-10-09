@@ -1,0 +1,140 @@
+name: sonium-py
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-py/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-bem/**"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-sim-room/**"
+      - "crates/sonium-sim-speaker/**"
+      - ".gitea/workflows/sonium-py.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-py/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-bem/**"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-sim-room/**"
+      - "crates/sonium-sim-speaker/**"
+      - ".gitea/workflows/sonium-py.yml"
+  workflow_dispatch:
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/sonium-py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build/test tools
+        run: python -m pip install --upgrade maturin pytest
+      - name: Record CPU build evidence
+        run: |
+          mkdir -p evidence
+          python -VV 2>&1 | tee evidence/python.txt
+          python -m pip --version | tee evidence/pip.txt
+          maturin --version | tee evidence/maturin.txt
+          rustc -Vv | tee evidence/rustc.txt
+          cargo -V | tee evidence/cargo.txt
+          uname -a | tee evidence/platform.txt
+      - name: Build CPU-only wheel
+        run: |
+          maturin build --release --locked --features extension-module --out dist/cpu
+          test "$(find dist/cpu -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+      - name: Install and test CPU wheel in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/sonium-py-cpu"
+          PYTHONNOUSERSITE=1 "$RUNNER_TEMP/sonium-py-cpu/bin/python" -m pip install --upgrade pip
+          PYTHONNOUSERSITE=1 "$RUNNER_TEMP/sonium-py-cpu/bin/python" -m pip install --no-cache-dir pytest dist/cpu/*.whl
+          PYTHONNOUSERSITE=1 PYTHONPATH='' \
+            SONIUM_PY_EXPECTED_BACKEND=cpu \
+            SONIUM_PY_FEATURES=extension-module \
+            SONIUM_PY_WHEEL_DIR=dist/cpu \
+            SONIUM_PY_EVIDENCE_DIR=evidence \
+            "$RUNNER_TEMP/sonium-py-cpu/bin/python" scripts/wheel_evidence.py
+          PYTHONNOUSERSITE=1 PYTHONPATH='' \
+            "$RUNNER_TEMP/sonium-py-cpu/bin/python" -m pytest tests/test_api.py -q
+      - name: Record CPU wheel tags and linked native libraries
+        run: |
+          "$RUNNER_TEMP/sonium-py-cpu/bin/python" -m pip debug --verbose > evidence/pip-debug.txt
+          find dist/cpu -maxdepth 1 -type f -name '*.whl' -print | tee evidence/wheels.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonium-py-cpu
+          path: crates/sonium-py/dist/cpu
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonium-py-cpu-evidence
+          path: crates/sonium-py/evidence
+
+  cuda:
+    runs-on: [self-hosted, linux, cuda]
+    env:
+      SONIUM_REQUIRE_CUDA: "1"
+    defaults:
+      run:
+        working-directory: crates/sonium-py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build/test tools
+        run: python -m pip install --upgrade maturin pytest
+      - name: Record CUDA build and device evidence
+        run: |
+          mkdir -p evidence
+          python -VV 2>&1 | tee evidence/python.txt
+          python -m pip --version | tee evidence/pip.txt
+          maturin --version | tee evidence/maturin.txt
+          rustc -Vv | tee evidence/rustc.txt
+          cargo -V | tee evidence/cargo.txt
+          uname -a | tee evidence/platform.txt
+          nvidia-smi -q | tee evidence/nvidia-smi.txt
+          nvcc --version | tee evidence/cuda-toolkit.txt
+      - name: Build CUDA-enabled wheel
+        run: |
+          maturin build --release --locked --features extension-module,cuda --out dist/cuda
+          test "$(find dist/cuda -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+      - name: Install and test CUDA wheel in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/sonium-py-cuda"
+          PYTHONNOUSERSITE=1 PYTHONPATH='' \
+            "$RUNNER_TEMP/sonium-py-cuda/bin/python" -m pip install --upgrade pip
+          PYTHONNOUSERSITE=1 PYTHONPATH='' \
+            "$RUNNER_TEMP/sonium-py-cuda/bin/python" -m pip install --no-cache-dir pytest dist/cuda/*.whl
+          PYTHONNOUSERSITE=1 PYTHONPATH='' \
+            SONIUM_REQUIRE_CUDA=1 \
+            SONIUM_PY_EXPECTED_BACKEND=cuda \
+            SONIUM_PY_FEATURES=extension-module,cuda \
+            SONIUM_PY_WHEEL_DIR=dist/cuda \
+            SONIUM_PY_EVIDENCE_DIR=evidence \
+            "$RUNNER_TEMP/sonium-py-cuda/bin/python" scripts/wheel_evidence.py
+          PYTHONNOUSERSITE=1 PYTHONPATH='' SONIUM_REQUIRE_CUDA=1 \
+            "$RUNNER_TEMP/sonium-py-cuda/bin/python" -m pytest tests/test_api.py -q
+      - name: Record CUDA wheel tags and linked native libraries
+        run: |
+          "$RUNNER_TEMP/sonium-py-cuda/bin/python" -m pip debug --verbose > evidence/pip-debug.txt
+          find dist/cuda -maxdepth 1 -type f -name '*.whl' -print | tee evidence/wheels.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonium-py-cuda
+          path: crates/sonium-py/dist/cuda
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonium-py-cuda-evidence
+          path: crates/sonium-py/evidence

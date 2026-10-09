@@ -1,0 +1,109 @@
+[package]
+name = "sonium-bem"
+version = "0.4.16"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "High-performance Boundary Element Method library for acoustic scattering"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["bem", "boundary-element", "acoustics", "numerical", "hrtf"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_bem"
+path = "src/lib.rs"
+
+[[bin]]
+name = "numcalc"
+path = "src/bin/numcalc.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "output2sofa"
+path = "src/bin/output2sofa.rs"
+required-features = ["cli", "sofa"]
+
+[features]
+default = []
+cli = ["dep:clap"]
+sofa = ["dep:hdf5", "sonium-xem/io-sofa"]
+meshlang = ["sonium-mesher/meshlang"]
+metal = ["sonium-compute/metal"]
+cuda = ["sonium-compute/cuda"]
+
+[dependencies]
+# Common types shared with FEM
+sonium-xem = { workspace = true }
+
+# Shared solver infrastructure (AMG preconditioner, etc.)
+# The BEM library does not use sonium-solvers' CLI/Matrix-Market downloader.
+# Keeping its default features disabled avoids pulling ureq/rustls into WASM
+# consumers; applications that need the solver CLI enable it directly.
+sonium-solvers = { path = "../sonium-solvers", default-features = false }
+sonium-compute = { workspace = true }
+sonium-fastmath = { workspace = true }
+sonium-wave = { workspace = true }
+sonium-roomeq = { workspace = true }
+
+# Core numerical computing
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+
+# Mesh generation helpers
+sonium-mesher = { workspace = true }
+
+# Parallel processing
+rayon = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Serialization (for JSON/TOML output)
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Time/date for metadata
+chrono = { workspace = true }
+
+# Optional CLI deps (gated by the `cli` feature)
+clap = { workspace = true, optional = true }
+hdf5 = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+directories = { workspace = true }
+sha2 = { workspace = true }
+
+[[bench]]
+name = "bem_solver_benchmark"
+harness = false
+
+[[bench]]
+name = "fmm_benchmark"
+harness = false
+
+[[bench]]
+name = "fmm_ilu_solver"
+harness = false
+
+[[bench]]
+name = "audio_fmm_sweep"
+harness = false
+
+[[bench]]
+name = "fmm_slow_validation"
+harness = false
+
+[[bench]]
+name = "tbem_assembly_scaling"
+harness = false
+
+[[bench]]
+name = "hmatrix_matvec"
+harness = false

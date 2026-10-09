@@ -1,0 +1,45 @@
+[package]
+name = "sonium-wave"
+version = "0.4.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Analytical solutions for wave and Helmholtz equations"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["wave", "helmholtz", "acoustics", "analytical", "bessel"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "sonium_wave"
+path = "src/lib.rs"
+
+[dependencies]
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+rayon = { workspace = true }
+sonium-compute = { workspace = true }
+sonium-fft = { workspace = true }
+sonium-xem = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+spec_math = { workspace = true }
+
+[[example]]
+name = "wavesim_helmholtz_1d_analytical"
+path = "examples/wavesim_helmholtz_1d_analytical.rs"
+
+[[example]]
+name = "wavesim_helmholtz_1d_inhomogeneous"
+path = "examples/wavesim_helmholtz_1d_inhomogeneous.rs"
+
+[[example]]
+name = "wavesim_helmholtz_3d_interface"
+path = "examples/wavesim_helmholtz_3d_interface.rs"
+
+[dev-dependencies]
+approx = "0.5"
+criterion = { workspace = true }
+
+[[bench]]
+name = "observation"
+harness = false

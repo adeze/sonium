@@ -1,0 +1,27 @@
+[package]
+name = "sonium-solvers-nonlinear"
+version = "0.4.5"
+description = "Nonlinear solvers: Newton-Raphson (exact/inexact/continuation), Anderson acceleration"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+sonium-solvers-core = { workspace = true }
+sonium-solvers-iterative = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+num-complex = { workspace = true }
+approx = { workspace = true }
+rand = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "nonlinear_bench"
+harness = false

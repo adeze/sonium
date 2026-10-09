@@ -1,0 +1,84 @@
+//! # math-rir: Room Impulse Response Analysis
+//!
+//! Two complementary analysis paths on a Room Impulse Response (RIR):
+//!
+//! 1. **SSIR segmentation** ([`analyze_rir`], [`analyze_srir`]) — Spatial
+//!    Segmentation of the early RIR into consecutive sound events
+//!    (direct sound + reflections), based on Pawlak & Lee, *Spatial
+//!    segmentation of impulse response for room reflection analysis and
+//!    auralization*, Applied Acoustics 249 (2026).
+//! 2. **ISO 3382 room-acoustic metrics** ([`analyze_iso3382`],
+//!    [`analyze_iso3382_octaves`], [`analyze_iso3382_third_octaves`]) —
+//!    EDT, T20, T30, C50, C80, D50, Centre time (Ts) computed from a
+//!    Schroeder backward integration, with optional per-octave or
+//!    per-third-octave filtering using zero-phase Butterworth bandpasses.
+//!
+//! ## Overview
+//!
+//! The SSIR method segments a Room Impulse Response (RIR) into consecutive,
+//! variable-length sound events (direct sound + early reflections), each with
+//! a constant direction of arrival (DOA). This preserves the full temporal
+//! energy profile while enabling per-reflection manipulation.
+//!
+//! The ISO 3382 path treats the whole RIR as one signal and reports the
+//! classical reverberation/clarity parameters that listening rooms and
+//! performance spaces are measured against.
+//!
+//! ## Usage
+//!
+//! ```rust
+//! use sonium_audio::rir::{analyze_rir, analyze_iso3382, analyze_iso3382_octaves, SsirConfig};
+//!
+//! let rir: Vec<f32> = load_impulse_response(); // your RIR data
+//! let sr = 48000.0;
+//!
+//! // 1) SSIR segmentation — per-reflection geometry.
+//! let result = analyze_rir(&rir, &SsirConfig::new(sr));
+//! println!("Detected {} events ({} reflections)",
+//!     result.num_events(), result.num_reflections());
+//!
+//! // 2) ISO 3382 broadband metrics.
+//! let m = analyze_iso3382(&rir, sr);
+//! println!("T30 = {:.2}s, EDT = {:.2}s, C80 = {:.1} dB, Ts = {:.0} ms",
+//!     m.t30_s, m.edt_s, m.c80_db, m.ts_s * 1000.0);
+//!
+//! // 3) Per-octave-band ISO 3382 metrics (125 Hz … 8 kHz).
+//! for (fc, m) in analyze_iso3382_octaves(&rir, sr) {
+//!     println!("  {:>5.0} Hz: T30={:.2}s C50={:.1}dB", fc, m.t30_s, m.c50_db);
+//! }
+//! # fn load_impulse_response() -> Vec<f32> { vec![0.0; 4800] }
+//! ```
+
+pub use crate::iir::filtfilt;
+pub use bands::{
+    BandAnalysisContext, BandWidth, BandpassWorkspace, ISO_OCTAVE_CENTERS_HZ,
+    ISO_THIRD_OCTAVE_CENTERS_HZ, analyze_iso3382_bands, analyze_iso3382_octaves,
+    analyze_iso3382_third_octaves, bandpass,
+};
+pub use config::SsirConfig;
+pub use metrics::{
+    DecayCurve, DecayWorkspace, Iso3382Metrics, Iso3382QualityVerdict, analyze_iso3382,
+    analyze_iso3382_bands_with_contexts, analyze_iso3382_with_workspace, estimate_noise_cutoff,
+    schroeder_curve,
+};
+pub use types::{RirSegment, SsirResult};
+
+pub mod bands;
+mod config;
+mod detection;
+pub mod metrics;
+mod mixing_time;
+pub mod report;
+mod segmentation;
+pub mod sti;
+mod types;
+
+#[path = "rir/lib/analyze.rs"]
+mod analyze;
+#[path = "rir/lib/misc.rs"]
+mod misc;
+#[cfg(test)]
+#[path = "rir/lib/tests.rs"]
+mod tests;
+
+pub use analyze::*;

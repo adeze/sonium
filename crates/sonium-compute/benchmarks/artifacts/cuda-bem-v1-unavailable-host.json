@@ -1,0 +1,22 @@
+{
+  "schema": "sonium-compute-cuda-bem-evidence/v1",
+  "status": "unavailable",
+  "case_id": "bem.cuda-capability-and-assembly-matrix.v1",
+  "error": "required NVIDIA CUDA device was unavailable during artifact capture",
+  "hardware": {
+    "device": null,
+    "driver": null,
+    "toolkit": "13.3",
+    "compiler": "recorded by the runner",
+    "topology": null
+  },
+  "runtime": {
+    "kernel_launches": 0,
+    "synchronization_calls": 0,
+    "allocation_high_water_bytes": 0,
+    "live_allocation_bytes": 0
+  },
+  "environment": {
+    "performance.roofline_fraction": "unavailable"
+  }
+}

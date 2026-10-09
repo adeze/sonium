@@ -1,0 +1,53 @@
+/// MeshLang Standard Library: Acoustics
+///
+/// Common utilities for acoustic mesh generation.
+/// Import with: import "std/acoustics.mlg" as acoustics
+
+/// Speed of sound in air at 20°C, 1 atm
+pub const C_AIR = 343.0
+
+/// Speed of sound in water at 20°C
+pub const C_WATER = 1481.0
+
+/// Air density at 20°C, 1 atm (kg/m³)
+pub const RHO_AIR = 1.204
+
+/// Water density at 20°C (kg/m³)
+pub const RHO_WATER = 998.0
+
+/// Compute element size for a target frequency.
+///
+/// Uses the rule: element_size = wavelength / elements_per_wavelength
+///   where wavelength = speed / frequency
+///
+/// Typical values for elements_per_wavelength (epw):
+///   - BEM (linear elements): 6
+///   - BEM (quadratic elements): 4
+///   - FEM (linear elements): 10
+///   - FEM (quadratic elements): 6
+pub fn size_for_freq(freq: Float, speed: Float, epw: Float = 6.0) -> Float {
+    speed / freq / epw
+}
+
+/// Compute element size for a frequency range.
+/// Uses the maximum frequency (shortest wavelength) to determine sizing.
+pub fn size_for_freq_range(f_min: Float, f_max: Float, speed: Float, epw: Float = 6.0) -> Float {
+    speed / f_max / epw
+}
+
+/// Compute wavelength for a given frequency and medium speed.
+pub fn wavelength(freq: Float, speed: Float) -> Float {
+    speed / freq
+}
+
+/// Compute the Helmholtz number ka for a sphere of radius r.
+///   ka = 2 * pi * freq * r / c
+pub fn helmholtz_ka(freq: Float, radius: Float, speed: Float) -> Float {
+    6.28318530718 * freq * radius / speed
+}
+
+/// Recommended minimum element count on a sphere surface for BEM.
+///   N_min ≈ 6 * (ka)^2 for linear elements
+pub fn min_sphere_elements(freq: Float, radius: Float, speed: Float) -> Float {
+    6.0 * helmholtz_ka(freq, radius, speed) ** 2.0
+}

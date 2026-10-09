@@ -1,0 +1,26 @@
+{
+  "name": "@sonium/meshlang-wasm-frontend",
+  "version": "0.1.0",
+  "description": "Filesystem-free MeshLang parser and canonical-IR browser frontend",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.mjs"
+    }
+  },
+  "files": [
+    "index.mjs",
+    "index.d.ts",
+    "README.md",
+    "pkg"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "build": "../build-wasm.sh"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "MIT OR Apache-2.0"
+}

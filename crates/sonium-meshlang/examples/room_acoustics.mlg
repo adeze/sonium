@@ -1,0 +1,57 @@
+/// Room acoustics model
+///
+/// Shoebox room with distinct surface treatments per wall.
+/// Suitable for FEM (volume mesh) or BEM (surface mesh).
+
+const C_AIR = 343.0
+
+param f_max = 1000.0
+param elem_size = C_AIR / f_max / 6.0
+
+// Room dimensions
+param room_l = 5.0
+param room_w = 4.0
+param room_h = 3.0
+
+geometry room {
+    let walls = Box(room_l, room_w, room_h)
+}
+
+mesh for room {
+    default_size: elem_size
+    max_size: 0.5
+    min_size: 0.01
+    order: 1
+    algorithm_3d: hxt
+
+    // Higher-order elements on absorptive surfaces for accuracy
+    refine on(room.walls.faces.bottom) {
+        order: 2
+    }
+    refine on(room.walls.faces.top) {
+        order: 2
+    }
+}
+
+physics {
+    // Side walls are rigid (Neumann BC: dp/dn = 0)
+    group wall_front: neumann = room.walls.faces.front
+    group wall_back: neumann = room.walls.faces.back
+    group wall_left: neumann = room.walls.faces.left
+    group wall_right: neumann = room.walls.faces.right
+
+    // Floor has impedance BC (carpeted)
+    group floor: impedance = room.walls.faces.bottom
+
+    // Ceiling is absorptive
+    group ceiling: impedance = room.walls.faces.top
+
+    // Air volume for FEM
+    group air: volume = room.walls
+}
+
+export {
+    format: msh4
+    order: 1
+    filename: "room.msh"
+}

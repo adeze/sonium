@@ -1,0 +1,42 @@
+[package]
+name = "sonium-sim-propellers"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Propeller aeroacoustic simulation examples for shrouded, toroidal, and serrated designs"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["propeller", "aeroacoustics", "simulation", "optimization"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_sim_propellers"
+path = "src/lib.rs"
+
+[[bin]]
+name = "propeller-3d-opt"
+path = "src/bin/propeller_3d_opt.rs"
+
+[dependencies]
+sonium-fem = { workspace = true }
+sonium-solvers = { workspace = true }
+sonium-xem = { workspace = true }
+sonium-compute = { workspace = true, optional = true }
+
+clap = { workspace = true }
+num-complex = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+ed25519-zebra = { workspace = true }
+tempfile = { workspace = true }
+
+[dev-dependencies]
+
+[features]
+default = []
+
+# The bounded native adapter uses the owning sonium-compute CUDA BEM kernel
+# over the propeller-owned panel mesh. No Metal adapter is claimed here.
+cuda = ["dep:sonium-compute", "sonium-compute/cuda"]

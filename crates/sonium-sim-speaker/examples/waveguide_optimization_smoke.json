@@ -1,0 +1,58 @@
+{
+  "cabinet": {
+    "height": 0.40,
+    "width": 0.22,
+    "depth": 0.28
+  },
+  "woofer": {
+    "radius": 0.065,
+    "y_offset": -0.08,
+    "piston_velocity": 0.001,
+    "transfer_function": [
+      { "freq": 200.0, "magnitude": 0.001, "phase_deg": 0.0 },
+      { "freq": 5000.0, "magnitude": 0.001, "phase_deg": 0.0 }
+    ],
+    "cone": {
+      "cone_depth": 0.008,
+      "dustcap_radius": 0.015
+    }
+  },
+  "tweeter": {
+    "radius": 0.013,
+    "y_offset": 0.10,
+    "piston_velocity": 0.001,
+    "transfer_function": [
+      { "freq": 200.0, "magnitude": 0.001, "phase_deg": 0.0 },
+      { "freq": 5000.0, "magnitude": 0.001, "phase_deg": 0.0 }
+    ],
+    "cone": {
+      "cone_depth": 0.003,
+      "dustcap_radius": 0.005
+    }
+  },
+  "separator": {
+    "y_position": 0.02,
+    "thickness": 0.018
+  },
+  "waveguide": {
+    "horizontal_spline": [
+      [0.0, 0.050],
+      [0.5, 0.030],
+      [1.0, 0.013]
+    ],
+    "vertical_spline": [
+      [0.0, 0.040],
+      [0.5, 0.025],
+      [1.0, 0.013]
+    ],
+    "depth": 0.025
+  },
+  "simulation": {
+    "freq_start": 200.0,
+    "freq_end": 5000.0,
+    "freq_points": 50,
+    "speed_of_sound": 343.0,
+    "air_density": 1.21,
+    "max_mesh_frequency": 5000.0
+  }
+}

@@ -1,0 +1,119 @@
+{
+  "schema": "sonium-compute-cuda-c6-release/v1",
+  "version": 1,
+  "status": "passed",
+  "scope": "bounded native CUDA BEM/FEM roofline evidence; Linux x86_64; NVIDIA SM120",
+  "claims": {
+    "vendor_comparison": "not_claimed",
+    "energy": "not_claimed",
+    "roofline_basis": "derived from provisioned peak FLOP/s and memory-bandwidth baselines; no Nsight attribution"
+  },
+  "provenance": {
+    "release_source": "target/sonium-unix-c6",
+    "producer_sources": {
+      "bem": "crates/sonium-qa/bin/bem_cuda_matrix.rs",
+      "fem": "crates/sonium-qa/bin/compute_fem_adjoint.rs"
+    },
+    "reference_hardware": {
+      "device": "NVIDIA RTX PRO 6000 Blackwell Workstation Edition",
+      "compute_capability": "sm120",
+      "driver": "610.57.04",
+      "toolkit": "CUDA UMD 13.3",
+      "compiler": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "topology": "GPU0 PCIe Gen5 x16",
+      "peak_flops": "125000000000000",
+      "memory_bandwidth": "1792000000000",
+      "os": "linux-x86_64",
+      "target_features": "cuda",
+      "runtime_dispatch": "cuda-native",
+      "deterministic_mode": "enabled"
+    }
+  },
+  "volatile_fields_excluded": [
+    "observations.*.workload_elapsed_ms",
+    "observations.*.throughput_flops_per_second",
+    "observations.*.roofline_fraction",
+    "observations.*.raw_sha256",
+    "observations.*.summary_sha256"
+  ],
+  "workloads": [
+    {
+      "id": "bem",
+      "raw_schema": "sonium-compute-cuda-bem-evidence/v1",
+      "case_id": "bem.cuda-capability-and-assembly-matrix.v1",
+      "producer": "crates/sonium-qa/bin/bem_cuda_matrix.rs",
+      "raw_artifact": "bem_cuda_matrix_report.json",
+      "stable_contract": {
+        "status": "passed",
+        "operation_count": 18,
+        "kernel_launches": 6,
+        "library_operations": 5,
+        "h2d_operations": 21,
+        "d2h_operations": 11,
+        "allocation_high_water_bytes": 353328,
+        "capability_counts": {
+          "native_or_supported": 10,
+          "host_shared_fallback": 2,
+          "unsupported": 29
+        }
+      }
+    },
+    {
+      "id": "fem",
+      "raw_schema": "sonium-compute-cuda-fem-adjoint/v1",
+      "case_id": "compute.fem-adjoint-cuda.v1",
+      "producer": "crates/sonium-qa/bin/compute_fem_adjoint.rs",
+      "raw_artifact": "compute_fem_cuda_adjoint.json",
+      "stable_contract": {
+        "status": "passed",
+        "operation_count": 328,
+        "kernel_launches": 0,
+        "library_operations": 7,
+        "h2d_operations": 18,
+        "d2h_operations": 14,
+        "allocation_high_water_bytes": 8859,
+        "capability_counts": {
+          "native": 9,
+          "native_real_equivalent": 1,
+          "unsupported": 13
+        }
+      }
+    }
+  ],
+  "microkernel_roofline": {
+    "status": "accounting_only",
+    "measured": false,
+    "source": "crates/sonium-compute/src/perf.rs",
+    "models": [
+      "copy_h2d",
+      "copy_d2d",
+      "scale",
+      "dot",
+      "axpy",
+      "nrm2",
+      "gemv",
+      "gemm",
+      "csr_spmv",
+      "cast",
+      "gather4_weighted",
+      "bem_regular_pair_c32"
+    ]
+  },
+  "observations": {
+    "bem": {
+      "workload_elapsed_ms": 6672,
+      "throughput_flops_per_second": 21.58273381294964,
+      "roofline_fraction": 1.7266187050359714e-13,
+      "raw_sha256": "6ac03819838b7a009ec572e2bb103acc285a16c8d55fd13f86ab84cd81b422a2",
+      "summary_sha256": "90374552d910a0849ec2cc4739b8645f6f003ff57c294a6d00c5db4a677fd968"
+    },
+    "fem": {
+      "workload_elapsed_ms": 40,
+      "throughput_flops_per_second": 65600.0,
+      "roofline_fraction": 5.248e-10,
+      "raw_sha256": "fa152321c1698c7ad2569cada8d537a3c1566d0b4bd97170b83e0d670dc7013c",
+      "summary_sha256": "60d7d12b398ba3f1c396d1365b5ac2ea0f7e4e1f4406a800025bf47691022973"
+    }
+  },
+  "canonical_payload_sha256": "0dc9a447767d4bf3bef754ae40611e32ea47fbdb796599906553dc3be7f55c3d"
+}

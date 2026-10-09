@@ -1,0 +1,511 @@
+.version 7.0
+.target sm_50
+.address_size 64
+
+.visible .entry sonium_cast_f64_to_f32(
+    .param .u64 src,
+    .param .u64 dst,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<8>;
+    .reg .f64 %fd<2>;
+    .reg .f32 %f<2>;
+
+    ld.param.u64 %rd1, [src];
+    ld.param.u64 %rd2, [dst];
+    ld.param.u64 %rd3, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd4, %r4;
+    setp.ge.u64 %p, %rd4, %rd3;
+    @%p bra DONE_F64_TO_F32;
+
+    mul.wide.u32 %rd5, %r4, 8;
+    add.u64 %rd6, %rd1, %rd5;
+    ld.global.f64 %fd1, [%rd6];
+    cvt.rn.f32.f64 %f1, %fd1;
+    mul.wide.u32 %rd5, %r4, 4;
+    add.u64 %rd7, %rd2, %rd5;
+    st.global.f32 [%rd7], %f1;
+
+DONE_F64_TO_F32:
+    ret;
+}
+
+.visible .entry sonium_cast_f32_to_f64(
+    .param .u64 src,
+    .param .u64 dst,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<8>;
+    .reg .f64 %fd<2>;
+    .reg .f32 %f<2>;
+
+    ld.param.u64 %rd1, [src];
+    ld.param.u64 %rd2, [dst];
+    ld.param.u64 %rd3, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd4, %r4;
+    setp.ge.u64 %p, %rd4, %rd3;
+    @%p bra DONE_F32_TO_F64;
+
+    mul.wide.u32 %rd5, %r4, 4;
+    add.u64 %rd6, %rd1, %rd5;
+    ld.global.f32 %f1, [%rd6];
+    cvt.f64.f32 %fd1, %f1;
+    mul.wide.u32 %rd5, %r4, 8;
+    add.u64 %rd7, %rd2, %rd5;
+    st.global.f64 [%rd7], %fd1;
+
+DONE_F32_TO_F64:
+    ret;
+}
+
+.visible .entry sonium_cast_c64_to_c32(
+    .param .u64 src,
+    .param .u64 dst,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<12>;
+    .reg .f64 %fd<3>;
+    .reg .f32 %f<3>;
+
+    ld.param.u64 %rd1, [src];
+    ld.param.u64 %rd2, [dst];
+    ld.param.u64 %rd3, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd4, %r4;
+    setp.ge.u64 %p, %rd4, %rd3;
+    @%p bra DONE_C64_TO_C32;
+
+    mul.wide.u32 %rd5, %r4, 16;
+    add.u64 %rd6, %rd1, %rd5;
+    add.u64 %rd7, %rd6, 8;
+    ld.global.f64 %fd1, [%rd6];
+    ld.global.f64 %fd2, [%rd7];
+    cvt.rn.f32.f64 %f1, %fd1;
+    cvt.rn.f32.f64 %f2, %fd2;
+    mul.wide.u32 %rd8, %r4, 8;
+    add.u64 %rd9, %rd2, %rd8;
+    add.u64 %rd10, %rd9, 4;
+    st.global.f32 [%rd9], %f1;
+    st.global.f32 [%rd10], %f2;
+
+DONE_C64_TO_C32:
+    ret;
+}
+
+.visible .entry sonium_cast_c32_to_c64(
+    .param .u64 src,
+    .param .u64 dst,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<5>;
+    .reg .b64 %rd<12>;
+    .reg .f64 %fd<3>;
+    .reg .f32 %f<3>;
+
+    ld.param.u64 %rd1, [src];
+    ld.param.u64 %rd2, [dst];
+    ld.param.u64 %rd3, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd4, %r4;
+    setp.ge.u64 %p, %rd4, %rd3;
+    @%p bra DONE_C32_TO_C64;
+
+    mul.wide.u32 %rd5, %r4, 8;
+    add.u64 %rd6, %rd1, %rd5;
+    add.u64 %rd7, %rd6, 4;
+    ld.global.f32 %f1, [%rd6];
+    ld.global.f32 %f2, [%rd7];
+    cvt.f64.f32 %fd1, %f1;
+    cvt.f64.f32 %fd2, %f2;
+    mul.wide.u32 %rd8, %r4, 16;
+    add.u64 %rd9, %rd2, %rd8;
+    add.u64 %rd10, %rd9, 8;
+    st.global.f64 [%rd9], %fd1;
+    st.global.f64 [%rd10], %fd2;
+
+DONE_C32_TO_C64:
+    ret;
+}
+
+.visible .entry sonium_gather4_f32(
+    .param .u64 values,
+    .param .u64 indices,
+    .param .u64 weights,
+    .param .u64 out,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<9>;
+    .reg .b64 %rd<11>;
+    .reg .f32 %f<4>;
+
+    ld.param.u64 %rd1, [values];
+    ld.param.u64 %rd2, [indices];
+    ld.param.u64 %rd3, [weights];
+    ld.param.u64 %rd4, [out];
+    ld.param.u64 %rd5, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd6, %r4;
+    setp.ge.u64 %p, %rd6, %rd5;
+    @%p bra DONE_GATHER4_F32;
+
+    shl.b32 %r5, %r4, 2;
+    mov.f32 %f1, 0f00000000;
+
+    mul.wide.u32 %rd7, %r5, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 4;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f32 %f2, [%rd10];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f3, [%rd10];
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+
+    add.u32 %r7, %r5, 1;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 4;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f32 %f2, [%rd10];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f3, [%rd10];
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+
+    add.u32 %r7, %r5, 2;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 4;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f32 %f2, [%rd10];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f3, [%rd10];
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+
+    add.u32 %r7, %r5, 3;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 4;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f32 %f2, [%rd10];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f3, [%rd10];
+    fma.rn.f32 %f1, %f2, %f3, %f1;
+
+    mul.wide.u32 %rd7, %r4, 4;
+    add.u64 %rd8, %rd4, %rd7;
+    st.global.f32 [%rd8], %f1;
+
+DONE_GATHER4_F32:
+    ret;
+}
+
+.visible .entry sonium_gather4_f64(
+    .param .u64 values,
+    .param .u64 indices,
+    .param .u64 weights,
+    .param .u64 out,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<9>;
+    .reg .b64 %rd<11>;
+    .reg .f64 %fd<4>;
+
+    ld.param.u64 %rd1, [values];
+    ld.param.u64 %rd2, [indices];
+    ld.param.u64 %rd3, [weights];
+    ld.param.u64 %rd4, [out];
+    ld.param.u64 %rd5, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd6, %r4;
+    setp.ge.u64 %p, %rd6, %rd5;
+    @%p bra DONE_GATHER4_F64;
+
+    shl.b32 %r5, %r4, 2;
+    mov.f64 %fd1, 0d0000000000000000;
+
+    mul.wide.u32 %rd7, %r5, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f64 %fd2, [%rd10];
+    mul.wide.u32 %rd7, %r5, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd3, [%rd10];
+    fma.rn.f64 %fd1, %fd2, %fd3, %fd1;
+
+    add.u32 %r7, %r5, 1;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f64 %fd2, [%rd10];
+    mul.wide.u32 %rd7, %r7, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd3, [%rd10];
+    fma.rn.f64 %fd1, %fd2, %fd3, %fd1;
+
+    add.u32 %r7, %r5, 2;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f64 %fd2, [%rd10];
+    mul.wide.u32 %rd7, %r7, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd3, [%rd10];
+    fma.rn.f64 %fd1, %fd2, %fd3, %fd1;
+
+    add.u32 %r7, %r5, 3;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    ld.global.f64 %fd2, [%rd10];
+    mul.wide.u32 %rd7, %r7, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd3, [%rd10];
+    fma.rn.f64 %fd1, %fd2, %fd3, %fd1;
+
+    mul.wide.u32 %rd7, %r4, 8;
+    add.u64 %rd8, %rd4, %rd7;
+    st.global.f64 [%rd8], %fd1;
+
+DONE_GATHER4_F64:
+    ret;
+}
+
+.visible .entry sonium_gather4_c32(
+    .param .u64 values,
+    .param .u64 indices,
+    .param .u64 weights,
+    .param .u64 out,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<9>;
+    .reg .b64 %rd<12>;
+    .reg .f32 %f<6>;
+
+    ld.param.u64 %rd1, [values];
+    ld.param.u64 %rd2, [indices];
+    ld.param.u64 %rd3, [weights];
+    ld.param.u64 %rd4, [out];
+    ld.param.u64 %rd5, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd6, %r4;
+    setp.ge.u64 %p, %rd6, %rd5;
+    @%p bra DONE_GATHER4_C32;
+
+    shl.b32 %r5, %r4, 2;
+    mov.f32 %f1, 0f00000000;
+    mov.f32 %f2, 0f00000000;
+
+    mul.wide.u32 %rd7, %r5, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 4;
+    ld.global.f32 %f3, [%rd10];
+    ld.global.f32 %f4, [%rd11];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f5, [%rd10];
+    fma.rn.f32 %f1, %f3, %f5, %f1;
+    fma.rn.f32 %f2, %f4, %f5, %f2;
+
+    add.u32 %r7, %r5, 1;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 4;
+    ld.global.f32 %f3, [%rd10];
+    ld.global.f32 %f4, [%rd11];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f5, [%rd10];
+    fma.rn.f32 %f1, %f3, %f5, %f1;
+    fma.rn.f32 %f2, %f4, %f5, %f2;
+
+    add.u32 %r7, %r5, 2;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 4;
+    ld.global.f32 %f3, [%rd10];
+    ld.global.f32 %f4, [%rd11];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f5, [%rd10];
+    fma.rn.f32 %f1, %f3, %f5, %f1;
+    fma.rn.f32 %f2, %f4, %f5, %f2;
+
+    add.u32 %r7, %r5, 3;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 8;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 4;
+    ld.global.f32 %f3, [%rd10];
+    ld.global.f32 %f4, [%rd11];
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f32 %f5, [%rd10];
+    fma.rn.f32 %f1, %f3, %f5, %f1;
+    fma.rn.f32 %f2, %f4, %f5, %f2;
+
+    mul.wide.u32 %rd7, %r4, 8;
+    add.u64 %rd8, %rd4, %rd7;
+    add.u64 %rd9, %rd8, 4;
+    st.global.f32 [%rd8], %f1;
+    st.global.f32 [%rd9], %f2;
+
+DONE_GATHER4_C32:
+    ret;
+}
+
+.visible .entry sonium_gather4_c64(
+    .param .u64 values,
+    .param .u64 indices,
+    .param .u64 weights,
+    .param .u64 out,
+    .param .u64 n
+)
+{
+    .reg .pred %p;
+    .reg .b32 %r<9>;
+    .reg .b64 %rd<12>;
+    .reg .f64 %fd<6>;
+
+    ld.param.u64 %rd1, [values];
+    ld.param.u64 %rd2, [indices];
+    ld.param.u64 %rd3, [weights];
+    ld.param.u64 %rd4, [out];
+    ld.param.u64 %rd5, [n];
+    mov.u32 %r1, %ctaid.x;
+    mov.u32 %r2, %ntid.x;
+    mov.u32 %r3, %tid.x;
+    mad.lo.s32 %r4, %r1, %r2, %r3;
+    cvt.u64.u32 %rd6, %r4;
+    setp.ge.u64 %p, %rd6, %rd5;
+    @%p bra DONE_GATHER4_C64;
+
+    shl.b32 %r5, %r4, 2;
+    mov.f64 %fd1, 0d0000000000000000;
+    mov.f64 %fd2, 0d0000000000000000;
+
+    mul.wide.u32 %rd7, %r5, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 16;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 8;
+    ld.global.f64 %fd3, [%rd10];
+    ld.global.f64 %fd4, [%rd11];
+    mul.wide.u32 %rd7, %r5, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd5, [%rd10];
+    fma.rn.f64 %fd1, %fd3, %fd5, %fd1;
+    fma.rn.f64 %fd2, %fd4, %fd5, %fd2;
+
+    add.u32 %r7, %r5, 1;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 16;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 8;
+    ld.global.f64 %fd3, [%rd10];
+    ld.global.f64 %fd4, [%rd11];
+    mul.wide.u32 %rd7, %r7, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd5, [%rd10];
+    fma.rn.f64 %fd1, %fd3, %fd5, %fd1;
+    fma.rn.f64 %fd2, %fd4, %fd5, %fd2;
+
+    add.u32 %r7, %r5, 2;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 16;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 8;
+    ld.global.f64 %fd3, [%rd10];
+    ld.global.f64 %fd4, [%rd11];
+    mul.wide.u32 %rd7, %r7, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd5, [%rd10];
+    fma.rn.f64 %fd1, %fd3, %fd5, %fd1;
+    fma.rn.f64 %fd2, %fd4, %fd5, %fd2;
+
+    add.u32 %r7, %r5, 3;
+    mul.wide.u32 %rd7, %r7, 4;
+    add.u64 %rd8, %rd2, %rd7;
+    ld.global.s32 %r6, [%rd8];
+    mul.wide.s32 %rd9, %r6, 16;
+    add.u64 %rd10, %rd1, %rd9;
+    add.u64 %rd11, %rd10, 8;
+    ld.global.f64 %fd3, [%rd10];
+    ld.global.f64 %fd4, [%rd11];
+    mul.wide.u32 %rd7, %r7, 8;
+    add.u64 %rd10, %rd3, %rd7;
+    ld.global.f64 %fd5, [%rd10];
+    fma.rn.f64 %fd1, %fd3, %fd5, %fd1;
+    fma.rn.f64 %fd2, %fd4, %fd5, %fd2;
+
+    mul.wide.u32 %rd7, %r4, 16;
+    add.u64 %rd8, %rd4, %rd7;
+    add.u64 %rd9, %rd8, 8;
+    st.global.f64 [%rd8], %fd1;
+    st.global.f64 [%rd9], %fd2;
+
+DONE_GATHER4_C64:
+    ret;
+}

@@ -1,0 +1,46 @@
+name: Codex Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  review:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure tea
+        run: |
+          tea login add \
+            --name ci \
+            --url http://192.168.1.32:3001 \
+            --token "$REVIEW_SECRET" \
+            --no-version-check
+        env:
+          GITEA_REVIEW_TOKEN: ${{ secrets.REVIEW_SECRET }}
+
+      - name: Login Codex
+        run: printenv OPENAI_API_KEY | codex login --with-api-key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - name: Run Codex review
+        run: |
+          BASE="${GITHUB_BASE_REF:-main}"
+          git fetch origin "$BASE"
+
+          codex review \
+            --base "origin/$BASE" \
+            "Review this pull request. Focus on correctness, regressions, performance, memory bandwidth, tests, and maintainability. Return actionable findings with file/line references where possible." \
+            > codex-review.md
+
+      - name: Post review comment
+        run: |
+          PR_NUMBER="$(jq -r '.pull_request.number // .number' "$GITHUB_EVENT_PATH")"
+          tea comment --login ci --repo pierre/sonium "$PR_NUMBER" "$(cat codex-review.md)"
+

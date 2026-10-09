@@ -1,0 +1,32 @@
+name: Solver checked-boundary fuzz smoke
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/solvers-fuzz.yml"
+      - "crates/sonium-solvers/**"
+      - "crates/sonium-compute/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".gitea/workflows/solvers-fuzz.yml"
+      - "crates/sonium-solvers/**"
+      - "crates/sonium-compute/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+jobs:
+  fuzz-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile checked solver fuzz targets
+        run: cargo check --offline --manifest-path crates/sonium-solvers/fuzz/Cargo.toml
+      - name: Run bounded checked solver fuzz campaigns
+        run: |
+          cargo install cargo-fuzz --locked
+          cargo fuzz run --manifest-path crates/sonium-solvers/fuzz/Cargo.toml checked_fgmres -- -runs=100 -max_len=4096 -rss_limit_mb=256
+          cargo fuzz run --manifest-path crates/sonium-solvers/fuzz/Cargo.toml checked_csr -- -runs=100 -max_len=4096 -rss_limit_mb=256
+          cargo fuzz run --manifest-path crates/sonium-solvers/fuzz/Cargo.toml checked_preconditioners -- -runs=100 -max_len=4096 -rss_limit_mb=256

@@ -1,0 +1,46 @@
+[package]
+name = "sonium-sim-structural-mechanics"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "COMSOL-style structural mechanics bracket examples on top of Sonium FEM"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["fem", "structural", "elasticity", "simulation", "mechanics"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_sim_structural_mechanics"
+path = "src/lib.rs"
+
+[[bin]]
+name = "structural-bracket-demo"
+path = "src/bin/bracket_demo.rs"
+
+[dependencies]
+num-complex = { workspace = true }
+rayon = { workspace = true }
+sha2 = { workspace = true }
+# Keep the structural library free of FEM CLI/TLS defaults for cross-target builds.
+sonium-fem = { path = "../sonium-fem", default-features = false }
+sonium-compute = { path = "../sonium-compute", default-features = false, optional = true }
+meshlang-compiler = { workspace = true, optional = true }
+sonium-mesher = { workspace = true, optional = true }
+sonium-solvers = { path = "../sonium-solvers", default-features = false }
+sonium-xem = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+
+[features]
+default = []
+# Compile parameterized structural CAD sources with MeshLang. Meshing the
+# generated .geo additionally requires Gmsh on PATH (or GMSH_PATH/MESHLANG_GMSH).
+meshlang = ["dep:meshlang-compiler", "dep:sonium-mesher", "sonium-mesher/meshlang"]
+# Bounded P1/f64 linear plane-stress bracket solve on a real NVIDIA CUDA
+# backend. CPU FEM assembly remains the trusted host reference; constrained
+# sparse operators, forward/adjoint solves, and residual certification execute
+# through sonium-compute's checked CUDA path.
+cuda = ["dep:sonium-compute", "sonium-compute/cuda"]

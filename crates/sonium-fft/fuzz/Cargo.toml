@@ -1,0 +1,23 @@
+[package]
+name = "sonium-fft-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+num-complex = "0.4"
+sonium-fft = { path = ".." }
+
+[[bin]]
+name = "planner_round_trip"
+path = "fuzz_targets/planner_round_trip.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

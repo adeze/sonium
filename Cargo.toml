@@ -1,0 +1,240 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/sonium-fastmath",
+    "crates/sonium-wave",
+    "crates/sonium-xem",
+    "crates/sonium-compute",
+    "crates/sonium-fft",
+    "crates/sonium-audio",
+    "crates/sonium-solvers",
+    "crates/sonium-solvers/crates/sonium-solvers-core",
+    "crates/sonium-solvers/crates/sonium-solvers-sys",
+    "crates/sonium-solvers/crates/sonium-solvers-sparse",
+    "crates/sonium-solvers/crates/sonium-solvers-eigen",
+    "crates/sonium-solvers/crates/sonium-solvers-direct",
+    "crates/sonium-solvers/crates/sonium-solvers-preconditioners",
+    "crates/sonium-solvers/crates/sonium-solvers-iterative",
+    "crates/sonium-solvers/crates/sonium-solvers-optimization",
+    "crates/sonium-solvers/crates/sonium-solvers-nonlinear",
+    "crates/sonium-solvers/crates/sonium-solvers-time-integration",
+    "crates/sonium-bem",
+    "crates/sonium-coupling",
+    "crates/sonium-bench",
+    "crates/sonium-fem",
+    "crates/sonium-mesher",
+    "crates/sonium-roomeq",
+    "crates/sonium-qa",
+    "crates/sonium-demo-workers",
+    "crates/sonium-sim-room",
+    "crates/sonium-sim-pcfan",
+    "crates/sonium-sim-propellers",
+    "crates/sonium-sim-speaker-modeling",
+    "crates/sonium-sim-speaker",
+    "crates/sonium-sim-structural-mechanics",
+    "crates/sonium-meshlang/crates/meshlang-ast",
+    "crates/sonium-meshlang/crates/meshlang-parser",
+    "crates/sonium-meshlang/crates/meshlang-compiler",
+    "crates/sonium-wasm",
+]
+
+# Native crates only — excludes WASM-only targets
+default-members = [
+    "crates/sonium-fastmath",
+    "crates/sonium-wave",
+    "crates/sonium-xem",
+    "crates/sonium-compute",
+    "crates/sonium-fft",
+    "crates/sonium-audio",
+    "crates/sonium-solvers",
+    "crates/sonium-solvers/crates/sonium-solvers-core",
+    "crates/sonium-solvers/crates/sonium-solvers-sys",
+    "crates/sonium-solvers/crates/sonium-solvers-sparse",
+    "crates/sonium-solvers/crates/sonium-solvers-eigen",
+    "crates/sonium-solvers/crates/sonium-solvers-direct",
+    "crates/sonium-solvers/crates/sonium-solvers-preconditioners",
+    "crates/sonium-solvers/crates/sonium-solvers-iterative",
+    "crates/sonium-solvers/crates/sonium-solvers-optimization",
+    "crates/sonium-solvers/crates/sonium-solvers-nonlinear",
+    "crates/sonium-solvers/crates/sonium-solvers-time-integration",
+    "crates/sonium-bem",
+    "crates/sonium-coupling",
+    "crates/sonium-fem",
+    "crates/sonium-mesher",
+    "crates/sonium-roomeq",
+    "crates/sonium-qa",
+    "crates/sonium-sim-room",
+    "crates/sonium-sim-pcfan",
+    "crates/sonium-sim-propellers",
+    "crates/sonium-sim-speaker-modeling",
+    "crates/sonium-sim-speaker",
+    "crates/sonium-sim-structural-mechanics",
+    "crates/sonium-bench",
+    "crates/sonium-meshlang/crates/meshlang-ast",
+    "crates/sonium-meshlang/crates/meshlang-parser",
+    "crates/sonium-meshlang/crates/meshlang-compiler",
+]
+
+[workspace.package]
+edition = "2024"
+authors = ["Pierre <pierre@sonium.io>"]
+license = "BUSL-1.1"
+repository = "https://github.com/sonium-labs/sonium"
+
+[workspace.dependencies]
+# --- Internal crates ---
+sonium-fastmath = { path = "crates/sonium-fastmath" }
+sonium-xem = { path = "crates/sonium-xem" }
+sonium-compute = { path = "crates/sonium-compute" }
+sonium-fft = { path = "crates/sonium-fft" }
+sonium-audio = { path = "crates/sonium-audio" }
+sonium-solvers = { path = "crates/sonium-solvers" }
+sonium-solvers-core = { path = "crates/sonium-solvers/crates/sonium-solvers-core" }
+sonium-solvers-sys = { path = "crates/sonium-solvers/crates/sonium-solvers-sys" }
+sonium-solvers-sparse = { path = "crates/sonium-solvers/crates/sonium-solvers-sparse" }
+sonium-solvers-eigen = { path = "crates/sonium-solvers/crates/sonium-solvers-eigen" }
+sonium-solvers-direct = { path = "crates/sonium-solvers/crates/sonium-solvers-direct" }
+sonium-solvers-preconditioners = { path = "crates/sonium-solvers/crates/sonium-solvers-preconditioners" }
+sonium-solvers-iterative = { path = "crates/sonium-solvers/crates/sonium-solvers-iterative" }
+sonium-solvers-optimization = { path = "crates/sonium-solvers/crates/sonium-solvers-optimization" }
+sonium-solvers-nonlinear = { path = "crates/sonium-solvers/crates/sonium-solvers-nonlinear" }
+sonium-solvers-time-integration = { path = "crates/sonium-solvers/crates/sonium-solvers-time-integration" }
+sonium-wave = { path = "crates/sonium-wave" }
+sonium-bem = { path = "crates/sonium-bem" }
+sonium-coupling = { path = "crates/sonium-coupling" }
+sonium-fem = { path = "crates/sonium-fem" }
+sonium-mesher = { path = "crates/sonium-mesher" }
+sonium-roomeq = { path = "crates/sonium-roomeq" }
+sonium-qa = { path = "crates/sonium-qa" }
+sonium-sim-room = { path = "crates/sonium-sim-room" }
+sonium-sim-pcfan = { path = "crates/sonium-sim-pcfan" }
+sonium-sim-propellers = { path = "crates/sonium-sim-propellers" }
+sonium-sim-speaker-modeling = { path = "crates/sonium-sim-speaker-modeling" }
+sonium-sim-speaker = { path = "crates/sonium-sim-speaker" }
+sonium-sim-structural-mechanics = { path = "crates/sonium-sim-structural-mechanics" }
+sonium-bench = { path = "crates/sonium-bench" }
+sonium-roomsim = { path = "crates/sonium-wasm" }
+meshlang-ast = { path = "crates/sonium-meshlang/crates/meshlang-ast" }
+meshlang-parser = { path = "crates/sonium-meshlang/crates/meshlang-parser", default-features = false }
+meshlang-compiler = { path = "crates/sonium-meshlang/crates/meshlang-compiler", default-features = false }
+
+sofa-reader = { version = "0.2", git = "https://github.com/pierreaubert/sofa-reader" }
+hdf5 = "0.8"
+
+# --- Audio I/O ---
+hound = "3.5"
+
+# --- Numerical computing ---
+delaunator = "1.0"
+num-complex = "0.4"
+num-traits = "0.2"
+
+# --- BLAS/LAPACK ---
+# `oxiblas-blas` is a dev-dependency of sonium-compute only — it's the
+# baseline against which the in-house BLAS-{1,2,3} kernels in
+# `crates/sonium-compute/benches/blas{1,2,3}_compare.rs` are benchmarked.
+# Runtime sonium has no oxiblas linkage.
+oxiblas-blas = { version = "0.2", features = ["parallel"] }
+bytemuck = "1"
+
+# --- GPU (optional, gated behind sonium-compute's `cuda` feature) ---
+# `cuda`: mature path via cudarc (cuBLAS + cuSPARSE, official NVIDIA bindings,
+# dynamic-loaded so the crate compiles on hosts without a CUDA toolkit).
+cudarc = { version = "0.19", default-features = false, features = ["dynamic-loading", "cuda-13020", "driver", "cublas", "cusparse", "cusolver", "nvrtc"] }
+libloading = "0.9"
+# `oxicuda`: pure-Rust fallback retained only as a benchmark baseline for
+# `sonium-compute`; no production code path selects it.
+oxicuda = { version="0.5.3", git = "https://github.com/cool-japan/oxicuda", default-features = false, features = ["driver", "memory", "blas", "sparse"] }
+
+# --- Special functions ---
+spec_math = "0.1"
+
+# --- Parallel processing ---
+rayon = "1.10"
+
+# --- OS threading primitives (worker CPU affinity) ---
+libc = "0.2"
+
+# --- Error handling ---
+anyhow = "1"
+thiserror = "2"
+
+# --- Serialization ---
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+sha2 = "0.10"
+ed25519-zebra = "4.2"
+toml = "0.8"
+csv = "1"
+
+# --- Logging ---
+log = "0.4"
+env_logger = "0.11"
+
+# --- CLI ---
+clap = { version = "4", features = ["derive"] }
+
+# --- Mesh I/O ---
+mshio = "0.4"
+
+# --- Computational geometry predicates (Shewchuk adaptive) ---
+robust = "1.2"
+
+# --- Misc ---
+chrono = { version = "0.4", features = ["serde"] }
+directories = "6"
+rand = "0.9"
+vtkio = "0.7.0-rc2"
+
+# --- Half-precision ---
+half = { version = "2", features = ["num-traits"] }
+
+# --- HTTP / Archive ---
+ureq = "2"
+flate2 = "1"
+
+# --- WASM ---
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+web-sys = "0.3"
+console_error_panic_hook = "0.1"
+wasm-bindgen-rayon = "1"
+wasm-bindgen-test = "0.3"
+
+# --- Dev/Test ---
+approx = "0.5"
+criterion = { version = "0.8", features = ["html_reports"] }
+proptest = "1"
+tempfile = "3"
+
+[workspace.lints.clippy]
+needless_range_loop = "allow"
+perf = { level = "warn", priority = -1 }
+
+[profile.dev]
+# Perf-optimized debug: numerical kernels are 5-50x slower at opt-level 0
+# (no vectorization, no inlining). Cost: opt-level >= 1 disables incremental
+# compilation, so use `cargo check` for fast iteration. Test profile inherits this.
+opt-level = 2
+debug = "line-tables-only"
+codegen-units = 64
+
+[profile.release]
+opt-level = 3
+# Thin LTO parallelizes across all cores; fat LTO is single-threaded and
+# brutally slow on this workspace. Runtime cost vs fat is typically 0-5%.
+lto = "thin"
+codegen-units = 32
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+
+# Fast-linking release+symbols profile for profiling and perf debugging:
+# `cargo build --profile profiling`. No LTO so links stay quick with mold.
+[profile.profiling]
+inherits = "release"
+lto = false
+debug = "line-tables-only"
+codegen-units = 64

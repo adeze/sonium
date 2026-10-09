@@ -1,0 +1,29 @@
+//! Audio signal generation utilities
+//!
+//! Provides functions for generating various test signals including:
+//! - Pure tones (sine waves)
+//! - Two-tone signals (for IMD testing)
+//! - Logarithmic frequency sweeps
+//! - White noise
+//! - Pink noise (1/f spectrum)
+//! - M-weighted noise (ITU-R 468)
+
+mod apply;
+mod extract;
+mod gen_;
+mod misc;
+mod prepare;
+mod sti;
+#[cfg(test)]
+mod tests;
+mod tone_phasor_window;
+mod types;
+
+pub use apply::*;
+pub use extract::*;
+pub use gen_::*;
+pub use misc::*;
+pub use prepare::*;
+pub use sti::*;
+pub use tone_phasor_window::*;
+pub use types::*;

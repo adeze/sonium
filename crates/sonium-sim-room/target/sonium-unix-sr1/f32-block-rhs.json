@@ -1,0 +1,92 @@
+{
+  "artifact": "sonium-sim-room.sr1-cuda",
+  "backend": {
+    "actual": "cuda",
+    "fallback_status": "none",
+    "host_architecture": "x86_64",
+    "precision": "f32-pure",
+    "requested": "cuda"
+  },
+  "cancellation": {
+    "mid_frequency_interrupt": "not-exercised",
+    "pre_setup_test": "cuda_cancellation_rejects_before_device_setup",
+    "status": "frequency-boundary cooperative"
+  },
+  "frequency_stats": [
+    {
+      "allocation_high_water_bytes": 366797,
+      "allocation_operations": 510,
+      "converged": true,
+      "fallback_stage": 0,
+      "frequency_hz": 79.99999999999997,
+      "inner_iterations": 0,
+      "iterations": 56,
+      "max_residual": 2.699760159328386e-6,
+      "preconditioner_age": 0,
+      "preconditioner_rebuild_reason": "scheduled",
+      "retries": 0,
+      "synchronization_calls": 3,
+      "transfer": {
+        "d2d_bytes": 149040,
+        "d2d_operations": 279,
+        "d2h_bytes": 51780,
+        "d2h_operations": 159,
+        "h2d_bytes": 11320,
+        "h2d_operations": 24
+      }
+    },
+    {
+      "allocation_high_water_bytes": 367337,
+      "allocation_operations": 426,
+      "converged": true,
+      "fallback_stage": 0,
+      "frequency_hz": 119.99999999999997,
+      "inner_iterations": 0,
+      "iterations": 56,
+      "max_residual": 8.805157212010112e-7,
+      "preconditioner_age": 1,
+      "preconditioner_rebuild_reason": "cached",
+      "retries": 0,
+      "synchronization_calls": 3,
+      "transfer": {
+        "d2d_bytes": 151088,
+        "d2d_operations": 283,
+        "d2h_bytes": 52300,
+        "d2h_operations": 161,
+        "h2d_bytes": 9264,
+        "h2d_operations": 18
+      }
+    }
+  ],
+  "memory": {
+    "device_free_bytes": 101083840512,
+    "device_total_bytes": 102014189568,
+    "estimated_peak_bytes": 229448
+  },
+  "parity": {
+    "candidate_backend": "cuda-f32-block-rhs",
+    "max_relative_error": 9.943642941552052e-6,
+    "reference_backend": "cpu-f64",
+    "rms_relative_error": 4.780595591391124e-6,
+    "sample_count": 8
+  },
+  "schema_version": 1,
+  "setup_transfer": {
+    "d2d_bytes": 0,
+    "d2d_operations": 0,
+    "d2h_bytes": 0,
+    "d2h_operations": 0,
+    "h2d_bytes": 51876,
+    "h2d_operations": 25
+  },
+  "status": "passed",
+  "total_transfer": {
+    "d2d_bytes": 300128,
+    "d2d_operations": 562,
+    "d2h_bytes": 104080,
+    "d2h_operations": 320,
+    "h2d_bytes": 20584,
+    "h2d_operations": 42
+  },
+  "workload": "f32-pure-block-rhs"
+}

@@ -1,0 +1,207 @@
+[package]
+name = "sonium-solvers"
+version = "0.4.6"
+description = "High-performance linear solvers for BEM and FEM"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["linear-algebra", "solvers", "gmres", "preconditionner"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "sonium_solvers"
+path = "src/lib.rs"
+
+[dependencies]
+# Solver sub-crates
+sonium-solvers-core = { workspace = true }
+sonium-solvers-sys = { workspace = true }
+sonium-solvers-sparse = { workspace = true }
+sonium-solvers-eigen = { workspace = true }
+sonium-solvers-direct = { workspace = true }
+sonium-solvers-preconditioners = { workspace = true }
+sonium-solvers-iterative = { workspace = true }
+sonium-solvers-optimization = { workspace = true }
+sonium-solvers-nonlinear = { workspace = true }
+sonium-solvers-time-integration = { workspace = true }
+
+# Core numerical computing
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+
+# Parallel processing
+rayon = { workspace = true }
+
+# Half-precision float
+half = { workspace = true }
+
+# Backend abstraction for GPU offload (CPU/CUDA/Metal)
+sonium-compute = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# CLI dependencies (for sonium-benchmark binary)
+clap = { workspace = true, optional = true }
+serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
+anyhow = { workspace = true, optional = true }
+
+# HTTP client for Matrix Market downloads
+ureq = { version = "2", optional = true }
+
+# Gzip decompression for .mtx.gz files
+flate2 = { version = "1", optional = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[features]
+# Library by default: `cli` (binaries + their clap/ureq/flate2/serde stack)
+# is opt-in so FEM/BEM library consumers don't pay for binaries.
+# Bins declare `required-features = ["cli"]`, so
+# `cargo run -p sonium-solvers --features cli --bin sonium-benchmark` keeps working.
+default = []
+
+# CLI binary support (sonium-benchmark, precond-scaling)
+cli = [
+    "clap",
+    "serde",
+    "serde_json",
+    "chrono",
+    "env_logger",
+    "ureq",
+    "flate2",
+    "anyhow",
+]
+
+# GPU backends — forwarded to sonium-compute. Activates the
+# CUDA / Metal arms inside `backend_gmres_bench` and any future
+# GPU-aware bench/test in this crate.
+cuda = [
+    "sonium-compute/cuda",
+    "sonium-solvers-iterative/cuda",
+    "sonium-solvers-preconditioners/cuda",
+]
+metal = ["sonium-compute/metal", "sonium-solvers-iterative/metal"]
+native-direct-perf = []
+
+# Experimental GNN-driven AMG coarsening (scaffolding: the default weights
+# reduce to hash-priority parallel MIS at inference cost). Not a default
+# feature; enables `AmgCoarsening::GnnCoarsening` and friends.
+experimental-gnn = ["sonium-solvers-preconditioners/experimental-gnn"]
+
+[[bin]]
+name = "sonium-benchmark"
+path = "src/bin/benchmark/main.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "precond-scaling"
+path = "src/bin/precond_scaling.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "precond-cuda-scaling"
+path = "src/bin/precond_cuda_scaling.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "gmres-ir-scaling"
+path = "src/bin/gmres_ir_scaling.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "direct-solver-perf"
+path = "src/bin/direct_solver_perf.rs"
+required-features = ["native-direct-perf"]
+
+[[bin]]
+name = "precond-tradeoff"
+path = "src/bin/precond_tradeoff.rs"
+required-features = ["cli"]
+
+[[bin]]
+name = "eigen-breakdown"
+path = "src/bin/eigen_breakdown.rs"
+required-features = ["cli"]
+
+[[example]]
+name = "metal_ir_smoke"
+required-features = ["metal"]
+
+[[example]]
+name = "metal_ir_complex_bench"
+required-features = ["metal"]
+
+# CUDA-only scratch probe: `cargo test` skips it unless `--features cuda`
+# is on (it imports `sonium_compute::CudaBackend` unconditionally).
+[[example]]
+name = "amg_cuda_probe_tmp"
+required-features = ["cuda"]
+
+[[bench]]
+name = "selection_evidence_bench"
+harness = false
+
+[[bench]]
+name = "solver_bench"
+harness = false
+
+[[bench]]
+name = "preconditioner_bench"
+harness = false
+
+[[bench]]
+name = "spmv_bench"
+harness = false
+
+[[bench]]
+name = "petsc_compare_bench"
+harness = false
+
+[[bench]]
+name = "backend_gmres_bench"
+harness = false
+
+[[bench]]
+name = "roofline_preflight_bench"
+harness = false
+
+[[bench]]
+name = "numa_first_touch_bench"
+harness = false
+
+[[bench]]
+name = "two_socket_spmv_bench"
+harness = false
+
+[[bench]]
+name = "multifrontal_blr_bench"
+harness = false
+
+[[bench]]
+name = "dense_lu_bench"
+harness = false
+
+[[bench]]
+name = "dense_gemv_bench"
+harness = false
+
+[[bench]]
+name = "low_rank_truncation_bench"
+harness = false
+
+[[bench]]
+name = "sparse_lu_bench"
+harness = false

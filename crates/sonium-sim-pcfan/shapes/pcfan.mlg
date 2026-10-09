@@ -1,0 +1,334 @@
+// PC Fan geometry — declarative DSL matching the Rust procedural model in
+// crates/sonium-sim-pcfan/src/geometry.rs (PcFanGeometry::from_config with
+// PcFanConfig::default() and PcFanDesignVariables::baseline_for(&default)).
+//
+// Default 120 mm fan, 8 blades, blade tip radius 55 mm. The model is centered
+// on the origin: frame extends z ∈ [-depth/2, +depth/2]. Box and Cylinder
+// primitives are corner-origin in meshlang, so each piece is translated into
+// place explicitly.
+//
+// Derived dimensions remain explicit parameters so optimizers can perturb and
+// report them independently; subtraction expressions in CSG inputs are also
+// supported by the current MeshLang compiler.
+
+// Frame -----------------------------------------------------------------
+param frame_side       = 0.120   // outer side
+param frame_inner_side = 0.116   // = frame_side - 2 * 0.002 (wall thickness)
+param frame_outer_x0   = -0.060  // = -frame_side / 2
+param frame_inner_x0   = -0.058  // = -frame_inner_side / 2
+
+// Depth -----------------------------------------------------------------
+param depth      = 0.025
+param half_depth = 0.0125        // = depth / 2
+param neg_half_depth = -0.0125   // = -depth / 2
+
+// Shroud (thin cylindrical wall) ---------------------------------------
+param shroud_inner_radius = 0.057
+param shroud_outer_radius = 0.058   // = shroud_inner_radius + 0.001 wall
+
+// Hub (cylinder, offset toward front to clear rear struts) -------------
+param hub_radius = 0.018
+param hub_z0     = -0.0065      // = -depth/2 + strut_thickness + 0.002 clearance
+param hub_depth  = 0.019        // = depth/2 - hub_z0
+
+// Motor mount (cylinder above struts) ----------------------------------
+param motor_radius = 0.021
+param motor_depth  = 0.010
+param motor_z0     = -0.0085    // = -depth/2 + strut_thickness
+
+// Support struts (X cross at rear plane) --------------------------------
+// We model the X as TWO full diagonal bars crossing at the origin (instead
+// of four corner-to-center half-bars). Four half-bars meeting at a single
+// point produce a degenerate vertex-only contact that OpenCASCADE drops
+// during the boolean union, leaving only a single bar visible.
+//
+// Each bar spans the full diagonal of the inner cavity: 2 * sqrt(2) *
+// 0.058 ≈ 0.1640 m. The Box is created at corner-origin, then shifted so
+// its centroid sits at the world origin before being rotated about Z.
+param strut_length      = 0.1640    // full diagonal length, corner-to-corner
+param strut_width       = 0.006
+param strut_thickness   = 0.004
+param strut_x_offset    = -0.0820   // = -strut_length / 2  (center on X)
+param strut_y_offset    = -0.003    // = -strut_width / 2   (center on Y)
+param strut_z0          = -0.0125   // = -depth/2 (rear face)
+
+// Blades (8, parametric airfoil-like loft) -----------------------------
+// Same parameterisation as `crates/sonium-sim-pcfan/src/geometry.rs`
+// (`PcFanDesignVariables` / `BladeSectionControl` / `BladePathControl`).
+// Each blade is built by lofting through 5 radial sections (matching
+// `BLADE_SECTION_STATION_COUNT = 5` and `BLADE_PATH_CONTROL_COUNT = 5` in
+// the Rust model). Per station we expose the same 4 section DOFs (chord,
+// camber, thickness, twist) and the 2 path DOFs (tangential lean, axial
+// sweep) — these are the design variables a shape optimiser can drive.
+//
+// Each section is a closed 10-point polygon (5 chord stations × 2 sides)
+// computed inline by `surf_y` / `surf_z`, which mirror `blade_point` in
+// `geometry.rs`. The X coordinate of every section vertex is the station
+// radius. After lofting, the template sits at azimuth 0 and is duplicated
+// + rotated about Z for the seven other blades.
+//
+// `ruled: true` keeps the loft as LINEAR interpolation between adjacent
+// sections (gmsh `Ruled ThruSections`). The default smooth cubic B-spline
+// overshoots corners and pushes blades through the frame walls; ruled is
+// bounded by the convex hull of the input sections so the blade stays in
+// r ∈ [hub_radius, tip_radius]. The Rust model uses Catmull-Rom across
+// the same 5 control points instead of linear, which gives a smoother
+// span profile, but the design vector is identical.
+
+// --- Radial extents -----------------------------------------------------
+param blade_hub_radius_m = 0.018  // = hub_radius
+param blade_tip_radius_m = 0.055
+
+// --- Section DOFs (mirror BladeSectionControl, 5 stations) -------------
+// Chord: linearly interpolated from 0.88·depth (root) to 0.56·depth (tip)
+// at depth=0.025 → 0.022, 0.020, 0.018, 0.016, 0.014.
+param s0_chord_m = 0.0220
+param s1_chord_m = 0.0200
+param s2_chord_m = 0.0180
+param s3_chord_m = 0.0160
+param s4_chord_m = 0.0140
+
+// Camber: parabolic bow toward the suction side, ≈ 5% of chord.
+// Common range for axial-fan blades is 3–7%. Optimisers can drive each
+// station independently; baseline gives the blade a visible curvature.
+param s0_camber_m = 0.00110   // 5% of 22 mm
+param s1_camber_m = 0.00100   // 5% of 20 mm
+param s2_camber_m = 0.00090   // 5% of 18 mm
+param s3_camber_m = 0.00080   // 5% of 16 mm
+param s4_camber_m = 0.00070   // 5% of 14 mm
+
+// Thickness: constant 1.2 mm — same as the Rust BladeSectionControl default.
+param s0_thickness_m = 0.0012
+param s1_thickness_m = 0.0012
+param s2_thickness_m = 0.0012
+param s3_thickness_m = 0.0012
+param s4_thickness_m = 0.0012
+
+// Twist (pitch about the radial axis): high angle at the root, lower
+// at the tip — the standard axial-fan profile that keeps the local
+// angle of attack roughly constant across span. 30° → 12° linear.
+param s0_twist_deg = 30.0
+param s1_twist_deg = 25.5
+param s2_twist_deg = 21.0
+param s3_twist_deg = 16.5
+param s4_twist_deg = 12.0
+
+// --- Path DOFs (mirror BladePathControl, 5 stations) -------------------
+// Lean (tangential): the blade leans 2 mm in the direction of rotation
+// at the tip. Slight forward lean unloads the tip and reduces vortex
+// noise on real fans.
+param p0_tang_m  = 0.0
+param p1_tang_m  = 0.0003
+param p2_tang_m  = 0.0008
+param p3_tang_m  = 0.0014
+param p4_tang_m  = 0.0020
+
+// Sweep (axial): forward sweep at the tip — leading edge bowed +Z
+// (toward the inlet), 3 mm of sweep at the tip. Forward sweep is a
+// well-known noise-reduction technique for axial fans.
+param p0_axial_m = 0.0
+param p1_axial_m = 0.0005
+param p2_axial_m = 0.0015
+param p3_axial_m = 0.0025
+param p4_axial_m = 0.0030
+
+// --- Helper functions: airfoil cross-section math ---------------------
+// All coordinates are in the BLADE-LOCAL frame at azimuth 0 (chord along
+// the axial Z axis when twist=0, blade extends along +X). The per-blade
+// Z rotation is applied after the loft.
+
+// Radius at a given span fraction (linear hub→tip).
+fn rad_at(span_frac: Float) -> Float {
+    blade_hub_radius_m + span_frac * (blade_tip_radius_m - blade_hub_radius_m)
+}
+
+// Centred chord position: chord_frac ∈ [0,1] → cc ∈ [-0.5,+0.5].
+fn cc(chord_frac: Float) -> Float {
+    chord_frac - 0.5
+}
+
+// Parabolic camber shape — 1 at mid-chord, 0 at LE/TE
+// (= 1 - (2·cc)² = 1 - 4·cc²).
+fn camber_shape(chord_frac: Float) -> Float {
+    1.0 - 4.0 * cc(chord_frac) * cc(chord_frac)
+}
+
+// Twist angle in radians.
+fn twist_rad(twist_d: Float) -> Float {
+    twist_d * pi / 180.0
+}
+
+// Tangential (Y) offset of the chord-line midpoint at a chord position.
+// Mirrors `tangential_offset` in geometry.rs::blade_point.
+fn tang_mid(chord_frac: Float, chord_m: Float, twist_d: Float, camber_m: Float, path_tang_m: Float) -> Float {
+    path_tang_m + cc(chord_frac) * chord_m * sin(twist_rad(twist_d)) + camber_m * camber_shape(chord_frac)
+}
+
+// Axial (Z) offset of the chord-line midpoint at a chord position.
+fn axial_mid(chord_frac: Float, chord_m: Float, twist_d: Float, path_axial_m: Float) -> Float {
+    path_axial_m + cc(chord_frac) * chord_m * cos(twist_rad(twist_d))
+}
+
+// Surface point Y at a chord position. side = +1 → +Y face, -1 → -Y face.
+// Surface normal (chord-perpendicular in the Y/Z plane) at twist θ is
+// (cos θ, -sin θ); we offset the midline by ±thickness/2 along it.
+fn surf_y(chord_frac: Float, chord_m: Float, twist_d: Float, camber_m: Float, path_tang_m: Float, thickness_m: Float, side: Float) -> Float {
+    tang_mid(chord_frac, chord_m, twist_d, camber_m, path_tang_m) + side * 0.5 * thickness_m * cos(twist_rad(twist_d))
+}
+
+// Surface point Z at a chord position.
+fn surf_z(chord_frac: Float, chord_m: Float, twist_d: Float, path_axial_m: Float, thickness_m: Float, side: Float) -> Float {
+    axial_mid(chord_frac, chord_m, twist_d, path_axial_m) - side * 0.5 * thickness_m * sin(twist_rad(twist_d))
+}
+
+geometry pcfan {
+    // --- Frame: hollow square wall (outer minus inner cavity) ---
+    let frame_outer = Box(frame_side, frame_side, depth)
+        |> translate(frame_outer_x0, frame_outer_x0, neg_half_depth)
+    let frame_void = Box(frame_inner_side, frame_inner_side, depth)
+        |> translate(frame_inner_x0, frame_inner_x0, neg_half_depth)
+    let frame = frame_outer - frame_void
+
+    // --- Shroud: thin cylindrical ring ---
+    let shroud_outer = Cylinder(r: shroud_outer_radius, h: depth)
+        |> translate(0.0, 0.0, neg_half_depth)
+    let shroud_void = Cylinder(r: shroud_inner_radius, h: depth)
+        |> translate(0.0, 0.0, neg_half_depth)
+    let shroud = shroud_outer - shroud_void
+
+    // --- Rotating hub ---
+    let hub = Cylinder(r: hub_radius, h: hub_depth)
+        |> translate(0.0, 0.0, hub_z0)
+
+    // --- Motor mount cylinder ---
+    let motor = Cylinder(r: motor_radius, h: motor_depth)
+        |> translate(0.0, 0.0, motor_z0)
+
+    // --- Support struts: X cross of two crossing diagonal bars ---
+    // Each bar is centered on the origin (not corner-anchored) so that
+    // the rotation produces a full diagonal spanning corner-to-corner,
+    // and the two bars share a volumetric overlap at the center for a
+    // clean boolean union.
+    // gmsh `Rotate` takes RADIANS, so use multiples of pi (NOT degrees).
+    let strut_a = Box(strut_length, strut_width, strut_thickness)
+        |> translate(strut_x_offset, strut_y_offset, strut_z0)
+        |> rotate(axis: Z, angle: pi / 4)
+    let strut_b = Box(strut_length, strut_width, strut_thickness)
+        |> translate(strut_x_offset, strut_y_offset, strut_z0)
+        |> rotate(axis: Z, angle: 3 * pi / 4)
+
+    // --- Blade template: 5 parametric airfoil sections, ruled-lofted ---
+    // Each section is a closed 10-point polygon traced CCW viewed from +X
+    // (radial outward). Vertex order:
+    //   top  (+Y side): chord_frac = 0.0, 0.25, 0.5, 0.75, 1.0  (LE → TE)
+    //   bot  (-Y side): chord_frac = 1.0, 0.75, 0.5, 0.25, 0.0  (TE → LE)
+    // X is constant per section = rad_at(span_frac). Y/Z come from
+    // surf_y/surf_z which encode chord, camber, twist, thickness, and
+    // path offsets identically to geometry.rs::blade_point.
+    let section_0 = Polygon(points: [
+        [rad_at(0.0), surf_y(0.0,  s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m,  1.0), surf_z(0.0,  s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m,  1.0)],
+        [rad_at(0.0), surf_y(0.25, s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m,  1.0), surf_z(0.25, s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m,  1.0)],
+        [rad_at(0.0), surf_y(0.5,  s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m,  1.0), surf_z(0.5,  s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m,  1.0)],
+        [rad_at(0.0), surf_y(0.75, s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m,  1.0), surf_z(0.75, s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m,  1.0)],
+        [rad_at(0.0), surf_y(1.0,  s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m,  1.0), surf_z(1.0,  s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m,  1.0)],
+        [rad_at(0.0), surf_y(1.0,  s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m, -1.0), surf_z(1.0,  s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m, -1.0)],
+        [rad_at(0.0), surf_y(0.75, s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m, -1.0), surf_z(0.75, s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m, -1.0)],
+        [rad_at(0.0), surf_y(0.5,  s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m, -1.0), surf_z(0.5,  s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m, -1.0)],
+        [rad_at(0.0), surf_y(0.25, s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m, -1.0), surf_z(0.25, s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m, -1.0)],
+        [rad_at(0.0), surf_y(0.0,  s0_chord_m, s0_twist_deg, s0_camber_m, p0_tang_m, s0_thickness_m, -1.0), surf_z(0.0,  s0_chord_m, s0_twist_deg, p0_axial_m, s0_thickness_m, -1.0)]
+    ])
+    let section_1 = Polygon(points: [
+        [rad_at(0.25), surf_y(0.0,  s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m,  1.0), surf_z(0.0,  s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m,  1.0)],
+        [rad_at(0.25), surf_y(0.25, s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m,  1.0), surf_z(0.25, s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m,  1.0)],
+        [rad_at(0.25), surf_y(0.5,  s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m,  1.0), surf_z(0.5,  s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m,  1.0)],
+        [rad_at(0.25), surf_y(0.75, s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m,  1.0), surf_z(0.75, s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m,  1.0)],
+        [rad_at(0.25), surf_y(1.0,  s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m,  1.0), surf_z(1.0,  s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m,  1.0)],
+        [rad_at(0.25), surf_y(1.0,  s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m, -1.0), surf_z(1.0,  s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m, -1.0)],
+        [rad_at(0.25), surf_y(0.75, s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m, -1.0), surf_z(0.75, s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m, -1.0)],
+        [rad_at(0.25), surf_y(0.5,  s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m, -1.0), surf_z(0.5,  s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m, -1.0)],
+        [rad_at(0.25), surf_y(0.25, s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m, -1.0), surf_z(0.25, s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m, -1.0)],
+        [rad_at(0.25), surf_y(0.0,  s1_chord_m, s1_twist_deg, s1_camber_m, p1_tang_m, s1_thickness_m, -1.0), surf_z(0.0,  s1_chord_m, s1_twist_deg, p1_axial_m, s1_thickness_m, -1.0)]
+    ])
+    let section_2 = Polygon(points: [
+        [rad_at(0.5), surf_y(0.0,  s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m,  1.0), surf_z(0.0,  s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m,  1.0)],
+        [rad_at(0.5), surf_y(0.25, s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m,  1.0), surf_z(0.25, s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m,  1.0)],
+        [rad_at(0.5), surf_y(0.5,  s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m,  1.0), surf_z(0.5,  s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m,  1.0)],
+        [rad_at(0.5), surf_y(0.75, s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m,  1.0), surf_z(0.75, s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m,  1.0)],
+        [rad_at(0.5), surf_y(1.0,  s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m,  1.0), surf_z(1.0,  s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m,  1.0)],
+        [rad_at(0.5), surf_y(1.0,  s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m, -1.0), surf_z(1.0,  s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m, -1.0)],
+        [rad_at(0.5), surf_y(0.75, s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m, -1.0), surf_z(0.75, s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m, -1.0)],
+        [rad_at(0.5), surf_y(0.5,  s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m, -1.0), surf_z(0.5,  s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m, -1.0)],
+        [rad_at(0.5), surf_y(0.25, s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m, -1.0), surf_z(0.25, s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m, -1.0)],
+        [rad_at(0.5), surf_y(0.0,  s2_chord_m, s2_twist_deg, s2_camber_m, p2_tang_m, s2_thickness_m, -1.0), surf_z(0.0,  s2_chord_m, s2_twist_deg, p2_axial_m, s2_thickness_m, -1.0)]
+    ])
+    let section_3 = Polygon(points: [
+        [rad_at(0.75), surf_y(0.0,  s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m,  1.0), surf_z(0.0,  s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m,  1.0)],
+        [rad_at(0.75), surf_y(0.25, s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m,  1.0), surf_z(0.25, s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m,  1.0)],
+        [rad_at(0.75), surf_y(0.5,  s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m,  1.0), surf_z(0.5,  s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m,  1.0)],
+        [rad_at(0.75), surf_y(0.75, s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m,  1.0), surf_z(0.75, s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m,  1.0)],
+        [rad_at(0.75), surf_y(1.0,  s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m,  1.0), surf_z(1.0,  s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m,  1.0)],
+        [rad_at(0.75), surf_y(1.0,  s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m, -1.0), surf_z(1.0,  s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m, -1.0)],
+        [rad_at(0.75), surf_y(0.75, s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m, -1.0), surf_z(0.75, s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m, -1.0)],
+        [rad_at(0.75), surf_y(0.5,  s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m, -1.0), surf_z(0.5,  s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m, -1.0)],
+        [rad_at(0.75), surf_y(0.25, s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m, -1.0), surf_z(0.25, s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m, -1.0)],
+        [rad_at(0.75), surf_y(0.0,  s3_chord_m, s3_twist_deg, s3_camber_m, p3_tang_m, s3_thickness_m, -1.0), surf_z(0.0,  s3_chord_m, s3_twist_deg, p3_axial_m, s3_thickness_m, -1.0)]
+    ])
+    let section_4 = Polygon(points: [
+        [rad_at(1.0), surf_y(0.0,  s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m,  1.0), surf_z(0.0,  s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m,  1.0)],
+        [rad_at(1.0), surf_y(0.25, s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m,  1.0), surf_z(0.25, s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m,  1.0)],
+        [rad_at(1.0), surf_y(0.5,  s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m,  1.0), surf_z(0.5,  s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m,  1.0)],
+        [rad_at(1.0), surf_y(0.75, s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m,  1.0), surf_z(0.75, s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m,  1.0)],
+        [rad_at(1.0), surf_y(1.0,  s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m,  1.0), surf_z(1.0,  s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m,  1.0)],
+        [rad_at(1.0), surf_y(1.0,  s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m, -1.0), surf_z(1.0,  s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m, -1.0)],
+        [rad_at(1.0), surf_y(0.75, s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m, -1.0), surf_z(0.75, s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m, -1.0)],
+        [rad_at(1.0), surf_y(0.5,  s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m, -1.0), surf_z(0.5,  s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m, -1.0)],
+        [rad_at(1.0), surf_y(0.25, s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m, -1.0), surf_z(0.25, s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m, -1.0)],
+        [rad_at(1.0), surf_y(0.0,  s4_chord_m, s4_twist_deg, s4_camber_m, p4_tang_m, s4_thickness_m, -1.0), surf_z(0.0,  s4_chord_m, s4_twist_deg, p4_axial_m, s4_thickness_m, -1.0)]
+    ])
+
+    // The lofted template sits at azimuth 0 — we re-use it as blade1
+    // (aliased) and Duplicata-copy it for the seven other blades.
+    // gmsh `Rotate` takes RADIANS — 8 evenly spaced blades sit at
+    // k * 2π/8 = k·π/4 for k = 0..7.
+    let blade_template = Loft(sections: [section_0, section_1, section_2, section_3, section_4], ruled: true)
+    let blade1 = blade_template |> rotate(axis: Z, angle: 0)
+    let blade2 = blade_template |> copy() |> rotate(axis: Z, angle: pi / 4)
+    let blade3 = blade_template |> copy() |> rotate(axis: Z, angle: pi / 2)
+    let blade4 = blade_template |> copy() |> rotate(axis: Z, angle: 3 * pi / 4)
+    let blade5 = blade_template |> copy() |> rotate(axis: Z, angle: pi)
+    let blade6 = blade_template |> copy() |> rotate(axis: Z, angle: 5 * pi / 4)
+    let blade7 = blade_template |> copy() |> rotate(axis: Z, angle: 3 * pi / 2)
+    let blade8 = blade_template |> copy() |> rotate(axis: Z, angle: 7 * pi / 4)
+
+    // Parts intentionally remain SEPARATE volumes — no final BooleanUnion.
+    //
+    // A BooleanUnion of frame|shroud|hub|motor|struts|blades welds them into
+    // a single solid AND deletes the originals, which (a) makes parts no
+    // longer individually selectable in the gmsh GUI, and (b) breaks the
+    // physics groups below that reference `pcfan.frame.faces` etc. For a
+    // multi-physics fan model we want each part as its own volume so it can
+    // carry its own boundary condition. If a future workflow needs conformal
+    // contact meshes, replace the union with `BooleanFragments` (meshlang's
+    // `|> fragment(...)` operator) — that preserves identity while making
+    // the mesh share faces at touching boundaries.
+}
+
+mesh for pcfan {
+    default_size: 0.005
+    min_size: 0.0005
+    max_size: 0.020
+    order: 2
+    optimize: true
+}
+
+physics {
+    group frame_wall: neumann = pcfan.frame.faces
+    group shroud_wall: dirichlet = pcfan.shroud.faces
+    group hub_wall: velocity = pcfan.hub.faces
+    group motor_mount: neumann = pcfan.motor.faces
+}
+
+export {
+    format: msh4
+    filename: "pcfan_meshlang.msh"
+}

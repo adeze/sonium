@@ -1,0 +1,47 @@
+{
+  "schema": "sonium.propeller.execution-evidence.v1",
+  "provenance": {
+    "requested_backend": "cpu",
+    "actual_backend": "cpu",
+    "precision": "f64",
+    "scalar_or_simd": "scalar",
+    "fidelity": "panel_geometry_surrogate",
+    "converged": false,
+    "cancelled": false,
+    "device_lost": false,
+    "allocation_failures": 0,
+    "transfer_count": 0,
+    "synchronization_count": 0,
+    "launch_count": 0,
+    "peak_live_bytes": 0,
+    "seed": "propeller.cpu.f64.panel-surrogate:mesh=128x28+64:harmonics=20",
+    "input_checksum_sha256": "1569e5ed342501184e498ded89f2d876189e9e584fc3c7b5ab1a333829f36435",
+    "output_checksum_sha256": "dacfb68bbc8979830396ea96da69a7f5d1bf58d645c4bac771c0f78a55f620d7",
+    "host": {
+      "compiler": "rustc 1.95.0 (59807616e 2026-04-14)",
+      "os": "linux",
+      "kernel": "6.8.0-137-generic",
+      "cpu_model": "AMD Ryzen Threadripper PRO 3995WX 64-Cores",
+      "microcode": "0x830107c",
+      "target": "x86_64-linux",
+      "target_features": "avx2,fma,sse4.2",
+      "rayon_threads": 1,
+      "affinity_policy": "unspecified"
+    }
+  },
+  "artifact_checksums_sha256": {
+    "axial-wake-proxy.png": "c27937ee3b45b0d78c34b636c4d85748a398b86e6d8566ccd80fda99b799d848",
+    "baseline_blade.vtu": "58bdbf15e18ae8823b6d539b100738e3f093b710b1724788865b746360cfacd4",
+    "blade-load-distribution.svg": "9cd8fc2532f0fb9dd4ad32f00bf0dee8c42569e2d4779fb70ea89aba60034ca2",
+    "blade_load_distribution.csv": "2a8d89d5d9ae1f86d4d47909c4c3e4a24272418337ab3248bae67534b21eb492",
+    "conventional-toroidal-comparison.svg": "2425590556d17dbf4498a7611302b1a5d4cb6f75fe5f6494bfd82fd6eb4212e3",
+    "gallery.json": "002f92cb9327eabc94f954dcd75ab366b02133e6a9f686c7126db3252b0a2d28",
+    "optimized-blade-loading.png": "9a0382d92a595d4a12ee08accceb4dbeb427d93b8c08113a6cc8c9cd9b5574f6",
+    "optimized_blade.vtu": "c4143cde84d7b615364261e2efcbabe5891399913440f9b0452c154567589ca5",
+    "rotation.gif": "b9b7a69bf33ed95bf157216af4685a51a9372d49062faa586f51bbbc14df1478",
+    "source_spectrum.csv": "b9b04fe929113d532686f9131fe3fc63458651b8d1efcaa7f4d74ce68c360343",
+    "spectrum.svg": "53fc55343c18acebeb71e22fc77fd0af13f4548c8b197a4c408c90a6687f1744",
+    "thrust-versus-operating-point.svg": "0b83d04bb7af9a90ac490044a217f249695e1018f9918cd5c285d5de215c2c0a",
+    "torque-versus-operating-point.svg": "216aa292b083500ac330bc468eaf128840b95bb635a663c8c48b577742b425b9"
+  }
+}

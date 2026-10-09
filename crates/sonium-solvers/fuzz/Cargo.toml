@@ -1,0 +1,36 @@
+[package]
+name = "sonium-solvers-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+sonium-solvers = { path = ".." }
+
+[[bin]]
+name = "checked_fgmres"
+path = "fuzz_targets/checked_fgmres.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checked_csr"
+path = "fuzz_targets/checked_csr.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checked_preconditioners"
+path = "fuzz_targets/checked_preconditioners.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

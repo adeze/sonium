@@ -1,0 +1,90 @@
+[package]
+name = "sonium-sim-room"
+version = "0.4.4"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Generate room measurement data for RoomEQ testing using FEM, with optional dense BLR TBEM for low frequencies"
+license = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+name = "sonium_sim_room"
+path = "src/lib.rs"
+
+[[bin]]
+name = "generate-roomeq-data"
+path = "bin/generate_roomeq_data.rs"
+
+[[bin]]
+name = "bench-gcro-dr-fem"
+path = "bin/bench_gcro_dr_fem.rs"
+
+[[bin]]
+name = "bench-fem-preconditioners"
+path = "bin/bench_preconditioners.rs"
+
+[dependencies]
+# FEM acoustic solver (preferred for closed-room interior Helmholtz problems:
+# sparse matrices, frequency-dependent local impedance BCs, better scaling).
+sonium-fem = { workspace = true }
+sonium-solvers = { workspace = true }
+sonium-xem = { workspace = true }
+sonium-mesher = { workspace = true }
+# Backend abstraction for the optional GPU path (CudaBackend etc).
+sonium-compute = { workspace = true }
+sonium-fastmath = { workspace = true }
+
+# Provides acoustic-impedance material models used by FEM setup, and the optional
+# dense BLR TBEM path exposed by `generate-roomeq-data --dense`.
+sonium-bem = { workspace = true }
+
+# Audio DSP (impulse response synthesis from frequency response)
+sonium-audio = { workspace = true }
+hound = { workspace = true }
+
+# Autoeq types
+sonium-roomeq = { workspace = true }
+
+# Numerical computing
+num-complex = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# System memory detection (for --memory-limit auto-default)
+sysinfo = "0.32"
+
+# Parallel processing
+rayon = { workspace = true }
+
+# Random number generation (for HF extension noise)
+rand = { workspace = true }
+ed25519-zebra = { workspace = true }
+
+[features]
+default = []
+
+# Enable the optional CUDA GPU paths for `generate-roomeq-data --backend cuda`
+# and dense BLR TBEM assembly (`--dense --dense-backend cuda`). Requires the
+# CUDA toolkit + NVIDIA driver at build/run time.
+cuda = ["sonium-bem/cuda", "sonium-compute/cuda", "sonium-solvers/cuda"]
+
+# Enable the optional Apple Silicon Metal GPU path for the dense BLR TBEM
+# assembly (`generate-roomeq-data --dense --dense-backend metal`). macOS only;
+# uses native MSL `Complex32` integrals promoted to `Complex64` on readback.
+metal = ["sonium-bem/metal", "sonium-compute/metal", "sonium-solvers/metal"]
+
+[dev-dependencies]
+tempfile = { workspace = true }

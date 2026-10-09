@@ -1,0 +1,5 @@
+geometry Main {
+    let outer = Box(1.0, 1.0, 1.0)
+    let hole = Sphere(r: 0.2)
+    let solid = outer - hole
+}

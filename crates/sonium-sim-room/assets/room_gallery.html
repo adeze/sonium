@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{{SCENARIO}} · Sonium room gallery</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #101820; color: #dfe7ef; }
+    header { padding: 2rem 3rem 1rem; }
+    main { display: grid; grid-template-columns: repeat(auto-fit,minmax(320px,1fr)); gap: 1rem; padding: 1rem 3rem 3rem; }
+    figure { margin: 0; padding: .75rem; background: #1b2d3a; border-radius: .5rem; }
+    img, object { display: block; width: 100%; min-height: 180px; background: #0b1116; border: 0; }
+    figcaption { padding-top: .6rem; font-size: .9rem; }
+    a { color: #8fd3ff; }
+ .meta { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: .8rem; }
+ .provenance { padding: .75rem 3rem; border-top: 1px solid #315064; border-bottom: 1px solid #315064; }
+ .provenance strong { color: #f9c74f; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{SCENARIO}}</h1>
+    <p>Static Sonium room-simulation gallery. Numerical CSV/WAV siblings remain authoritative.</p>
+<p><a href="gallery.json">gallery manifest</a> · <a href="gallery-provenance.json">provenance/checksums</a> · <a href="room_metrics.json">frequency provenance</a> · <a href="frequency_response.csv">frequency CSV</a> · <a href="source_listener_response.csv">source/listener CSV</a></p>
+ <div id="meta" class="meta">Loading manifest…</div>
+ <div id="integrity" class="meta" data-status="pending">Checking artifact integrity…</div>
+ </header>
+ <section id="provenance" class="provenance" aria-label="simulation provenance">Loading provenance…</section>
+ <div id="frequency-provenance" class="meta" aria-label="frequency provenance">Loading frequency provenance…</div>
+ <main id="figures"></main>
+  <script>
+    const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+ async function verifyArtifactChecksums(provenance) {
+  const status = document.getElementById("integrity");
+  const entries = Object.entries(provenance.checksums || {});
+  if (entries.length === 0) {
+   status.textContent = "Artifact integrity: no checksums were published";
+   status.dataset.status = "missing";
+   return false;
+  }
+  const results = await Promise.all(entries.map(async ([filename, expected]) => {
+   try {
+    const response = await fetch(filename, {cache: "no-store"});
+    if (!response.ok) return {filename, ok: false, detail: `HTTP ${response.status}`};
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    let hash = 0xcbf29ce484222325n;
+    for (const byte of bytes) {
+     hash = BigInt.asUintN(64, (hash ^ BigInt(byte)) * 0x100000001b3n);
+    }
+    const actual = `fnv1a64:${hash.toString(16).padStart(16, "0")}`;
+    return {filename, ok: actual === expected, detail: actual};
+   } catch (error) {
+    return {filename, ok: false, detail: String(error)};
+   }
+  }));
+  const failed = results.filter(result => !result.ok);
+  status.dataset.status = failed.length === 0 ? "ok" : "failed";
+  status.textContent = failed.length === 0
+   ? `Artifact integrity: ${results.length} checks passed`
+   : `Artifact integrity failed: ${failed.map(result => `${result.filename} (${result.detail})`).join(", ")}`;
+  return failed.length === 0;
+ }
+
+ Promise.all([
+ fetch("gallery.json").then(response => response.json()),
+ fetch("gallery-provenance.json").then(response => response.json()),
+ fetch("room_metrics.json").then(response => response.ok ? response.json() : {})
+ ]).then(async ([manifest, provenance, metrics]) => {
+  if (!await verifyArtifactChecksums(provenance)) {
+   document.getElementById("meta").textContent = "Manifest withheld until artifact integrity passes";
+   return;
+  }
+      document.getElementById("provenance").innerHTML = `<strong>Provenance:</strong> ${escapeHtml(provenance.provenance || "unspecified")} · <strong>Scenario:</strong> ${escapeHtml(provenance.scenario || "unspecified")} · <strong>Solver:</strong> ${escapeHtml(provenance.solver || "unspecified")} · <strong>Git:</strong> ${escapeHtml(provenance.git_sha || "unknown")} · <strong>Viewport:</strong> ${escapeHtml(`${provenance.viewport?.width || "?"}×${provenance.viewport?.height || "?"}`)}`;
+      const frequencyLabels = Array.isArray(metrics.provenance) ? metrics.provenance : [];
+      document.getElementById("frequency-provenance").textContent = frequencyLabels.length
+        ? `Frequency provenance by bin: ${frequencyLabels.map((label, index) => `f${index}=${label}`).join(" · ")}`
+        : "Frequency provenance unavailable";
+      document.getElementById("meta").textContent = JSON.stringify({schema: manifest.schema, viewport: manifest.viewport, figures: manifest.figures.length}, null, 2);
+      const root = document.getElementById("figures");
+      for (const figure of manifest.figures) {
+        const card = document.createElement("figure");
+ const caption = document.createElement("figcaption");
+        caption.innerHTML = `<strong>${escapeHtml(figure.filename)}</strong><br>${escapeHtml(figure.caption || "")}`;
+        if (figure.kind === "png") {
+          const image = document.createElement("img"); image.src = figure.filename; image.alt = figure.caption || figure.filename; card.append(image);
+        } else if (figure.kind === "svg") {
+          const object = document.createElement("object"); object.data = figure.filename; object.type = "image/svg+xml"; object.title = figure.caption || figure.filename; card.append(object);
+        } else {
+          const link = document.createElement("a"); link.href = figure.filename; link.textContent = `open ${figure.filename}`; card.append(link);
+        }
+ card.append(caption);
+ if (typeof figure.source === "string" && figure.source.length > 0) {
+ const source = document.createElement("a");
+ source.href = figure.source;
+ source.textContent = `source data: ${figure.source}`;
+ card.append(source);
+ }
+ root.append(card);
+ }
+ const audio = document.createElement("p");
+ audio.textContent = "Audio artifacts: ";
+ for (const filename of Array.isArray(provenance.audio) ? provenance.audio : []) {
+ const link = document.createElement("a");
+ link.href = filename;
+ link.textContent = filename;
+ audio.append(link, document.createTextNode(" "));
+ }
+ document.querySelector("header").append(audio);
+ }).catch(error => { document.getElementById("meta").textContent = `Manifest load failed: ${error}`; });
+  </script>
+</body>
+</html>

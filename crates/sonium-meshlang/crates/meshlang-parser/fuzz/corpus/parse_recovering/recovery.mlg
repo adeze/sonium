@@ -1,0 +1,3 @@
+param broken = 1e+
+const recovered = 2
+boundary surface wall { entities: faces, kind: dirichlet }

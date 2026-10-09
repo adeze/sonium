@@ -1,0 +1,755 @@
+//! Simple differentiable gain modules.
+
+#![allow(
+    clippy::cast_precision_loss,
+    reason = "nfft is an audio buffer length that fits exactly in f64 for practical values"
+)]
+#![allow(
+    clippy::uninlined_format_args,
+    reason = "format strings are clearer with explicit arguments in error messages"
+)]
+
+use crate::autodiff::tensor::{Axis, IxDyn, Mat, MatMut, NdArray};
+use num_complex::Complex;
+
+use crate::autodiff::error::AutodiffError;
+use crate::autodiff::module::{DiffModule, Scalar, reset_buffer, validate_spectral_gradient_shape};
+use crate::autodiff::tensor::DiffTensor;
+
+fn view2<'a, T>(param: &'a NdArray<T>, name: &str) -> Result<Mat<'a, T>, AutodiffError> {
+    let shape = param.shape();
+    if shape.len() != 2 {
+        return Err(AutodiffError::Message(format!(
+            "{name}: expected 2-D parameter tensor, got shape {:?}",
+            shape
+        )));
+    }
+    Ok(param.as_mat())
+}
+
+fn view2_mut<'a, T>(param: &'a mut NdArray<T>, name: &str) -> Result<MatMut<'a, T>, AutodiffError> {
+    let shape = param.shape();
+    if shape.len() != 2 {
+        return Err(AutodiffError::Message(format!(
+            "{name}: expected 2-D parameter gradient tensor, got shape {:?}",
+            shape
+        )));
+    }
+    Ok(param.as_mat_mut())
+}
+
+fn view1<'a, T>(param: &'a NdArray<T>, name: &str) -> Result<&'a [T], AutodiffError> {
+    let shape = param.shape();
+    if shape.len() != 1 {
+        return Err(AutodiffError::Message(format!(
+            "{name}: expected 1-D parameter tensor, got shape {:?}",
+            shape
+        )));
+    }
+    Ok(param
+        .as_slice()
+        .expect("parameter storage must be contiguous"))
+}
+
+fn view1_mut<'a, T>(param: &'a mut NdArray<T>, name: &str) -> Result<&'a mut [T], AutodiffError> {
+    let shape = param.shape();
+    if shape.len() != 1 {
+        return Err(AutodiffError::Message(format!(
+            "{name}: expected 1-D parameter gradient tensor, got shape {:?}",
+            shape
+        )));
+    }
+    Ok(param
+        .as_slice_mut()
+        .expect("parameter storage must be contiguous"))
+}
+
+/// Matrix gain module: mixes `n_in` input channels into `n_out` output channels
+/// with a frequency-independent real gain matrix.
+#[derive(Debug, Clone)]
+pub struct Gain<T = f64> {
+    /// FFT length.
+    pub nfft: usize,
+    /// Raw gain parameters, shape `(n_out, n_in)`.
+    pub param: NdArray<T>,
+    /// Accumulated parameter gradients, same shape as `param`.
+    pub param_grad: NdArray<T>,
+}
+
+impl<T: Scalar> Gain<T> {
+    /// Create a new gain module with zero-initialized parameters and gradients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `nfft` is zero.
+    pub fn new(nfft: usize, n_out: usize, n_in: usize) -> Result<Self, AutodiffError> {
+        if nfft == 0 {
+            return Err(AutodiffError::Message(
+                "Gain: nfft must be greater than 0".to_string(),
+            ));
+        }
+        if n_out == 0 || n_in == 0 {
+            return Err(AutodiffError::Message(
+                "Gain: channel counts must be greater than 0".to_string(),
+            ));
+        }
+        Ok(Self {
+            nfft,
+            param: NdArray::zeros(IxDyn(&[n_out, n_in])),
+            param_grad: NdArray::zeros(IxDyn(&[n_out, n_in])),
+        })
+    }
+
+    fn n_bins(&self) -> usize {
+        self.nfft / 2 + 1
+    }
+}
+
+impl<T: Scalar> DiffModule<T> for Gain<T> {
+    fn forward(&self, input: &DiffTensor<T>) -> Result<DiffTensor<T>, AutodiffError> {
+        let mut out = DiffTensor::zeros(IxDyn(&[0]));
+        self.forward_into(input, &mut out)?;
+        Ok(out)
+    }
+
+    fn forward_into(
+        &self,
+        input: &DiffTensor<T>,
+        out: &mut DiffTensor<T>,
+    ) -> Result<(), AutodiffError> {
+        let param = view2(&self.param, "Gain")?;
+        let input_shape = input.data.shape();
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::forward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_in = input_shape[2];
+        let (n_out, n_in_stored) = param.dim();
+        if n_bins != self.n_bins() {
+            return Err(AutodiffError::Message(format!(
+                "Gain::forward: expected {} frequency bins, got {}",
+                self.n_bins(),
+                n_bins
+            )));
+        }
+        if n_in != n_in_stored {
+            return Err(AutodiffError::Message(format!(
+                "Gain::forward: expected {} input channels, got {}",
+                n_in_stored, n_in
+            )));
+        }
+
+        let mut output_shape = input_shape.to_vec();
+        output_shape[2] = n_out;
+        reset_buffer(out, &output_shape);
+        let output = &mut out.data;
+
+        if input_shape.len() == 3
+            && let Some(input_data) = input.data.as_slice()
+            && let Some(output_data) = output.as_slice_mut()
+        {
+            // Contiguous fast path: flat indexing, no strided view traversal.
+            let batch = input_shape[0];
+            for out_ch in 0..n_out {
+                for in_ch in 0..n_in {
+                    let h = param[[out_ch, in_ch]];
+                    for batch_index in 0..batch {
+                        for f in 0..n_bins {
+                            let frame = batch_index * n_bins + f;
+                            output_data[frame * n_out + out_ch] +=
+                                input_data[frame * n_in + in_ch] * h;
+                        }
+                    }
+                }
+            }
+            return Ok(());
+        }
+
+        for out_ch in 0..n_out {
+            for in_ch in 0..n_in {
+                let h = Complex::new(param[[out_ch, in_ch]], T::zero());
+                let input_slice = input.data.index_axis(Axis(2), in_ch);
+                let mut output_slice = output.index_axis_mut(Axis(2), out_ch);
+                for (dst, &src) in output_slice.iter_mut().zip(input_slice.iter()) {
+                    *dst += src * h;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn backward(
+        &mut self,
+        input: &DiffTensor<T>,
+        output: &DiffTensor<T>,
+        grad_output: &DiffTensor<T>,
+    ) -> Result<DiffTensor<T>, AutodiffError> {
+        let mut grad_input = DiffTensor::zeros(IxDyn(&[0]));
+        self.backward_into(input, output, grad_output, &mut grad_input)?;
+        Ok(grad_input)
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn backward_into(
+        &mut self,
+        input: &DiffTensor<T>,
+        _output: &DiffTensor<T>,
+        grad_output: &DiffTensor<T>,
+        grad_input_out: &mut DiffTensor<T>,
+    ) -> Result<(), AutodiffError> {
+        let n_bins_expected = self.n_bins();
+        let param_shape = self.param.shape();
+        if param_shape.len() != 2 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: expected 2-D parameter tensor, got shape {:?}",
+                param_shape
+            )));
+        }
+        let (n_out, n_in_stored) = (param_shape[0], param_shape[1]);
+        let param = view2(&self.param, "Gain")?;
+        let mut param_grad = view2_mut(&mut self.param_grad, "Gain")?;
+
+        let input_shape = input.data.shape();
+        let grad_shape = grad_output.data.shape();
+        validate_spectral_gradient_shape("Gain::backward", input_shape, grad_shape, n_out)?;
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        if grad_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: grad_output must have at least 3 dimensions, got {:?}",
+                grad_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_in = input_shape[2];
+        if n_bins != n_bins_expected {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: expected {} frequency bins, got {}",
+                n_bins_expected, n_bins
+            )));
+        }
+        if n_in != n_in_stored {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: expected {} input channels, got {}",
+                n_in_stored, n_in
+            )));
+        }
+        if grad_shape[1] != n_bins || grad_shape[2] != n_out {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: grad_output shape {:?} incompatible with (..., {}, {})",
+                grad_shape, n_bins, n_out
+            )));
+        }
+
+        // Accumulate parameter gradients.
+        if input_shape.len() == 3
+            && grad_shape.len() == 3
+            && let Some(input_data) = input.data.as_slice()
+            && let Some(grad_data) = grad_output.data.as_slice()
+        {
+            let batch = input_shape[0];
+            for out_ch in 0..n_out {
+                for in_ch in 0..n_in {
+                    let mut sum = T::zero();
+                    for batch_index in 0..batch {
+                        for f in 0..n_bins {
+                            let g = grad_data[(batch_index * n_bins + f) * n_out + out_ch];
+                            let x = input_data[(batch_index * n_bins + f) * n_in + in_ch];
+                            sum += (g * x.conj()).re;
+                        }
+                    }
+                    param_grad[[out_ch, in_ch]] += sum;
+                }
+            }
+        } else {
+            for out_ch in 0..n_out {
+                let grad_slice = grad_output.data.index_axis(Axis(2), out_ch);
+                for in_ch in 0..n_in {
+                    let input_slice = input.data.index_axis(Axis(2), in_ch);
+                    let mut sum = T::zero();
+                    for (g, x) in grad_slice.iter().zip(input_slice.iter()) {
+                        sum += (g * x.conj()).re;
+                    }
+                    param_grad[[out_ch, in_ch]] += sum;
+                }
+            }
+        }
+
+        // Compute dLoss/dInput.
+        reset_buffer(grad_input_out, input_shape);
+        let grad_input = &mut grad_input_out.data;
+        if grad_shape.len() == 3
+            && let Some(grad_data) = grad_output.data.as_slice()
+            && let Some(grad_input_data) = grad_input.as_slice_mut()
+        {
+            let batch = grad_shape[0];
+            for in_ch in 0..n_in {
+                for out_ch in 0..n_out {
+                    let h = param[[out_ch, in_ch]];
+                    for batch_index in 0..batch {
+                        for f in 0..n_bins {
+                            let g = grad_data[(batch_index * n_bins + f) * n_out + out_ch];
+                            let idx = (batch_index * n_bins + f) * n_in + in_ch;
+                            grad_input_data[idx] += g * h;
+                        }
+                    }
+                }
+            }
+        } else {
+            for in_ch in 0..n_in {
+                for out_ch in 0..n_out {
+                    let h = Complex::new(param[[out_ch, in_ch]], T::zero());
+                    let grad_slice = grad_output.data.index_axis(Axis(2), out_ch);
+                    let mut input_grad_slice = grad_input.index_axis_mut(Axis(2), in_ch);
+                    for (dst, &g) in input_grad_slice.iter_mut().zip(grad_slice.iter()) {
+                        *dst += g * h;
+                    }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn backward_params_only(
+        &mut self,
+        input: &DiffTensor<T>,
+        _output: &DiffTensor<T>,
+        grad_output: &DiffTensor<T>,
+    ) -> Result<(), AutodiffError> {
+        let n_bins_expected = self.n_bins();
+        let param_shape = self.param.shape();
+        if param_shape.len() != 2 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: expected 2-D parameter tensor, got shape {:?}",
+                param_shape
+            )));
+        }
+        let (n_out, n_in_stored) = (param_shape[0], param_shape[1]);
+        let mut param_grad = view2_mut(&mut self.param_grad, "Gain")?;
+
+        let input_shape = input.data.shape();
+        let grad_shape = grad_output.data.shape();
+        validate_spectral_gradient_shape("Gain::backward", input_shape, grad_shape, n_out)?;
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        if grad_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: grad_output must have at least 3 dimensions, got {:?}",
+                grad_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_in = input_shape[2];
+        if n_bins != n_bins_expected {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: expected {} frequency bins, got {}",
+                n_bins_expected, n_bins
+            )));
+        }
+        if n_in != n_in_stored {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: expected {} input channels, got {}",
+                n_in_stored, n_in
+            )));
+        }
+        if grad_shape[1] != n_bins || grad_shape[2] != n_out {
+            return Err(AutodiffError::Message(format!(
+                "Gain::backward: grad_output shape {:?} incompatible with (..., {}, {})",
+                grad_shape, n_bins, n_out
+            )));
+        }
+
+        // Accumulate parameter gradients (dLoss/dInput is skipped entirely).
+        if input_shape.len() == 3
+            && grad_shape.len() == 3
+            && let Some(input_data) = input.data.as_slice()
+            && let Some(grad_data) = grad_output.data.as_slice()
+        {
+            let batch = input_shape[0];
+            for out_ch in 0..n_out {
+                for in_ch in 0..n_in {
+                    let mut sum = T::zero();
+                    for batch_index in 0..batch {
+                        for f in 0..n_bins {
+                            let g = grad_data[(batch_index * n_bins + f) * n_out + out_ch];
+                            let x = input_data[(batch_index * n_bins + f) * n_in + in_ch];
+                            sum += (g * x.conj()).re;
+                        }
+                    }
+                    param_grad[[out_ch, in_ch]] += sum;
+                }
+            }
+        } else {
+            for out_ch in 0..n_out {
+                let grad_slice = grad_output.data.index_axis(Axis(2), out_ch);
+                for in_ch in 0..n_in {
+                    let input_slice = input.data.index_axis(Axis(2), in_ch);
+                    let mut sum = T::zero();
+                    for (g, x) in grad_slice.iter().zip(input_slice.iter()) {
+                        sum += (g * x.conj()).re;
+                    }
+                    param_grad[[out_ch, in_ch]] += sum;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn input_channels(&self) -> usize {
+        self.param.shape().get(1).copied().unwrap_or(0)
+    }
+
+    fn output_channels(&self) -> usize {
+        self.param.shape().first().copied().unwrap_or(0)
+    }
+
+    fn n_bins(&self) -> usize {
+        self.n_bins()
+    }
+
+    fn parameters(&self) -> Vec<&NdArray<T>> {
+        vec![&self.param]
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut NdArray<T>> {
+        vec![&mut self.param]
+    }
+
+    fn gradients(&self) -> Vec<&NdArray<T>> {
+        vec![&self.param_grad]
+    }
+
+    fn zero_grad(&mut self) {
+        self.param_grad.fill(T::zero());
+    }
+}
+
+/// Parallel (per-channel) gain module: multiplies each channel by a scalar
+/// frequency-independent gain.
+#[derive(Debug, Clone)]
+pub struct ParallelGain<T = f64> {
+    /// FFT length.
+    pub nfft: usize,
+    /// Raw gain parameters, shape `(n_channels,)`.
+    pub param: NdArray<T>,
+    /// Accumulated parameter gradients, same shape as `param`.
+    pub param_grad: NdArray<T>,
+}
+
+impl<T: Scalar> ParallelGain<T> {
+    /// Create a new parallel gain module with zero-initialized parameters and
+    /// gradients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `nfft` is zero.
+    pub fn new(nfft: usize, n_channels: usize) -> Result<Self, AutodiffError> {
+        if nfft == 0 {
+            return Err(AutodiffError::Message(
+                "ParallelGain: nfft must be greater than 0".to_string(),
+            ));
+        }
+        if n_channels == 0 {
+            return Err(AutodiffError::Message(
+                "ParallelGain: n_channels must be greater than 0".to_string(),
+            ));
+        }
+        Ok(Self {
+            nfft,
+            param: NdArray::zeros(IxDyn(&[n_channels])),
+            param_grad: NdArray::zeros(IxDyn(&[n_channels])),
+        })
+    }
+
+    fn n_bins(&self) -> usize {
+        self.nfft / 2 + 1
+    }
+}
+
+impl<T: Scalar> DiffModule<T> for ParallelGain<T> {
+    fn forward(&self, input: &DiffTensor<T>) -> Result<DiffTensor<T>, AutodiffError> {
+        let param = view1(&self.param, "ParallelGain")?;
+        let input_shape = input.data.shape();
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::forward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_channels = input_shape[2];
+        if n_bins != self.n_bins() {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::forward: expected {} frequency bins, got {}",
+                self.n_bins(),
+                n_bins
+            )));
+        }
+        if n_channels != param.len() {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::forward: expected {} channels, got {}",
+                param.len(),
+                n_channels
+            )));
+        }
+
+        let mut output = input.data.clone();
+        for ch in 0..n_channels {
+            let h = Complex::new(param[ch], T::zero());
+            let mut slice = output.index_axis_mut(Axis(2), ch);
+            slice.mapv_inplace(|x| x * h);
+        }
+
+        Ok(DiffTensor::from_array(output))
+    }
+
+    fn backward(
+        &mut self,
+        input: &DiffTensor<T>,
+        _output: &DiffTensor<T>,
+        grad_output: &DiffTensor<T>,
+    ) -> Result<DiffTensor<T>, AutodiffError> {
+        let n_bins_expected = self.n_bins();
+        let param_shape = self.param.shape();
+        if param_shape.len() != 1 {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::backward: expected 1-D parameter tensor, got shape {:?}",
+                param_shape
+            )));
+        }
+        let n_channels_stored = param_shape[0];
+        let param = view1(&self.param, "ParallelGain")?;
+        let param_grad = view1_mut(&mut self.param_grad, "ParallelGain")?;
+
+        let input_shape = input.data.shape();
+        let grad_shape = grad_output.data.shape();
+        if input_shape != grad_shape {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::backward: input shape {:?} does not match grad_output shape {:?}",
+                input_shape, grad_shape
+            )));
+        }
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::backward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_channels = input_shape[2];
+        if n_bins != n_bins_expected {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::backward: expected {} frequency bins, got {}",
+                n_bins_expected, n_bins
+            )));
+        }
+        if n_channels != n_channels_stored {
+            return Err(AutodiffError::Message(format!(
+                "ParallelGain::backward: expected {} channels, got {}",
+                n_channels_stored, n_channels
+            )));
+        }
+
+        // Accumulate parameter gradients.
+        for ch in 0..n_channels {
+            let grad_slice = grad_output.data.index_axis(Axis(2), ch);
+            let input_slice = input.data.index_axis(Axis(2), ch);
+            param_grad[ch] += grad_slice
+                .iter()
+                .zip(input_slice.iter())
+                .map(|(gradient, sample)| *gradient * sample.conj())
+                .sum::<Complex<T>>()
+                .re;
+        }
+
+        // Compute dLoss/dInput.
+        let mut grad_input = NdArray::zeros(IxDyn(input_shape));
+        for ch in 0..n_channels {
+            let h = param[ch];
+            let grad_slice = grad_output.data.index_axis(Axis(2), ch);
+            let mut input_grad_slice = grad_input.index_axis_mut(Axis(2), ch);
+            for (destination, &gradient) in input_grad_slice.iter_mut().zip(grad_slice.iter()) {
+                *destination += gradient * h;
+            }
+        }
+
+        Ok(DiffTensor::from_array(grad_input))
+    }
+
+    fn input_channels(&self) -> usize {
+        self.param.shape().first().copied().unwrap_or(0)
+    }
+
+    fn output_channels(&self) -> usize {
+        self.param.shape().first().copied().unwrap_or(0)
+    }
+
+    fn n_bins(&self) -> usize {
+        self.n_bins()
+    }
+
+    fn parameters(&self) -> Vec<&NdArray<T>> {
+        vec![&self.param]
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut NdArray<T>> {
+        vec![&mut self.param]
+    }
+
+    fn gradients(&self) -> Vec<&NdArray<T>> {
+        vec![&self.param_grad]
+    }
+
+    fn zero_grad(&mut self) {
+        self.param_grad.fill(T::zero());
+    }
+}
+
+/// Element-wise magnitude module.
+///
+/// Forward returns `|x|` (real non-negative). Backward propagates through
+/// complex values as `grad_input = grad_output * x / |x|` for `|x| > 0`, and
+/// zero otherwise.
+#[derive(Debug, Clone)]
+pub struct Magnitude {
+    /// FFT length.
+    pub nfft: usize,
+    /// Number of channels.
+    pub n_channels: usize,
+}
+
+impl Magnitude {
+    /// Create a new magnitude module.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the FFT size or channel count is zero.
+    #[must_use]
+    pub const fn new(nfft: usize, n_channels: usize) -> Self {
+        assert!(nfft > 0, "Magnitude: nfft must be greater than 0");
+        assert!(
+            n_channels > 0,
+            "Magnitude: n_channels must be greater than 0"
+        );
+        Self { nfft, n_channels }
+    }
+
+    fn n_bins(&self) -> usize {
+        self.nfft / 2 + 1
+    }
+}
+
+impl<T: Scalar> DiffModule<T> for Magnitude {
+    fn forward(&self, input: &DiffTensor<T>) -> Result<DiffTensor<T>, AutodiffError> {
+        let input_shape = input.data.shape();
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "Magnitude::forward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_channels = input_shape[2];
+        if n_bins != self.n_bins() {
+            return Err(AutodiffError::Message(format!(
+                "Magnitude::forward: expected {} frequency bins, got {}",
+                self.n_bins(),
+                n_bins
+            )));
+        }
+        if n_channels != self.n_channels {
+            return Err(AutodiffError::Message(format!(
+                "Magnitude::forward: expected {} channels, got {}",
+                self.n_channels, n_channels
+            )));
+        }
+
+        let output = input.data.mapv(|x| {
+            let norm = x.norm();
+            if norm > T::zero() {
+                Complex::new(norm, T::zero())
+            } else {
+                Complex::new(T::zero(), T::zero())
+            }
+        });
+        Ok(DiffTensor::from_array(output))
+    }
+
+    fn backward(
+        &mut self,
+        input: &DiffTensor<T>,
+        _output: &DiffTensor<T>,
+        grad_output: &DiffTensor<T>,
+    ) -> Result<DiffTensor<T>, AutodiffError> {
+        let input_shape = input.data.shape();
+        let grad_shape = grad_output.data.shape();
+        if input_shape != grad_shape {
+            return Err(AutodiffError::Message(format!(
+                "Magnitude::backward: input shape {:?} does not match grad_output shape {:?}",
+                input_shape, grad_shape
+            )));
+        }
+
+        let grad_input = input.data.mapv(|x| {
+            let norm = x.norm();
+            if norm > T::zero() {
+                x / norm
+            } else {
+                Complex::new(T::zero(), T::zero())
+            }
+        });
+        let real_grad_output = grad_output.data.mapv(|g| Complex::new(g.re, T::zero()));
+        let mut grad = grad_input;
+        for (g, &r) in grad
+            .as_slice_mut()
+            .expect("gradient storage must be contiguous")
+            .iter_mut()
+            .zip(real_grad_output.iter())
+        {
+            *g *= r;
+        }
+        Ok(DiffTensor::from_array(grad))
+    }
+
+    fn input_channels(&self) -> usize {
+        self.n_channels
+    }
+
+    fn output_channels(&self) -> usize {
+        self.n_channels
+    }
+
+    fn n_bins(&self) -> usize {
+        self.n_bins()
+    }
+
+    fn parameters(&self) -> Vec<&NdArray<T>> {
+        vec![]
+    }
+
+    fn parameters_mut(&mut self) -> Vec<&mut NdArray<T>> {
+        vec![]
+    }
+
+    fn gradients(&self) -> Vec<&NdArray<T>> {
+        vec![]
+    }
+
+    fn zero_grad(&mut self) {}
+}

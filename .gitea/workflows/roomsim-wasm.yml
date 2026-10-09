@@ -1,0 +1,90 @@
+name: roomsim WASM browser matrix
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/roomsim-wasm.yml"
+      - "crates/sonium-wasm/**"
+      - "crates/sonium-fft/**"
+      - "crates/sonium-xem/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitea/workflows/roomsim-wasm.yml"
+      - "crates/sonium-wasm/**"
+      - "crates/sonium-fft/**"
+      - "crates/sonium-xem/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+jobs:
+  browser-boundary:
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chrome, firefox, safari]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly Rust with source
+        run: |
+          rustup toolchain install nightly --profile minimal
+          rustup component add rust-src --toolchain nightly
+
+      - name: Install WASM target
+        run: rustup target add wasm32-unknown-unknown --toolchain nightly
+
+      - name: Compile WASM test target
+        run: cargo check -p sonium-roomsim --features meshlang --target wasm32-unknown-unknown --tests
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+          RUSTFLAGS: -C target-feature=+atomics,+bulk-memory,+mutable-globals
+
+      - name: Build release artifact and enforce API/bundle gates
+        run: |
+          cargo build --release -p sonium-roomsim --features meshlang --target wasm32-unknown-unknown
+          wasm_bytes=$(stat -f%z target/wasm32-unknown-unknown/release/sonium_roomsim.wasm)
+          test "$wasm_bytes" -le 10485760
+          for symbol in \
+            RoomSimulatorWasm \
+            create_default_config \
+            validate_config \
+            compute_impulse_response \
+            get_wasm_info \
+            probe_webgpu_adapter \
+            compute_webgpu_preview \
+            init_thread_pool_if_supported \
+            parse_measurement_csv \
+            parse_measurement_bundle_json \
+            interpolate_measurement
+            parse_meshlang_wasm
+            validate_meshlang_grammar_wasm
+            preview_meshlang_wasm
+            MeshLangEditor
+          do
+            rg -q "$symbol" crates/sonium-wasm/src || {
+              echo "missing public roomsim API symbol: $symbol"
+              exit 1
+            }
+          done
+          echo "roomsim WASM artifact: $wasm_bytes bytes"
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+          RUSTFLAGS: -C target-feature=+atomics,+bulk-memory,+mutable-globals
+
+      - name: Install wasm-pack
+        run: cargo install wasm-pack --version 0.13.1 --locked
+
+      - name: Enable Safari automation
+        if: matrix.browser == 'safari'
+        run: sudo safaridriver --enable
+
+      - name: Run browser boundary tests
+        run: wasm-pack test --release --headless --${{ matrix.browser }} --features meshlang crates/sonium-wasm
+        env:
+          RUSTUP_TOOLCHAIN: nightly
+          RUSTFLAGS: -C target-feature=+atomics,+bulk-memory,+mutable-globals

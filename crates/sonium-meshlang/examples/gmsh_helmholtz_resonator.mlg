@@ -1,0 +1,93 @@
+/// Helmholtz resonator — classic acoustic geometry
+///
+/// A closed cavity connected to the exterior via a narrow neck tube.
+/// This is a standard validation case for acoustic FEM/BEM solvers.
+///
+/// The original .geo version requires ~80 lines of explicit OCC commands
+/// (boxes, cylinders, boolean operations, mesh size fields, physical groups).
+/// MeshLang reduces this to a readable, parameterized description.
+///
+///   ┌────────────────────────────┐
+///   │         cavity             │
+///   │                            │
+///   │          ┌──┐              │
+///   └──────────┤  ├──────────────┘
+///              │  │  ← neck
+///              └──┘
+
+const C_AIR = 343.0
+const PI = 3.14159265
+
+// Design parameters
+param cavity_w = 0.10
+param cavity_h = 0.08
+param cavity_d = 0.10
+
+param neck_r = 0.008
+param neck_l = 0.030
+
+// Analytical resonance frequency (for reference):
+//   f_res = c/(2*pi) * sqrt(S_neck / (V_cavity * L_eff))
+// where L_eff = neck_l + 1.7*neck_r (end correction both sides)
+param neck_area = PI * neck_r * neck_r
+param cavity_vol = cavity_w * cavity_h * cavity_d
+param l_eff = neck_l + 1.7 * neck_r
+// f_res ≈ 343/(2π) * sqrt(2.01e-4 / (8e-4 * 0.0436)) ≈ ~130 Hz
+
+// Mesh: 6 elements per wavelength at 500 Hz (well above resonance)
+param f_max = 500.0
+param wavelength = C_AIR / f_max
+param elem_size = wavelength / 6.0
+
+geometry resonator {
+    // Main cavity
+    let cavity = Box(cavity_w, cavity_h, cavity_d)
+
+    // Neck: cylinder protruding from bottom face center
+    let neck = Cylinder(r: neck_r, h: neck_l)
+        |> translate(cavity_w / 2.0, -neck_l, cavity_d / 2.0)
+
+    // Neck hole through the cavity floor
+    let neck_hole = Cylinder(r: neck_r, h: 0.002)
+        |> translate(cavity_w / 2.0, -0.001, cavity_d / 2.0)
+
+    // Combine cavity and neck, then punch through floor
+    let shell = cavity | neck
+    let body = shell - neck_hole
+}
+
+mesh for resonator {
+    default_size: elem_size
+    min_size: 0.0005
+    max_size: elem_size * 2.0
+    order: 2
+    algorithm_3d: delaunay
+
+    // Fine mesh in the neck (critical for accuracy)
+    refine near(resonator.neck, distance: 0.005) {
+        size: 0.001
+        growth_rate: 1.3
+    }
+
+    // Transition zone around the neck opening into cavity
+    refine near(resonator.neck_hole, distance: 0.015) {
+        size: 0.003
+    }
+}
+
+physics {
+    // Rigid walls (Neumann: dp/dn = 0)
+    group walls: neumann = resonator.body.faces
+
+    // Neck opening: where sound enters (velocity or impedance BC)
+    group neck_inlet: velocity = resonator.neck.faces.bottom
+
+    // Interior air volume
+    group air: volume = resonator.body
+}
+
+export {
+    format: msh4
+    order: 2
+    filename: "helmholtz_resonator.msh"
+}

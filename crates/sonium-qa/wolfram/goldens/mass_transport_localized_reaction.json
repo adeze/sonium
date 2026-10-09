@@ -1,0 +1,10 @@
+{
+  "provenance": "Generated 2026-08-08 with Wolfram Engine from mass_transport_localized_reaction.wls",
+  "schema_version": 1,
+  "diffusivity_m2_s": 0.001,
+  "reaction_rate_s_inv": 1.0,
+  "final_time_s": 100.0,
+  "sample_points": [[0.0, 0.0], [0.2, 0.5], [0.4, 0.5], [0.5, 0.5], [0.8, 0.5]],
+  "final_integral": 665.336327578301,
+  "samples": [811.088771085785, 633.2317552974782, 194.30423454529, 63.22549247903316, 633.2317552974844]
+}

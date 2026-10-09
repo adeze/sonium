@@ -1,0 +1,74 @@
+[package]
+name = "sonium-sim-speaker"
+version = "0.1.3"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Loudspeaker BEM simulation, mesh generation, CEA-2034 output, and optimisation"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["loudspeaker", "bem", "acoustics", "cea2034", "simulation"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_sim_speaker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "speaker-sim"
+path = "bin/speaker_sim.rs"
+required-features = ["cli"]
+
+[dependencies]
+# BEM core (assembly, postprocess, types)
+sonium-bem = { workspace = true }
+
+# Common types and unified VTU/PVD writer
+sonium-xem = { workspace = true }
+sonium-sim-speaker-modeling = { workspace = true }
+
+# FEM solver (magnetostatics, eddy currents, elasticity)
+sonium-fem = { workspace = true }
+
+# Solver infrastructure (GMRES, optimisation)
+sonium-solvers = { workspace = true }
+
+# Mesh generation helpers
+sonium-mesher = { workspace = true }
+
+# Core numerical computing
+sonium-compute = { workspace = true }
+num-complex = { workspace = true }
+rayon = { workspace = true }
+
+# CEA-2034 scoring (replaces autoeq, ndarray-free)
+sonium-roomeq = { workspace = true }
+
+# MeshLang input parsing
+meshlang-parser = { workspace = true }
+meshlang-ast = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Logging
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# CLI (optional)
+clap = { workspace = true, optional = true }
+
+[features]
+default = ["cli"]
+
+cli = ["dep:clap"]
+cuda = ["sonium-bem/cuda", "sonium-compute/cuda"]
+metal = ["sonium-bem/metal", "sonium-compute/metal"]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "frequency_lane_scaling"
+harness = false

@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sonium.dev/schemas/qa-result-v1.schema.json",
+  "title": "Sonium QA result",
+  "description": "Frozen machine-readable result emitted by Sonium QA cases.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "case_id",
+    "status",
+    "backend_outcomes",
+    "metrics",
+    "thresholds",
+    "threshold_directions",
+    "elapsed_ms",
+    "git_sha",
+    "environment",
+    "artifacts",
+    "evidence",
+    "runtime"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "case_id": { "type": "string", "minLength": 1 },
+    "status": { "enum": ["passed", "failed", "skipped"] },
+    "skip_reason": { "type": "string", "minLength": 1 },
+    "requested_backend": { "type": "string", "minLength": 1 },
+    "actual_backend": { "type": "string", "minLength": 1 },
+    "backend_outcomes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/backend_outcome" }
+    },
+    "metrics": { "$ref": "#/$defs/number_map" },
+    "thresholds": { "$ref": "#/$defs/number_map" },
+    "threshold_directions": {
+      "type": "object",
+      "additionalProperties": { "enum": ["minimum", "maximum"] }
+    },
+    "seed": { "type": "string", "minLength": 1 },
+    "elapsed_ms": { "type": "integer", "minimum": 0 },
+    "git_sha": { "type": "string", "minLength": 1 },
+    "environment": { "$ref": "#/$defs/string_map" },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(?!.*(^|/)\\.\\.?(/|$))[^\\\\/:][^\\\\:]*$"
+      }
+    },
+    "evidence": { "$ref": "#/$defs/evidence" },
+    "runtime": { "$ref": "#/$defs/runtime" },
+    "message": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "backend_outcome": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "status"],
+      "properties": {
+        "backend": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["passed", "failed", "skipped"] },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "number_map": {
+      "type": "object",
+      "additionalProperties": { "type": "number" }
+    },
+    "string_map": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timings_ms", "artifact_checksums"],
+      "properties": {
+        "input_checksum": { "type": "string", "minLength": 1 },
+        "reference": { "type": "string", "minLength": 1 },
+        "reference_checksum": { "type": "string", "minLength": 1 },
+        "dimension": { "type": "string", "minLength": 1 },
+        "formulation": { "type": "string", "minLength": 1 },
+        "tolerance": { "type": "string", "minLength": 1 },
+        "memory_bytes": { "type": "integer", "minimum": 0 },
+        "physical_residual": { "type": "number" },
+        "physical_reference_error": { "type": "number" },
+        "timings_ms": { "$ref": "#/$defs/uint_map" },
+        "artifact_checksums": { "$ref": "#/$defs/string_map" },
+        "artifact_provenance": { "$ref": "#/$defs/artifact_provenance_map" }
+      }
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context_reuse", "counts", "counters", "memory", "hardware"],
+      "properties": {
+        "failure_stage": {
+          "enum": [
+            "environment",
+            "initialization",
+            "allocation",
+            "transfer",
+            "synchronization",
+            "launch",
+            "execution",
+            "validation",
+            "artifact",
+            "serialization"
+          ]
+        },
+        "context_reuse": { "enum": ["reused", "recreated", "not_applicable"] },
+        "counts": { "$ref": "#/$defs/counts" },
+        "counters": { "$ref": "#/$defs/counters" },
+        "memory": { "$ref": "#/$defs/memory" },
+        "hardware": { "$ref": "#/$defs/hardware" }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executed", "passed", "failed", "unsupported"],
+      "properties": {
+        "executed": { "type": "integer", "minimum": 0 },
+        "passed": { "type": "integer", "minimum": 0 },
+        "failed": { "type": "integer", "minimum": 0 },
+        "unsupported": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allocations",
+        "h2d_transfers",
+        "d2h_transfers",
+        "d2d_transfers",
+        "synchronizations",
+        "launches"
+      ],
+      "properties": {
+        "allocations": { "type": "integer", "minimum": 0 },
+        "h2d_transfers": { "type": "integer", "minimum": 0 },
+        "d2h_transfers": { "type": "integer", "minimum": 0 },
+        "d2d_transfers": { "type": "integer", "minimum": 0 },
+        "synchronizations": { "type": "integer", "minimum": 0 },
+        "launches": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["peak_bytes", "live_bytes"],
+      "properties": {
+        "peak_bytes": { "type": "integer", "minimum": 0 },
+        "live_bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "hardware": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "device": { "type": "string", "minLength": 1 },
+        "driver": { "type": "string", "minLength": 1 },
+        "toolkit": { "type": "string", "minLength": 1 },
+        "cpu_model": { "type": "string", "minLength": 1 },
+        "microcode": { "type": "string", "minLength": 1 },
+        "os": { "type": "string", "minLength": 1 },
+        "compiler": { "type": "string", "minLength": 1 },
+        "target_features": { "type": "string", "minLength": 1 },
+        "runtime_dispatch": { "type": "string", "minLength": 1 },
+        "thread_policy": { "type": "string", "minLength": 1 },
+        "affinity_policy": { "type": "string", "minLength": 1 },
+        "numa_policy": { "type": "string", "minLength": 1 },
+        "deterministic_mode": { "type": "string", "minLength": 1 },
+        "topology": { "type": "string", "minLength": 1 },
+        "peak_flops": { "type": "string", "minLength": 1 },
+        "memory_bandwidth": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifact_provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "generation", "checksum", "version"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "generation": { "type": "string", "minLength": 1 },
+        "checksum": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+    "artifact_provenance_map": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/artifact_provenance" }
+    },
+    "uint_map": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    }
+  }
+}

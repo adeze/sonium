@@ -1,0 +1,55 @@
+[package]
+name = "sonium-xem"
+version = "0.4.2"
+description = "Common types and utilities for BEM/FEM room acoustics simulators"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["bem", "fem", "acoustics", "room-acoustics", "simulation"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_xem"
+path = "src/lib.rs"
+
+[dependencies]
+# Core numerical computing (dense host containers).
+sonium-compute = { workspace = true }
+num-complex = { workspace = true, features = ["serde"] }
+# Structural/WASM consumers need XML VTK only; compression pulls native xz2.
+vtkio = { version = "0.7.0-rc2", default-features = false, features = ["xml"] }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+rayon = { workspace = true }
+
+# Time/date for metadata
+chrono = { workspace = true }
+
+# Output directory resolution
+directories = { workspace = true }
+flate2 = { workspace = true }
+
+# SOFA I/O. Optional so consumers that don't need SOFA output do not pull in
+# any SOFA/HDF5 parsing code.
+sofa-reader = { workspace = true, optional = true }
+hdf5 = { workspace = true, optional = true }
+
+[features]
+default = []
+io-sofa = ["dep:hdf5", "dep:sofa-reader"]
+
+[[example]]
+name = "generate_external_formats"
+required-features = ["io-sofa"]
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+tempfile = { workspace = true }
+
+[[bench]]
+name = "field_catalog"
+harness = false

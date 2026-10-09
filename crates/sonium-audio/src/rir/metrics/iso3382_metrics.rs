@@ -1,0 +1,241 @@
+use rayon::prelude::*;
+
+use crate::rir::bands::{BandAnalysisContext, BandWidth};
+use crate::rir::config::SsirConfig;
+use crate::rir::detection::find_direct_sound_toa;
+
+use super::{DecayCurve, DecayWorkspace};
+
+/// ISO 3382 single-band acoustic metrics for one RIR.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Iso3382Metrics {
+    /// Early decay time — Schroeder slope over `0 → −10 dB`, extrapolated
+    /// to a 60 dB drop. In seconds.
+    pub edt_s: f64,
+    /// T20 reverberation time (`−5 → −25 dB`, extrapolated to 60 dB). Seconds.
+    pub t20_s: f64,
+    /// T30 reverberation time (`−5 → −35 dB`, extrapolated to 60 dB). Seconds.
+    pub t30_s: f64,
+    /// Clarity at 50 ms (in dB). Higher = more speech-intelligibility-friendly.
+    pub c50_db: f64,
+    /// Clarity at 80 ms (in dB). Standard music clarity parameter.
+    pub c80_db: f64,
+    /// Definition: ratio of early (≤ 50 ms) to total energy. Dimensionless.
+    pub d50: f64,
+    /// Centre time (seconds). The temporal centre of gravity of `h²`.
+    pub ts_s: f64,
+    /// R² of the EDT linear fit (0..1). `< 0.9` is a quality warning.
+    pub edt_r2: f64,
+    /// R² of the T20 linear fit.
+    pub t20_r2: f64,
+    /// R² of the T30 linear fit.
+    pub t30_r2: f64,
+}
+
+/// Compact verdict for one ISO 3382 band, avoiding a caller-side collection
+/// of NaN checks and fit thresholds.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Iso3382QualityVerdict {
+    /// True only when all decay fits and scalar energy metrics are usable.
+    pub usable: bool,
+    /// Whether EDT, T20, and T30 all meet the r² acceptance threshold.
+    pub decay_fits_valid: bool,
+    /// Number of finite scalar metrics out of the ten reported fields.
+    pub finite_metric_count: usize,
+    /// Human-readable reasons for an unusable result.
+    pub issues: Vec<String>,
+}
+
+impl Iso3382Metrics {
+    /// Returns `true` if every fitted decay region had `r² ≥ 0.95` —
+    /// the conventional ISO 3382-1 acceptance threshold.
+    pub fn fit_is_valid(&self) -> bool {
+        self.edt_r2 >= 0.95 && self.t20_r2 >= 0.95 && self.t30_r2 >= 0.95
+    }
+
+    /// Aggregate the NaN sentinel and decay-fit checks into one verdict.
+    pub fn quality_verdict(&self) -> Iso3382QualityVerdict {
+        let values = [
+            self.edt_s,
+            self.t20_s,
+            self.t30_s,
+            self.c50_db,
+            self.c80_db,
+            self.d50,
+            self.ts_s,
+            self.edt_r2,
+            self.t20_r2,
+            self.t30_r2,
+        ];
+        let finite_metric_count = values.iter().filter(|value| value.is_finite()).count();
+        let decay_fits_valid = self.fit_is_valid();
+        let mut issues = Vec::new();
+        if !decay_fits_valid {
+            issues.push("one or more decay fits have invalid or insufficient r²".to_string());
+        }
+        if finite_metric_count != values.len() {
+            issues.push(format!(
+                "{} of {} ISO 3382 metrics are non-finite",
+                values.len() - finite_metric_count,
+                values.len()
+            ));
+        }
+        Iso3382QualityVerdict {
+            usable: issues.is_empty(),
+            decay_fits_valid,
+            finite_metric_count,
+            issues,
+        }
+    }
+}
+
+pub(super) const EMPTY_METRICS: Iso3382Metrics = Iso3382Metrics {
+    edt_s: f64::NAN,
+    t20_s: f64::NAN,
+    t30_s: f64::NAN,
+    c50_db: f64::NAN,
+    c80_db: f64::NAN,
+    d50: f64::NAN,
+    ts_s: f64::NAN,
+    edt_r2: 0.0,
+    t20_r2: 0.0,
+    t30_r2: 0.0,
+};
+
+/// Internal helper: compute the clarity / definition / centre-time values and
+/// fit the Schroeder decay curve that is already available.
+fn compute_iso3382_metrics(
+    rir: &[f32],
+    sample_rate: f64,
+    decay_ws: &mut DecayWorkspace,
+) -> Iso3382Metrics {
+    if rir.is_empty() || sample_rate <= 0.0 {
+        return EMPTY_METRICS;
+    }
+
+    // Anchor t = 0 at the direct sound. If we cannot find one (silent or
+    // sub-noise RIR), fall back to sample 0.
+    let cfg = SsirConfig::new(sample_rate);
+    let start = find_direct_sound_toa(rir, &cfg).unwrap_or(0);
+    if start >= rir.len() {
+        return EMPTY_METRICS;
+    }
+
+    // C50 / C80 / D50 / Ts: integrate h² from `start` onwards.
+    let ms = sample_rate / 1000.0;
+    let i50 = (start + (50.0 * ms) as usize).min(rir.len());
+    let i80 = (start + (80.0 * ms) as usize).min(rir.len());
+
+    let mut e_total = 0.0_f64;
+    let mut e_50 = 0.0_f64;
+    let mut e_80 = 0.0_f64;
+    let mut ts_num = 0.0_f64;
+    let dt = 1.0 / sample_rate;
+    for (i, &s) in rir[start..].iter().enumerate() {
+        let v = f64::from(s);
+        let e = v * v;
+        e_total += e;
+        let abs_i = start + i;
+        if abs_i < i50 {
+            e_50 += e;
+        }
+        if abs_i < i80 {
+            e_80 += e;
+        }
+        ts_num += (i as f64 * dt) * e;
+    }
+
+    let (c50_db, c80_db, d50, ts_s) = if e_total > 0.0 {
+        let e_late_50 = (e_total - e_50).max(f64::MIN_POSITIVE);
+        let e_late_80 = (e_total - e_80).max(f64::MIN_POSITIVE);
+        let c50 = 10.0 * (e_50.max(f64::MIN_POSITIVE) / e_late_50).log10();
+        let c80 = 10.0 * (e_80.max(f64::MIN_POSITIVE) / e_late_80).log10();
+        let d50 = (e_50 / e_total).clamp(0.0, 1.0);
+        let ts = ts_num / e_total;
+        (c50, c80, d50, ts)
+    } else {
+        (f64::NAN, f64::NAN, f64::NAN, f64::NAN)
+    };
+
+    // Schroeder decay → EDT / T20 / T30.
+    let curve = DecayCurve::from_rir_with_workspace(rir, sample_rate, start, None, decay_ws);
+    let (edt_s, edt_r2) = match curve.fit_db_range(0.0, -10.0) {
+        Some((slope, _, r2)) if slope < 0.0 => (-60.0 / slope, r2),
+        _ => (f64::NAN, 0.0),
+    };
+    let (t20_s, t20_r2) = match curve.fit_db_range(-5.0, -25.0) {
+        Some((slope, _, r2)) if slope < 0.0 => (-60.0 / slope, r2),
+        _ => (f64::NAN, 0.0),
+    };
+    let (t30_s, t30_r2) = match curve.fit_db_range(-5.0, -35.0) {
+        Some((slope, _, r2)) if slope < 0.0 => (-60.0 / slope, r2),
+        _ => (f64::NAN, 0.0),
+    };
+
+    Iso3382Metrics {
+        edt_s,
+        t20_s,
+        t30_s,
+        c50_db,
+        c80_db,
+        d50,
+        ts_s,
+        edt_r2,
+        t20_r2,
+        t30_r2,
+    }
+}
+
+/// Compute ISO 3382 single-band metrics on a broadband RIR while reusing
+/// the scratch buffers and coefficient cache in `ctx`.
+///
+/// The broadband path uses the [`BandpassWorkspace`] with pass-through defaults
+/// so the full-band signal is analysed unchanged; only the
+/// [`DecayWorkspace`] is used for the Schroeder backward integration.
+pub fn analyze_iso3382_with_workspace(
+    rir: &[f32],
+    sample_rate: f64,
+    ctx: &mut BandAnalysisContext,
+) -> Iso3382Metrics {
+    // Pass-through defaults: order == 0 returns the input unchanged.
+    let filtered = ctx.bp.process(rir, 0.0, BandWidth::Octave, sample_rate, 0);
+    compute_iso3382_metrics(filtered, sample_rate, &mut ctx.decay)
+}
+
+/// Per-band ISO 3382 analysis on a broadband RIR, with one reusable context
+/// per band.
+///
+/// `contexts.len()` must equal `bands.len()`. Each context owns its own
+/// bandpass coefficient cache and decay-curve scratch buffers so that
+/// parallel band processing requires no shared mutable state.
+pub fn analyze_iso3382_bands_with_contexts(
+    rir: &[f32],
+    sample_rate: f64,
+    bands: &[f64],
+    width: BandWidth,
+    order: usize,
+    contexts: &mut [BandAnalysisContext],
+) -> Vec<(f64, Iso3382Metrics)> {
+    assert_eq!(
+        contexts.len(),
+        bands.len(),
+        "contexts and bands must have the same length"
+    );
+
+    let nyquist = sample_rate * 0.5;
+    contexts
+        .par_iter_mut()
+        .zip(bands.par_iter())
+        .filter_map(|(ctx, &fc)| {
+            let (f_low, f_high) = width.bandedges(fc);
+            if f_low <= 0.0 || f_high >= nyquist {
+                return None;
+            }
+            let filtered = ctx.bp.process(rir, fc, width, sample_rate, order);
+            Some((
+                fc,
+                compute_iso3382_metrics(filtered, sample_rate, &mut ctx.decay),
+            ))
+        })
+        .collect()
+}

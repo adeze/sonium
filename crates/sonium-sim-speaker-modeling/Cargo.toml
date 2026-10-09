@@ -1,0 +1,57 @@
+[package]
+name = "sonium-sim-speaker-modeling"
+version = "0.5.4"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "COMSOL-style electrovibroacoustic speaker-driver modeling examples on top of Sonium FEM"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["loudspeaker", "fem", "electroacoustics", "modeling", "simulation"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_sim_speaker_modeling"
+path = "src/lib.rs"
+
+[[bin]]
+name = "whole-speaker"
+path = "src/bin/whole_speaker.rs"
+
+[[bin]]
+name = "motor-extract"
+path = "src/bin/motor_extract.rs"
+
+[dependencies]
+sonium-compute = { workspace = true }
+sonium-fem = { workspace = true }
+sonium-mesher = { workspace = true }
+sonium-bem = { workspace = true }
+sonium-coupling = { workspace = true }
+sonium-solvers = { workspace = true }
+sonium-solvers-optimization = { workspace = true }
+sonium-xem = { workspace = true }
+num-complex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+spec_math = { workspace = true }
+thiserror = { workspace = true }
+clap = { workspace = true }
+env_logger = { workspace = true }
+rayon = { workspace = true }
+
+[features]
+default = []
+# The CUDA path is intentionally opt-in: loading the CUDA driver is a runtime
+# operation and the portable CPU/f64 golden path must remain available on
+# machines without NVIDIA libraries.
+cuda = [
+    "sonium-compute/cuda",
+    "sonium-fem/cuda",
+    "sonium-bem/cuda",
+    "sonium-solvers/cuda",
+]
+
+[dev-dependencies]
+tempfile = { workspace = true }
+sonium-wave = { workspace = true }

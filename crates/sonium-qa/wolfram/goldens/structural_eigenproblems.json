@@ -1,0 +1,6 @@
+{
+  "provenance": "Generated 2026-08-08 with Wolfram Engine from structural_eigenproblems.wls",
+  "schema_version": 1,
+  "structural": [542.1149727133345, 687.6054957346985, 928.6120579870222],
+  "beam_frequencies_hz": [1.142260774140972, 7.15842607907546, 20.04380030136354]
+}

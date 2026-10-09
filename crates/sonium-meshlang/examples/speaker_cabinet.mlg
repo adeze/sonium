@@ -1,0 +1,87 @@
+/// Bass reflex speaker cabinet mesh for BEM analysis
+/// Modeled as 6 plates with wall thickness; front plate has port and driver holes
+/// Target: 20 Hz - 2000 Hz frequency range
+
+const C_AIR = 343.0
+const ELEM_PER_WAVELENGTH = 3
+
+param f_max = 500.0
+param wavelength = C_AIR / f_max
+param elem_size = wavelength / ELEM_PER_WAVELENGTH
+
+// Cabinet outer dimensions
+param cab_w = 0.20
+param cab_h = 0.35
+param cab_d = 0.25
+param wall_t = 0.015
+
+// Port and driver radii
+param port_r = 0.025
+param port_d = 0.15
+param driver_r = 0.065
+
+// Positions on front face
+param port_x = 0.10
+param port_y = 0.07
+param driver_x = 0.10
+param driver_y = 0.25
+
+geometry cabinet {
+    // Back plate
+    let back = Box(cab_w, cab_h, wall_t)
+
+    // Side plates (full depth, abutting back)
+    let left = Box(wall_t, cab_h, cab_d - wall_t)
+        |> translate(0.0, 0.0, wall_t)
+    let right = Box(wall_t, cab_h, cab_d - wall_t)
+        |> translate(cab_w - wall_t, 0.0, wall_t)
+
+    // Top and bottom plates (between sides, full depth)
+    let bottom = Box(cab_w - 2.0 * wall_t, wall_t, cab_d - wall_t)
+        |> translate(wall_t, 0.0, wall_t)
+    let top = Box(cab_w - 2.0 * wall_t, wall_t, cab_d - wall_t)
+        |> translate(wall_t, cab_h - wall_t, wall_t)
+
+    // Front plate with port and driver holes
+    let front_solid = Box(cab_w, cab_h, wall_t)
+        |> translate(0.0, 0.0, cab_d - wall_t)
+    let port_cutout = Cylinder(r: port_r, h: wall_t)
+        |> translate(port_x, port_y, cab_d - wall_t)
+    let driver_cutout = Cylinder(r: driver_r, h: wall_t)
+        |> translate(driver_x, driver_y, cab_d - wall_t)
+    let front = front_solid - port_cutout - driver_cutout
+
+    // Port tube extending inward from front plate
+    let port = Cylinder(r: port_r, h: port_d)
+        |> translate(port_x, port_y, cab_d - wall_t - port_d)
+
+ // Assemble the cabinet plates. The port tube is a separate solid: it
+ // touches the front baffle but is not part of the cabinet-wall union.
+ let shell = back | left | right | bottom | top | front
+}
+
+mesh for cabinet {
+    default_size: elem_size
+    min_size: 0.001
+    order: 2
+
+    refine near(cabinet.port, distance: 0.03) {
+        size: 0.003
+    }
+
+    refine near(cabinet.front, distance: 0.02) {
+        size: 0.005
+    }
+}
+
+physics {
+    group cabinet_wall: neumann = cabinet.shell.faces
+    group port_exit: radiation = cabinet.port.faces.top
+    group driver: velocity = cabinet.front.faces
+}
+
+export {
+    format: msh4
+    order: 2
+    filename: "cabinet_bem.msh"
+}

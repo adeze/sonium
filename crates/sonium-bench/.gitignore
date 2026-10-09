@@ -1,0 +1,109 @@
+# rust
+/target
+/target-static
+/coverage
+/.tokensave
+/menuet.db*
+mutants.out
+*.profraw
+
+# installers
+/appimage-builder-*
+/dist
+/.docker-target
+/tools
+
+# signing certificates (NEVER commit private keys)
+/certs/
+
+# python
+__pycache__
+/venv
+/.venv
+
+# generated data
+/data
+/data_cached
+/data_generated
+/*.csv
+/*.html
+/*.json
+/*.wav
+/*.json.bz2
+/todos.md
+
+# node
+/site/node_modules
+/site/dist
+.sass-cache
+
+# docs
+.jekyll-cache
+.jekyll-metadata
+_site
+/README.html
+/README_files
+
+# MCP and Agents
+/.chunkhound
+autoeq_*.html
+autoeq_*.png
+bugs.md
+src/unused.rs
+/plans
+check_output_*.txt
+/.claude/worktrees
+/.worktrees
+/worktrees
+/.tokensave
+/.opencode
+/menuet.db
+/progress
+
+# R2factor
+.r2factor
+*.bak
+
+# Logs
+logs
+*.log
+/*.csv
+/*.wav
+
+
+# Editor directories and files
+/.vs
+/.vscode/*
+/.zed
+/.idea
+/.fleet
+.DS_Store
+
+# cargo-fuzz output is generated locally and should not enter source control.
+/fuzz/target/
+/fuzz/artifacts/
+/fuzz/corpus/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+vendor
+TAGS
+ETAGS
+CTAGS
+*~
+.*~
+*#
+.#*
+.idea
+.qwen
+.worktrees
+
+# specidic
+/*.vtu
+/*.vtk
+/*.png
+/output
+/viz_output
+/data_tests

@@ -1,0 +1,17 @@
+//! Drop Wave test function
+
+/// Drop wave function - 2D multimodal
+/// Global minimum: f(x) = -1.0 at x = (0, 0)
+/// Bounds: x_i in [-5.12, 5.12]
+pub fn drop_wave(x: &[f64]) -> f64 {
+    assert!(
+        x.len() == 2,
+        "drop_wave requires 2 dimensions, got {}",
+        x.len()
+    );
+    let x1 = x[0];
+    let x2 = x[1];
+    let numerator = 1.0 + (12.0 * (x1.powi(2) + x2.powi(2)).sqrt()).cos();
+    let denominator = 0.5 * (x1.powi(2) + x2.powi(2)) + 2.0;
+    -numerator / denominator
+}

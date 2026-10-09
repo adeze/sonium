@@ -1,0 +1,69 @@
+{
+  "schema": "sonium-compute-macos-evidence/v3",
+  "git_sha": "0f2115685dbbee6af1e28e64ab39036f6babe617",
+  "timestamp_utc": "2026-08-22T04:39:08.691176+00:00",
+  "protocol": {
+    "warmup_samples": 5,
+    "measured_samples": 15,
+    "confidence_interval": "empirical 2nd-98th percentile (95% order-statistic interval)",
+    "correctness": "independent f32 reference checked before timing; relative tolerance 2e-3",
+    "allocation_measurement": "timed closures contain no allocation or H2D/D2H transfer",
+    "input_generator": "compute-macos-evidence-values-v1",
+    "energy_measurement": "not_measured",
+    "thread_policy": "RAYON_NUM_THREADS=1; VECLIB_MAXIMUM_THREADS=1"
+  },
+  "hardware": {
+    "arch": "aarch64",
+    "model": "Mac15,6",
+    "rayon_threads": "1",
+    "os": "test-controlled",
+    "rustc": "test-controlled",
+    "profile": "test-controlled",
+    "target_features": "test-controlled",
+    "device": "test-controlled",
+    "driver": "not_applicable_cpu",
+    "clocks": "test-controlled",
+    "thermal_state": "test-controlled"
+  },
+  "rows": [
+    {
+      "implementation": "sonium-cpu",
+      "blas_level": "blas-1",
+      "operation": "axpy",
+      "regime": "empty",
+      "dtype": "f32",
+      "shape": "n=0",
+      "correctness_passed": true,
+      "median_ns": 84.0,
+      "ci95_low_ns": 83.0,
+      "ci95_high_ns": 125.0,
+      "threads": "1"
+    },
+    {
+      "implementation": "sonium-cpu",
+      "blas_level": "blas-2",
+      "operation": "gemv",
+      "regime": "unit",
+      "dtype": "f32",
+      "shape": "n=1",
+      "correctness_passed": true,
+      "median_ns": 125.0,
+      "ci95_low_ns": 125.0,
+      "ci95_high_ns": 125.0,
+      "threads": "1"
+    },
+    {
+      "implementation": "sonium-cpu",
+      "blas_level": "blas-1",
+      "operation": "axpy",
+      "regime": "tail",
+      "dtype": "f32",
+      "shape": "n=31",
+      "correctness_passed": true,
+      "median_ns": 458.0,
+      "ci95_low_ns": 416.0,
+      "ci95_high_ns": 459.0,
+      "threads": "1"
+    }
+  ]
+}

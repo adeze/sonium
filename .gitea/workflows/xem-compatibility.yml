@@ -1,0 +1,107 @@
+name: XEM compatibility and bounded fuzz smoke
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/xem-compatibility.yml"
+      - "Justfile"
+      - "crates/sonium-xem/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".gitea/workflows/xem-compatibility.yml"
+      - "Justfile"
+      - "crates/sonium-xem/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+jobs:
+  compatibility:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Rust schema and migration tests
+        run: cargo test --offline -p sonium-xem
+      - name: Export deterministic JSON Schema artifacts
+        run: |
+          cargo run --offline -p sonium-xem --example export_schema -- "$RUNNER_TEMP/xem-schemas"
+          python3 -m json.tool "$RUNNER_TEMP/xem-schemas/room-config-v1.schema.json" >/dev/null
+          python3 -m json.tool "$RUNNER_TEMP/xem-schemas/multiphysics-problem-v1.schema.json" >/dev/null
+          cmp "$RUNNER_TEMP/xem-schemas/room-config-v1.schema.json" crates/sonium-xem/schemas/room-config-v1.schema.json
+          cmp "$RUNNER_TEMP/xem-schemas/multiphysics-problem-v1.schema.json" crates/sonium-xem/schemas/multiphysics-problem-v1.schema.json
+      - name: Independent Python reader
+        run: python3 crates/sonium-xem/interop/read_room_config.py crates/sonium-xem/fixtures/room-config-v1.json
+      - name: Independent TypeScript-compatible Node reader
+        run: node crates/sonium-xem/interop/read_room_config.ts crates/sonium-xem/fixtures/room-config-v1.json
+      - name: Reject malformed room and multiphysics fixtures in both readers
+        run: |
+          room_malformed="$RUNNER_TEMP/xem-room-malformed.json"
+          multiphysics_malformed="$RUNNER_TEMP/xem-multiphysics-malformed.json"
+          printf '%s\n' '{"schema_version":1,"unexpected":true}' > "$room_malformed"
+          printf '%s\n' '{"schema_version":1,"unexpected":true}' > "$multiphysics_malformed"
+          if python3 crates/sonium-xem/interop/read_room_config.py "$room_malformed"; then exit 1; fi
+          if node crates/sonium-xem/interop/read_room_config.ts "$room_malformed"; then exit 1; fi
+          if python3 crates/sonium-xem/interop/read_multiphysics_problem.py "$multiphysics_malformed"; then exit 1; fi
+          if node crates/sonium-xem/interop/read_multiphysics_problem.ts "$multiphysics_malformed"; then exit 1; fi
+      - name: Bounded fuzz smoke
+        run: |
+          cargo install cargo-fuzz --locked
+          python3 - <<'PY'
+          import subprocess
+
+          command = [
+              "cargo", "fuzz", "run", "--manifest-path", "crates/sonium-xem/fuzz/Cargo.toml",
+              "streaming_readers", "--", "-runs=100", "-max_len=512", "-rss_limit_mb=256",
+          ]
+          subprocess.run(command, check=True, timeout=45)
+          PY
+
+  external-format-release-smoke:
+    name: External VTU/PVD/SOFA reader (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install HDF5 and the independent Python reader
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$(uname -s)" in
+            Linux)
+              sudo apt-get update
+              sudo apt-get install --yes libhdf5-dev
+              export HDF5_DIR=/usr
+              ;;
+            Darwin)
+              brew install hdf5
+              export HDF5_DIR="$(brew --prefix hdf5)"
+              ;;
+            MINGW*|MSYS*)
+              choco install hdf5 --no-progress --yes
+              HDF5_DIR="$(find '/c/Program Files/HDF_Group/HDF5' -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+              test -n "$HDF5_DIR"
+              export HDF5_DIR
+              export PATH="$HDF5_DIR/bin:$PATH"
+              ;;
+            *)
+              echo "unsupported runner platform: $(uname -s)" >&2
+              exit 1
+              ;;
+          esac
+          python_bin=python3
+          command -v "$python_bin" >/dev/null 2>&1 || python_bin=python
+          "$python_bin" -m pip install --user h5py
+          printf 'HDF5_DIR=%s\nPYTHON=%s\n' "$HDF5_DIR" "$python_bin" >> "$GITHUB_ENV"
+      - name: Generate and independently validate release artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$PYTHON" -c 'import h5py; print("h5py", h5py.__version__)'
+          output_dir="$RUNNER_TEMP/xem-external-formats"
+          cargo run --offline -p sonium-xem --example generate_external_formats --features io-sofa -- "$output_dir"
+          "$PYTHON" crates/sonium-xem/interop/read_external_formats.py "$output_dir"

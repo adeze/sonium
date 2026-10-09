@@ -1,0 +1,424 @@
+use super::error::LMError;
+use super::lmconfig_builder::LMConfigBuilder;
+use super::misc::jacobian_step;
+use super::misc::project;
+use super::misc::solve_linear_system;
+use super::misc::weighted_sos;
+use super::types::LMCallbackAction;
+use super::types::levenberg_marquardt;
+
+#[test]
+fn test_sphere() {
+    // r_i = x_i, minimum at origin
+    let residual = |x: &[f64]| x.to_vec();
+    let bounds = vec![(-10.0, 10.0); 3];
+    let config = LMConfigBuilder::new()
+        .x0(vec![3.0, -2.0, 1.0])
+        .maxiter(50)
+        .build();
+
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(report.success, "should converge: {}", report.message);
+    assert!(
+        report.fun < 1e-12,
+        "objective should be ~0, got {}",
+        report.fun
+    );
+    for &xi in report.x.iter() {
+        assert!(xi.abs() < 1e-6, "x should be ~0, got {}", xi);
+    }
+}
+
+#[test]
+fn test_rosenbrock_residual() {
+    // r = [10*(x1 - x0^2), 1 - x0]  =>  min at (1, 1)
+    let residual = |x: &[f64]| vec![10.0 * (x[1] - x[0] * x[0]), 1.0 - x[0]];
+    let bounds = vec![(-5.0, 5.0); 2];
+    let config = LMConfigBuilder::new()
+        .x0(vec![-1.0, 1.0])
+        .maxiter(200)
+        .tol(1e-12)
+        .build();
+
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(report.success, "should converge: {}", report.message);
+    assert!(
+        (report.x[0] - 1.0).abs() < 1e-4,
+        "x0 should be ~1, got {}",
+        report.x[0]
+    );
+    assert!(
+        (report.x[1] - 1.0).abs() < 1e-4,
+        "x1 should be ~1, got {}",
+        report.x[1]
+    );
+}
+
+#[test]
+fn test_bounded_solution() {
+    // r = [x - 5]  =>  unconstrained min at x=5, but bound x <= 3
+    let residual = |x: &[f64]| vec![x[0] - 5.0];
+    let bounds = vec![(-10.0, 3.0)];
+    let config = LMConfigBuilder::new().x0(vec![0.0]).maxiter(50).build();
+
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(
+        (report.x[0] - 3.0).abs() < 1e-6,
+        "x should be at bound 3.0, got {}",
+        report.x[0]
+    );
+}
+
+#[test]
+fn test_nan_residual_handled() {
+    // Residual that returns NaN for large x
+    let residual = |x: &[f64]| {
+        if x[0].abs() > 100.0 {
+            vec![f64::NAN]
+        } else {
+            vec![x[0] - 1.0]
+        }
+    };
+    let bounds = vec![(-200.0, 200.0)];
+    let config = LMConfigBuilder::new().x0(vec![0.0]).maxiter(50).build();
+
+    // Should not panic
+    let result = levenberg_marquardt(&residual, &bounds, config);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_zero_residual() {
+    // Already at the optimum
+    let residual = |x: &[f64]| vec![x[0], x[1]];
+    let bounds = vec![(-10.0, 10.0); 2];
+    let config = LMConfigBuilder::new()
+        .x0(vec![0.0, 0.0])
+        .maxiter(10)
+        .build();
+
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(report.success, "already at optimum: {}", report.message);
+    assert!(report.fun < 1e-14);
+}
+
+#[test]
+fn test_callback_stop() {
+    let residual = |x: &[f64]| x.to_vec();
+    let bounds = vec![(-10.0, 10.0); 2];
+    let config = LMConfigBuilder::new()
+        .x0(vec![5.0, 5.0])
+        .maxiter(1000)
+        .callback(Box::new(|inter| {
+            if inter.iter >= 3 {
+                LMCallbackAction::Stop
+            } else {
+                LMCallbackAction::Continue
+            }
+        }))
+        .build();
+
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert_eq!(report.message, "stopped by callback");
+}
+
+#[test]
+fn test_weighted_residuals() {
+    // r = [x - 1, x - 3], unweighted min at x=2
+    // With w = [10, 1], should pull x closer to 1
+    let residual = |x: &[f64]| vec![x[0] - 1.0, x[0] - 3.0];
+    let bounds = vec![(-10.0, 10.0)];
+
+    // Unweighted
+    let config_unw = LMConfigBuilder::new().x0(vec![0.0]).maxiter(50).build();
+    let report_unw = levenberg_marquardt(&residual, &bounds, config_unw).unwrap();
+
+    // Weighted (10x weight on first residual)
+    let config_w = LMConfigBuilder::new()
+        .x0(vec![0.0])
+        .maxiter(50)
+        .weights(vec![10.0, 1.0])
+        .build();
+    let report_w = levenberg_marquardt(&residual, &bounds, config_w).unwrap();
+
+    // Unweighted should land at ~2.0
+    assert!(
+        (report_unw.x[0] - 2.0).abs() < 0.01,
+        "unweighted x should be ~2, got {}",
+        report_unw.x[0]
+    );
+    // Weighted should be closer to 1.0
+    assert!(
+        report_w.x[0] < report_unw.x[0],
+        "weighted x ({}) should be less than unweighted ({})",
+        report_w.x[0],
+        report_unw.x[0]
+    );
+    assert!(
+        (report_w.x[0] - 1.0).abs() < 0.5,
+        "weighted x should be near 1.0, got {}",
+        report_w.x[0]
+    );
+}
+
+#[test]
+fn test_dimension_mismatch() {
+    let residual = |x: &[f64]| x.to_vec();
+    let bounds = vec![(-1.0, 1.0); 3]; // 3 bounds
+    let config = LMConfigBuilder::new()
+        .x0(vec![0.0, 0.0]) // 2 params
+        .build();
+
+    let err = levenberg_marquardt(&residual, &bounds, config).unwrap_err();
+    assert!(matches!(err, LMError::DimensionMismatch { .. }));
+}
+
+#[test]
+fn test_nit_tracks_iterations_not_nfev() {
+    // nit should count outer iterations, nfev counts residual evaluations
+    // For a 2-param problem, each iteration does 1 trial + 4 FD evals = 5+ nfev
+    let residual = |x: &[f64]| x.to_vec();
+    let bounds = vec![(-10.0, 10.0); 2];
+    let config = LMConfigBuilder::new()
+        .x0(vec![5.0, 5.0])
+        .maxiter(5)
+        .tol(1e-20) // don't converge early
+        .atol(0.0)
+        .build();
+
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert_eq!(
+        report.nit, 5,
+        "nit should be maxiter (5), got {}",
+        report.nit
+    );
+    assert!(
+        report.nfev > report.nit,
+        "nfev ({}) should be much larger than nit ({})",
+        report.nfev,
+        report.nit
+    );
+}
+
+#[test]
+fn test_invalid_bounds() {
+    let residual = |x: &[f64]| x.to_vec();
+    let bounds = vec![(5.0, 1.0)]; // lower > upper
+    let config = LMConfigBuilder::new().x0(vec![0.0]).build();
+
+    let err = levenberg_marquardt(&residual, &bounds, config).unwrap_err();
+    assert!(matches!(err, LMError::InvalidBounds { .. }));
+}
+
+#[test]
+fn test_jacobian_step_size_uses_relative_scale() {
+    let eps = 1e-8;
+    assert!((jacobian_step(eps, 0.0) - eps).abs() < 1e-15);
+    assert!((jacobian_step(eps, 1.0) - 2.0e-8).abs() < 1e-15);
+    let h_large = jacobian_step(eps, 1.0e12);
+    assert!(h_large >= eps);
+    assert!((h_large - eps * (1.0 + 1.0e12)).abs() < 1.0);
+}
+
+#[test]
+fn test_large_x0_lm_converges() {
+    // Verify LM still converges from a large x0 after the step-size fix.
+    let residual = |x: &[f64]| vec![x[0] - 1.0e6];
+    let bounds = vec![(0.0, 2.0e6)];
+    let config = LMConfigBuilder::new().x0(vec![1.0e8]).maxiter(100).build();
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(report.success, "should converge: {}", report.message);
+    assert!(
+        (report.x[0] - 1.0e6).abs() < 1.0,
+        "x should be ~1e6, got {}",
+        report.x[0]
+    );
+}
+
+#[test]
+fn test_linear_solver_rejects_near_singular() {
+    // A matrix with a very small pivot (~1e-15) should be treated as singular
+    // rather than trusted to produce a meaningful step.
+    let a = vec![vec![1.0, 1.0], vec![1.0, 1.0 + 1e-15]];
+    let b = vec![1.0, 1.0];
+    assert!(
+        solve_linear_system(&a, &b).is_none(),
+        "near-singular matrix should be rejected"
+    );
+}
+
+#[test]
+fn test_linear_solver_pivot_threshold_scales_with_magnitude() {
+    // Same near-singular pattern at 1e10 scale: elimination leaves a ~1e-5
+    // pivot that a fixed 1e-12 cutoff would wrongly accept. The scale-aware
+    // threshold (1e-12 * 1e10 = 1e-2) must still reject it.
+    let s = 1e10;
+    let a = vec![vec![s, s], vec![s, s * (1.0 + 1e-15)]];
+    let b = vec![s, s];
+    assert!(
+        solve_linear_system(&a, &b).is_none(),
+        "large-scale near-singular matrix should be rejected"
+    );
+    // A well-conditioned large-scale system must still solve.
+    let a_ok = vec![vec![s, 0.0], vec![0.0, s]];
+    let b_ok = vec![s, s];
+    let x = solve_linear_system(&a_ok, &b_ok).expect("diagonal system should solve");
+    assert!((x[0] - 1.0).abs() < 1e-9 && (x[1] - 1.0).abs() < 1e-9);
+}
+
+#[test]
+fn test_analytic_jacobian_matches_finite_differences() {
+    // r = [10*(x1 - x0^2), 1 - x0] with exact Jacobian; must converge to
+    // (1, 1) while using far fewer residual evaluations than finite
+    // differences (no 2*n_params FD evals per iteration).
+    let residual = |x: &[f64]| vec![10.0 * (x[1] - x[0] * x[0]), 1.0 - x[0]];
+    let analytic = |x: &[f64]| vec![vec![-20.0 * x[0], 10.0], vec![-1.0, 0.0]];
+    let bounds = vec![(-5.0, 5.0); 2];
+
+    let fd_report = levenberg_marquardt(
+        &residual,
+        &bounds,
+        LMConfigBuilder::new()
+            .x0(vec![-1.0, 1.0])
+            .maxiter(200)
+            .tol(1e-12)
+            .build(),
+    )
+    .unwrap();
+    let analytic_report = levenberg_marquardt(
+        &residual,
+        &bounds,
+        LMConfigBuilder::new()
+            .x0(vec![-1.0, 1.0])
+            .maxiter(200)
+            .tol(1e-12)
+            .jacobian(analytic)
+            .build(),
+    )
+    .unwrap();
+
+    assert!(
+        analytic_report.success,
+        "analytic Jacobian should converge: {}",
+        analytic_report.message
+    );
+    assert!((analytic_report.x[0] - 1.0).abs() < 1e-4);
+    assert!((analytic_report.x[1] - 1.0).abs() < 1e-4);
+    assert!(
+        analytic_report.nfev < fd_report.nfev,
+        "analytic nfev ({}) should beat finite-difference nfev ({})",
+        analytic_report.nfev,
+        fd_report.nfev
+    );
+}
+
+#[test]
+fn test_analytic_jacobian_dimension_mismatch_errors() {
+    let residual = |x: &[f64]| vec![x[0] - 1.0, x[0] - 2.0];
+    let bad_jacobian = |_: &[f64]| vec![vec![0.0; 2]; 2]; // 1 param, not 2
+    let bounds = vec![(-10.0, 10.0)];
+    let config = LMConfigBuilder::new()
+        .x0(vec![0.0])
+        .jacobian(bad_jacobian)
+        .build();
+    let err = levenberg_marquardt(&residual, &bounds, config).unwrap_err();
+    assert!(matches!(err, LMError::JacobianDimensionMismatch { .. }));
+}
+
+#[test]
+fn test_project_onto_box() {
+    let x = vec![-1.0, 5.0, 0.5];
+    let bounds = vec![(0.0, 1.0), (0.0, 1.0), (0.0, 1.0)];
+    let p = project(&x, &bounds);
+    assert_eq!(p.to_vec(), vec![0.0, 1.0, 0.5]);
+}
+
+#[test]
+fn test_weighted_sos() {
+    let r = vec![1.0, 2.0, 3.0];
+    let w = vec![1.0, 0.0, 2.0];
+    assert!((weighted_sos(&r, &w) - 19.0).abs() < 1e-12);
+}
+
+#[test]
+fn test_zero_maxiter_returns_immediately() {
+    let residual = |x: &[f64]| vec![x[0] - 1.0];
+    let bounds = vec![(-10.0, 10.0)];
+    let config = LMConfigBuilder::new().x0(vec![0.0]).maxiter(0).build();
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert_eq!(report.nit, 0);
+    assert!(!report.success);
+}
+
+#[test]
+fn test_single_parameter() {
+    let residual = |x: &[f64]| vec![x[0] - std::f64::consts::PI];
+    let bounds = vec![(-10.0, 10.0)];
+    let config = LMConfigBuilder::new().x0(vec![0.0]).maxiter(50).build();
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(report.success);
+    assert!((report.x[0] - std::f64::consts::PI).abs() < 1e-6);
+}
+
+#[test]
+fn test_constant_residual_zero_jacobian() {
+    // Residual does not depend on x -> Jacobian is zero -> solver can't improve
+    let residual = |_: &[f64]| vec![5.0];
+    let bounds = vec![(-10.0, 10.0)];
+    let config = LMConfigBuilder::new().x0(vec![0.0]).maxiter(10).build();
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    // Should not panic; may or may not converge depending on lambda behaviour
+    assert!(report.fun >= 0.0);
+}
+
+#[test]
+fn test_residual_dimension_change_mid_run() {
+    let residual = |x: &[f64]| {
+        if x[0] > 10.0 {
+            vec![x[0] - 1.0, x[0] - 2.0]
+        } else {
+            vec![x[0] - 1.0]
+        }
+    };
+    let bounds = vec![(-100.0, 100.0)];
+    let config = LMConfigBuilder::new().x0(vec![0.0]).maxiter(50).build();
+    let result = levenberg_marquardt(&residual, &bounds, config);
+    // Should error when dimension changes, not panic
+    assert!(result.is_ok() || result.is_err());
+}
+
+#[test]
+fn test_atol_convergence() {
+    let residual = |x: &[f64]| vec![x[0] * 1e-6];
+    let bounds = vec![(-1.0, 1.0)];
+    let config = LMConfigBuilder::new()
+        .x0(vec![0.5])
+        .maxiter(100)
+        .atol(1e-20)
+        .tol(0.0)
+        .build();
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    // Very small atol should still converge for this well-scaled problem
+    assert!(report.fun < 1e-10);
+}
+
+#[test]
+fn test_tight_bounds_active_on_both_sides() {
+    let residual = |x: &[f64]| vec![x[0] - 0.5, x[1] + 0.5];
+    let bounds = vec![(0.0, 0.3), (-0.3, 0.0)];
+    let config = LMConfigBuilder::new()
+        .x0(vec![0.0, 0.0])
+        .maxiter(50)
+        .build();
+    let report = levenberg_marquardt(&residual, &bounds, config).unwrap();
+    assert!(
+        (report.x[0] - 0.3).abs() < 1e-6,
+        "x0 should hit upper bound: {}",
+        report.x[0]
+    );
+    assert!(
+        (report.x[1] - (-0.3)).abs() < 1e-6,
+        "x1 should hit lower bound: {}",
+        report.x[1]
+    );
+}

@@ -1,0 +1,18 @@
+[package]
+name = "sonium-demo-workers"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+num-complex = { workspace = true }
+rayon = { workspace = true }
+sonium-sim-room = { workspace = true }
+sonium-sim-pcfan = { workspace = true }
+sonium-sim-propellers = { workspace = true }
+sonium-sim-speaker-modeling = { workspace = true }
+sonium-sim-structural-mechanics = { workspace = true }
+sonium-fem = { workspace = true }
+sonium-xem = { workspace = true }

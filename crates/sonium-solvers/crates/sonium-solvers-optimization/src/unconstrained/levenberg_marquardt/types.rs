@@ -1,0 +1,345 @@
+use super::error::LMError;
+use super::jtw::jtw_j;
+use super::jtw::jtw_r;
+use super::misc::jacobian_step;
+use super::misc::project;
+use super::misc::solve_linear_system;
+use super::misc::weighted_sos;
+
+/// Result alias for LM operations.
+pub type LMResult<T> = std::result::Result<T, LMError>;
+
+/// Action returned by a progress callback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LMCallbackAction {
+    /// Keep iterating.
+    Continue,
+    /// Stop early.
+    Stop,
+}
+
+/// Snapshot of solver state passed to the callback.
+pub struct LMIntermediate {
+    /// Current parameter vector.
+    pub x: Vec<f64>,
+    /// Current objective value (weighted sum of squared residuals).
+    pub fun: f64,
+    /// Current damping parameter.
+    pub lambda: f64,
+    /// Iteration number.
+    pub iter: usize,
+}
+
+/// Progress callback type for the LM solver.
+pub type LMCallback = Box<dyn FnMut(&LMIntermediate) -> LMCallbackAction>;
+
+/// Analytic Jacobian function for the LM solver.
+///
+/// Maps `x` to the `(n_residuals x n_params)` Jacobian matrix `J[i, j] =
+/// dr_i/dx_j`. When supplied via [`LMConfig::jacobian`], the solver calls it
+/// instead of the built-in central finite differences, saving `2 * n_params`
+/// residual evaluations per iteration and avoiding differencing error.
+pub type JacobianFn = Box<dyn Fn(&[f64]) -> Vec<Vec<f64>>>;
+
+/// Configuration for the LM solver.
+pub struct LMConfig {
+    /// Maximum iterations (default 100).
+    pub maxiter: usize,
+    /// Relative convergence tolerance on the objective.
+    pub tol: f64,
+    /// Absolute convergence tolerance on the objective.
+    pub atol: f64,
+    /// Initial damping parameter (default 1.0).
+    pub lambda_init: f64,
+    /// Finite-difference step for Jacobian approximation (default 1e-8).
+    pub jacobian_epsilon: f64,
+    /// Optional analytic Jacobian. When `Some`, the solver uses it instead of
+    /// central finite differences (and `jacobian_epsilon` is ignored).
+    /// The function must return an `(n_residuals x n_params)` matrix; a shape
+    /// mismatch returns [`LMError::JacobianDimensionMismatch`].
+    pub jacobian: Option<JacobianFn>,
+    /// Initial guess (required).
+    pub x0: Vec<f64>,
+    /// Per-residual weights (optional; default = uniform).
+    pub weights: Option<Vec<f64>>,
+    /// Print progress to stderr.
+    pub disp: bool,
+    /// Optional progress callback.
+    pub callback: Option<LMCallback>,
+}
+
+/// Result of a Levenberg-Marquardt optimization.
+#[derive(Debug)]
+pub struct LMReport {
+    /// Optimal parameter vector.
+    pub x: Vec<f64>,
+    /// Final objective value (weighted sum of squared residuals).
+    pub fun: f64,
+    /// Final residual vector.
+    pub residuals: Vec<f64>,
+    /// Whether the solver converged.
+    pub success: bool,
+    /// Human-readable termination message.
+    pub message: String,
+    /// Number of iterations performed.
+    pub nit: usize,
+    /// Number of residual function evaluations.
+    pub nfev: usize,
+}
+
+/// Bounded Levenberg-Marquardt nonlinear least-squares solver.
+///
+/// Minimizes `sum_i  w_i * r_i(x)^2` subject to `bounds[j].0 <= x[j] <= bounds[j].1`.
+///
+/// # Arguments
+/// * `residual_fn` — returns the residual vector `r(x)`.
+/// * `bounds` — per-parameter `(lower, upper)` pairs.
+/// * `config` — solver configuration (must include `x0`). Set
+///   [`LMConfig::jacobian`] to supply an analytic Jacobian instead of the
+///   default central finite differences.
+pub fn levenberg_marquardt<F>(
+    residual_fn: &F,
+    bounds: &[(f64, f64)],
+    config: LMConfig,
+) -> LMResult<LMReport>
+where
+    F: Fn(&[f64]) -> Vec<f64>,
+{
+    let n_params = config.x0.len();
+
+    // --- Validate inputs ---
+    if bounds.len() != n_params {
+        return Err(LMError::DimensionMismatch {
+            x0_len: n_params,
+            bounds_len: bounds.len(),
+        });
+    }
+    for (i, &(lo, hi)) in bounds.iter().enumerate() {
+        if lo > hi {
+            return Err(LMError::InvalidBounds {
+                index: i,
+                lower: lo,
+                upper: hi,
+            });
+        }
+    }
+
+    // --- Initialize ---
+    let mut x = project(&config.x0, bounds);
+    let mut r = residual_fn(&x);
+    let n_residuals = r.len();
+    let mut nfev: usize = 1;
+
+    let w = config.weights.unwrap_or_else(|| vec![1.0; n_residuals]);
+    let mut f_val = weighted_sos(&r, &w);
+    let mut lambda = config.lambda_init;
+    let eps = config.jacobian_epsilon;
+    let analytic_jacobian = config.jacobian;
+
+    let mut success = false;
+    let mut message = format!("max iterations ({}) reached", config.maxiter);
+    let mut callback = config.callback;
+    let mut nit: usize = 0;
+
+    for iter in 0..config.maxiter {
+        nit = iter + 1;
+        // --- Callback ---
+        if let Some(ref mut cb) = callback {
+            let intermediate = LMIntermediate {
+                x: x.clone(),
+                fun: f_val,
+                lambda,
+                iter,
+            };
+            if cb(&intermediate) == LMCallbackAction::Stop {
+                message = "stopped by callback".to_string();
+                break;
+            }
+        }
+
+        // --- Check for already-converged ---
+        if f_val <= config.atol {
+            success = true;
+            message = format!(
+                "converged: objective {:.2e} <= atol {:.2e}",
+                f_val, config.atol
+            );
+            break;
+        }
+
+        // --- Jacobian: analytic hook when supplied, else central finite differences ---
+        let jac = match analytic_jacobian {
+            Some(ref jac_fn) => {
+                let jac = jac_fn(&x);
+                if jac.len() != n_residuals || jac.first().map_or(0, |row| row.len()) != n_params {
+                    return Err(LMError::JacobianDimensionMismatch {
+                        expected_rows: n_residuals,
+                        expected_cols: n_params,
+                        got_rows: jac.len(),
+                        got_cols: jac.first().map_or(0, |row| row.len()),
+                    });
+                }
+                jac
+            }
+            None => compute_jacobian(residual_fn, &x, &r, n_residuals, eps, &mut nfev)?,
+        };
+
+        // --- Form damped normal equations ---
+        // LM step solves: (J^T W J + λ·D) δ = −J^T W r
+        // where D = diag(J^T W J) (Marquardt scaling).
+        let jtwj = jtw_j(&jac, &w);
+        let jtwr = jtw_r(&jac, &w, &r); // gradient direction
+
+        // Marquardt diagonal scaling
+        let diag: Vec<f64> = (0..n_params).map(|j| jtwj[j][j].max(1e-20)).collect();
+
+        // H = J^T W J + λ·diag(D)
+        let mut h = jtwj.clone();
+        for j in 0..n_params {
+            h[j][j] += lambda * diag[j];
+        }
+
+        // RHS = −J^T W r  (descent direction)
+        let neg_jtwr: Vec<f64> = jtwr.iter().map(|v| -v).collect();
+
+        // Solve H · δ = −J^T W r
+        let delta = match solve_linear_system(&h, &neg_jtwr) {
+            Some(d) => d,
+            None => {
+                // Increase damping and retry
+                lambda *= 4.0;
+                continue;
+            }
+        };
+
+        // --- Trial step with bounds projection ---
+        let x_trial = project(
+            &x.iter()
+                .zip(delta.iter())
+                .map(|(a, b)| a + b)
+                .collect::<Vec<_>>(),
+            bounds,
+        );
+        let r_trial = residual_fn(&x_trial);
+        nfev += 1;
+
+        if r_trial.len() != n_residuals {
+            return Err(LMError::ResidualDimensionChanged {
+                expected: n_residuals,
+                got: r_trial.len(),
+            });
+        }
+
+        let f_trial = weighted_sos(&r_trial, &w);
+
+        // --- Gain ratio ---
+        // Model reduction for f(x) = r^T W r with step δ solving (JTWJ + λD)δ = −jtwr:
+        //   pred = δ^T JTWJ δ + 2λ δ^T D δ
+        let pred: f64 = {
+            let mut p = 0.0;
+            for j in 0..n_params {
+                let mut jtwj_delta_j = 0.0;
+                for k in 0..n_params {
+                    jtwj_delta_j += jtwj[j][k] * delta[k];
+                }
+                p += delta[j] * jtwj_delta_j + 2.0 * lambda * diag[j] * delta[j] * delta[j];
+            }
+            p
+        };
+
+        let actual = f_val - f_trial;
+        let rho = if pred.abs() > 1e-30 {
+            actual / pred
+        } else {
+            0.0
+        };
+
+        if rho > 0.0 && f_trial < f_val {
+            // Accept step
+            let f_old = f_val;
+            x = x_trial;
+            r = r_trial;
+            f_val = f_trial;
+            lambda = (lambda / 2.0).max(1e-15);
+
+            // Convergence check
+            if (f_old - f_val).abs() < config.tol * f_old + config.atol {
+                success = true;
+                message = format!(
+                    "converged: |df|={:.2e} < tol*f+atol={:.2e}",
+                    (f_old - f_val).abs(),
+                    config.tol * f_old + config.atol
+                );
+                break;
+            }
+        } else {
+            // Reject step — increase damping
+            lambda = (lambda * 2.0).min(1e15);
+        }
+
+        if config.disp && iter % 10 == 0 {
+            eprintln!(
+                "LM iter {}: f={:.6e}, lambda={:.2e}, rho={:.3}",
+                iter, f_val, lambda, rho
+            );
+        }
+    }
+
+    Ok(LMReport {
+        x,
+        fun: f_val,
+        residuals: r,
+        success,
+        message,
+        nit,
+        nfev,
+    })
+}
+
+/// Compute Jacobian via central finite differences.
+fn compute_jacobian<F>(
+    residual_fn: &F,
+    x: &[f64],
+    _r0: &[f64],
+    n_residuals: usize,
+    eps: f64,
+    nfev: &mut usize,
+) -> LMResult<Vec<Vec<f64>>>
+where
+    F: Fn(&[f64]) -> Vec<f64>,
+{
+    let n_params = x.len();
+    let mut jac = vec![vec![0.0; n_params]; n_residuals];
+
+    for j in 0..n_params {
+        let mut x_plus = x.to_vec();
+        let mut x_minus = x.to_vec();
+        let h = jacobian_step(eps, x[j]);
+        x_plus[j] += h;
+        x_minus[j] -= h;
+
+        let r_plus = residual_fn(&x_plus);
+        let r_minus = residual_fn(&x_minus);
+        *nfev += 2;
+
+        if r_plus.len() != n_residuals {
+            return Err(LMError::ResidualDimensionChanged {
+                expected: n_residuals,
+                got: r_plus.len(),
+            });
+        }
+        if r_minus.len() != n_residuals {
+            return Err(LMError::ResidualDimensionChanged {
+                expected: n_residuals,
+                got: r_minus.len(),
+            });
+        }
+
+        let inv_2h = 1.0 / (2.0 * h);
+        for i in 0..n_residuals {
+            jac[i][j] = (r_plus[i] - r_minus[i]) * inv_2h;
+        }
+    }
+
+    Ok(jac)
+}

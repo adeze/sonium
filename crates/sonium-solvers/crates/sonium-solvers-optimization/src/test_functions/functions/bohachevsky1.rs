@@ -1,0 +1,18 @@
+//! Bohachevsky1 test function
+
+/// Bohachevsky function 1 - 2D multimodal
+/// Global minimum: f(x) = 0 at x = (0, 0)
+/// Bounds: x_i in [-100, 100]
+pub fn bohachevsky1(x: &[f64]) -> f64 {
+    assert!(
+        x.len() == 2,
+        "bohachevsky1 requires 2 dimensions, got {}",
+        x.len()
+    );
+    let x1 = x[0];
+    let x2 = x[1];
+    x1.powi(2) + 2.0 * x2.powi(2)
+        - 0.3 * (3.0 * std::f64::consts::PI * x1).cos()
+        - 0.4 * (4.0 * std::f64::consts::PI * x2).cos()
+        + 0.7
+}

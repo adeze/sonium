@@ -1,0 +1,271 @@
+//! Release-facing affine tetrahedral order-2 H(curl) hanging-face edge contract.
+
+use num_complex::Complex64;
+use sonium_fem::boundary::mixed_hanging::{
+    MixedHangingError, hcurl_order2_hanging_tri_face_edge_constraints_3d,
+    hcurl_order2_hanging_tri_face_edge_mpc_system_3d,
+};
+use sonium_fem::mesh::{
+    ElementType, Mesh, MeshTopology, Point, unit_cube_hexahedra, unit_cube_tetrahedra,
+    unit_square_triangles,
+};
+use sonium_fem::spaces::{FunctionSpace, HcurlSpace};
+use sonium_qa::QaResult;
+
+const CASE_ID: &str = "fem.hcurl-order2-3d-hanging-face-contract.v1";
+
+fn hanging_face_mesh(center_x: f64, center_y: f64) -> Mesh {
+    let mut mesh = Mesh::new(3);
+    for point in [
+        Point::new_3d(0.0, 0.0, 0.0),
+        Point::new_3d(1.0, 0.0, 0.0),
+        Point::new_3d(0.0, 1.0, 0.0),
+        Point::new_3d(center_x, center_y, -1.0),
+        Point::new_3d(center_x, center_y, 0.0),
+        Point::new_3d(center_x, center_y, 1.0),
+    ] {
+        mesh.add_node(point);
+    }
+    mesh.add_element(ElementType::Tetrahedron, vec![0, 2, 1, 3]);
+    mesh.add_element(ElementType::Tetrahedron, vec![0, 1, 4, 5]);
+    mesh.add_element(ElementType::Tetrahedron, vec![1, 2, 4, 5]);
+    mesh.add_element(ElementType::Tetrahedron, vec![2, 0, 4, 5]);
+    mesh
+}
+
+fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
+    left[0] * right[0] + left[1] * right[1] + left[2] * right[2]
+}
+
+fn cross(left: [f64; 3], right: [f64; 3]) -> [f64; 3] {
+    [
+        left[1] * right[2] - left[2] * right[1],
+        left[2] * right[0] - left[0] * right[2],
+        left[0] * right[1] - left[1] * right[0],
+    ]
+}
+
+fn reference_from_physical(mesh: &Mesh, element: usize, physical: [f64; 3]) -> [f64; 3] {
+    let nodes = &mesh.elements[element].nodes;
+    let origin = mesh.nodes[nodes[0]];
+    let p1 = mesh.nodes[nodes[1]];
+    let p2 = mesh.nodes[nodes[2]];
+    let p3 = mesh.nodes[nodes[3]];
+    let jacobian = [
+        [p1.x - origin.x, p2.x - origin.x, p3.x - origin.x],
+        [p1.y - origin.y, p2.y - origin.y, p3.y - origin.y],
+        [p1.z - origin.z, p2.z - origin.z, p3.z - origin.z],
+    ];
+    let rhs = [
+        physical[0] - origin.x,
+        physical[1] - origin.y,
+        physical[2] - origin.z,
+    ];
+    let determinant = jacobian[0][0]
+        * (jacobian[1][1] * jacobian[2][2] - jacobian[1][2] * jacobian[2][1])
+        - jacobian[0][1] * (jacobian[1][0] * jacobian[2][2] - jacobian[1][2] * jacobian[2][0])
+        + jacobian[0][2] * (jacobian[1][0] * jacobian[2][1] - jacobian[1][1] * jacobian[2][0]);
+    let c0 = [jacobian[0][0], jacobian[1][0], jacobian[2][0]];
+    let c1 = [jacobian[0][1], jacobian[1][1], jacobian[2][1]];
+    let c2 = [jacobian[0][2], jacobian[1][2], jacobian[2][2]];
+    [
+        dot(rhs, cross(c1, c2)) / determinant,
+        dot(c0, cross(rhs, c2)) / determinant,
+        dot(c0, cross(c1, rhs)) / determinant,
+    ]
+}
+
+fn owner_for_face(topology: &MeshTopology, face: usize) -> usize {
+    topology
+        .element_faces
+        .iter()
+        .enumerate()
+        .find_map(|(element, faces)| faces.contains(&face).then_some(element))
+        .expect("face owner")
+}
+
+fn coarse_edge_mode_moment(
+    mesh: &Mesh,
+    space: &HcurlSpace,
+    element: usize,
+    local_dof: usize,
+    fine_edge: (usize, usize),
+    fine_mode: usize,
+) -> f64 {
+    let first = mesh.nodes[fine_edge.0];
+    let second = mesh.nodes[fine_edge.1];
+    let direction = [second.x - first.x, second.y - first.y, second.z - first.z];
+    let offset = 0.5 / 3.0_f64.sqrt();
+    [(0.5 - offset, 0.5), (0.5 + offset, 0.5)]
+        .into_iter()
+        .map(|(parameter, weight)| {
+            let physical = [
+                first.x + parameter * direction[0],
+                first.y + parameter * direction[1],
+                first.z + parameter * direction[2],
+            ];
+            let reference = reference_from_physical(mesh, element, physical);
+            let tabulation = space
+                .try_tabulate(mesh, element, reference[0], reference[1], reference[2])
+                .unwrap();
+            let value = [
+                tabulation.vector_value(local_dof, 0),
+                tabulation.vector_value(local_dof, 1),
+                tabulation.vector_value(local_dof, 2),
+            ];
+            let line_value = dot(value, direction);
+            match fine_mode {
+                0 => weight * line_value,
+                1 => weight * 3.0 * line_value * (1.0 - 2.0 * parameter),
+                _ => unreachable!(),
+            }
+        })
+        .sum()
+}
+
+fn run() -> Result<(usize, usize, usize), String> {
+    let mesh = hanging_face_mesh(0.2, 0.3);
+    let space = HcurlSpace::order2();
+    let constraints = hcurl_order2_hanging_tri_face_edge_constraints_3d(&mesh, &space, 1.0e-10)
+        .map_err(|error| error.to_string())?;
+    if constraints.len() != 3 {
+        return Err(format!(
+            "expected three fine face edges, got {}",
+            constraints.len()
+        ));
+    }
+
+    let topology = MeshTopology::build(&mesh);
+    let owner = owner_for_face(&topology, constraints[0].coarse_face);
+    let element_dofs = space.local_to_global(&mesh, owner);
+    let mut line_moment_checks = 0;
+    for constraint in &constraints {
+        for fine_mode in 0..2 {
+            for (coarse_mode, &coarse_dof) in constraint.coarse_dofs.iter().enumerate() {
+                let local_dof = element_dofs
+                    .iter()
+                    .position(|&dof| dof == coarse_dof)
+                    .ok_or_else(|| "coarse master is not owned by face owner".to_owned())?;
+                let expected = coarse_edge_mode_moment(
+                    &mesh,
+                    &space,
+                    owner,
+                    local_dof,
+                    topology.edges[constraint.slave_edge],
+                    fine_mode,
+                );
+                if !expected.is_finite()
+                    || (constraint.coefficients[fine_mode][coarse_mode] - expected).abs() > 1.0e-10
+                {
+                    return Err("independent order-2 line-moment mismatch".to_owned());
+                }
+                line_moment_checks += 1;
+            }
+        }
+    }
+
+    let mpc = hcurl_order2_hanging_tri_face_edge_mpc_system_3d(&mesh, &space, 1.0e-10)
+        .map_err(|error| error.to_string())?;
+    let coarse_values = [
+        Complex64::new(2.0, -1.0),
+        Complex64::new(-0.75, 0.5),
+        Complex64::new(1.25, 2.0),
+        Complex64::new(-1.5, 0.25),
+        Complex64::new(0.5, -2.0),
+        Complex64::new(0.25, 0.75),
+        Complex64::new(1.0, -0.5),
+        Complex64::new(-0.25, 1.5),
+    ];
+    let mut reduced = vec![Complex64::new(0.0, 0.0); mpc.num_reduced_dofs()];
+    for (dof, value) in constraints[0].coarse_dofs.into_iter().zip(coarse_values) {
+        let reduced_dof = mpc
+            .reduced_full_dofs()
+            .iter()
+            .position(|&candidate| candidate == dof)
+            .ok_or_else(|| "coarse master was unexpectedly eliminated".to_owned())?;
+        reduced[reduced_dof] = value;
+    }
+    let recovered = mpc.recover(&reduced).map_err(|error| error.to_string())?;
+    let mut recovery_checks = 0;
+    for constraint in &constraints {
+        for fine_mode in 0..2 {
+            let expected = constraint.coefficients[fine_mode]
+                .into_iter()
+                .zip(coarse_values)
+                .map(|(coefficient, value)| value * coefficient)
+                .fold(Complex64::new(0.0, 0.0), |sum, value| sum + value);
+            if (recovered[constraint.slave_edge * 2 + fine_mode] - expected).norm() > 1.0e-10 {
+                return Err("complex order-2 MPC recovery mismatch".to_owned());
+            }
+            recovery_checks += 1;
+        }
+    }
+
+    let mut rejection_checks = 0;
+    if !matches!(
+        hcurl_order2_hanging_tri_face_edge_constraints_3d(&mesh, &HcurlSpace::new(), 1.0e-10),
+        Err(MixedHangingError::UnsupportedOrder(1))
+    ) {
+        return Err("order-1 input was not rejected".to_owned());
+    }
+    rejection_checks += 1;
+    if !matches!(
+        hcurl_order2_hanging_tri_face_edge_constraints_3d(&mesh, &space, 0.0),
+        Err(MixedHangingError::InvalidTolerance(0.0))
+    ) {
+        return Err("zero tolerance was not rejected".to_owned());
+    }
+    rejection_checks += 1;
+    if !matches!(
+        hcurl_order2_hanging_tri_face_edge_constraints_3d(
+            &unit_square_triangles(1),
+            &space,
+            1.0e-10,
+        ),
+        Err(MixedHangingError::UnsupportedDimension(2))
+    ) {
+        return Err("2-D input was not rejected".to_owned());
+    }
+    rejection_checks += 1;
+    if !matches!(
+        hcurl_order2_hanging_tri_face_edge_constraints_3d(&unit_cube_hexahedra(1), &space, 1.0e-10),
+        Err(MixedHangingError::UnsupportedHcurlTopology)
+    ) {
+        return Err("hexahedral input was not rejected".to_owned());
+    }
+    rejection_checks += 1;
+    let mut malformed = mesh.clone();
+    malformed.elements[0].nodes.push(malformed.nodes.len());
+    malformed.add_node(Point::new_3d(0.1, 0.1, 0.1));
+    if !matches!(
+        hcurl_order2_hanging_tri_face_edge_constraints_3d(&malformed, &space, 1.0e-10),
+        Err(MixedHangingError::UnsupportedGeometry)
+    ) {
+        return Err("malformed tetrahedral connectivity was not rejected".to_owned());
+    }
+    rejection_checks += 1;
+
+    Ok((line_moment_checks, recovery_checks, rejection_checks))
+}
+
+fn main() {
+    let result = match run() {
+        Ok((line_moment_checks, recovery_checks, rejection_checks)) => QaResult::passed(CASE_ID)
+            .metric("line_moment_checks", line_moment_checks as f64)
+            .metric("recovery_checks", recovery_checks as f64)
+            .metric("rejection_checks", rejection_checks as f64)
+            .dimension("3-D affine tetrahedral order-2 H(curl) triangular-face edge modes")
+            .input_checksum("mesh:coarse-triangle-with-three-fine-subfaces:hcurl-order2-v1")
+            .reference_checksum(
+                "analytic/deterministic-fixture:fem-hcurl-order2-3d-hanging-face-contract-v1",
+            )
+            .seed("fem-hcurl-order2-3d-hanging-face-contract:cpu:v1"),
+        Err(error) => QaResult::failed(CASE_ID, error),
+    };
+    println!("{}", result.to_json_line().expect("serialize QA result"));
+    if !matches!(result.status, sonium_qa::QaStatus::Passed) {
+        println!("FAILED");
+        std::process::exit(1);
+    }
+    println!("SUCCESS");
+}

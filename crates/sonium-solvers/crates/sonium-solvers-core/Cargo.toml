@@ -1,0 +1,22 @@
+[package]
+name = "sonium-solvers-core"
+version = "0.4.5"
+description = "Core traits (ComplexField, LinearOperator, Preconditioner) and dense matrix for sonium solvers"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+num-complex = { workspace = true, features = ["serde"] }
+num-traits = { workspace = true }
+rayon = { workspace = true }
+half = { workspace = true }
+thiserror = { workspace = true }
+sonium-compute = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

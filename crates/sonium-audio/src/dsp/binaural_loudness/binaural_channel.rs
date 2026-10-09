@@ -1,0 +1,15 @@
+/// Identifies one ear of the binaural pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinauralChannel {
+    Left,
+    Right,
+}
+
+impl BinauralChannel {
+    pub(super) fn index(self) -> u32 {
+        match self {
+            BinauralChannel::Left => 0,
+            BinauralChannel::Right => 1,
+        }
+    }
+}

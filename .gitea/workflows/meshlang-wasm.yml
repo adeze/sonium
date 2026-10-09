@@ -1,0 +1,46 @@
+name: MeshLang WASM API contract
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/meshlang-wasm.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-meshlang/**"
+      - "crates/sonium-wasm/frontend/**"
+      - "crates/sonium-wasm/src/meshlang.rs"
+  push:
+    branches: [main]
+
+jobs:
+  wasm-api:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install wasm target and wasm-pack
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo install wasm-pack --version 0.13.1 --locked
+
+      - name: Check MeshLang WASM targets
+        run: |
+          cargo check --offline --target wasm32-unknown-unknown \
+            --manifest-path crates/sonium-meshlang/crates/meshlang-parser/Cargo.toml
+          cargo check --offline --target wasm32-unknown-unknown \
+            --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/Cargo.toml
+
+          cargo check --offline --target wasm32-unknown-unknown \
+            --manifest-path crates/sonium-wasm/Cargo.toml \
+            --features meshlang --lib
+
+      - name: Run parser and compiler Node contract tests
+        run: |
+          wasm-pack test --node --release crates/sonium-meshlang/crates/meshlang-parser
+          wasm-pack test --node --release crates/sonium-meshlang/crates/meshlang-compiler
+
+      - name: Run publishable browser adapter contract tests
+        run: npm --prefix crates/sonium-wasm/frontend test
+
+      - name: Run product WASM browser boundary tests
+        run: wasm-pack test --node --release crates/sonium-wasm -- --features meshlang

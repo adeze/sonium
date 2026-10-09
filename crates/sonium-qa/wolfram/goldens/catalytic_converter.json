@@ -1,0 +1,9 @@
+{
+  "provenance": "Generated 2026-08-08 with Wolfram Engine from catalytic_converter.wls",
+  "schema_version": 1,
+  "final_time_s": 150.0,
+  "sample_points": [[0.1, 0.25], [0.2, 0.25], [0.1, 0.5], [0.1, 0.0]],
+  "samples": [1498.1192873730893, 790.9762147306851, 1479.6926947502297, 1500.0000000000002],
+  "outlet_concentration": 1357.2030347810055,
+  "reduction": 142.7969652189945
+}

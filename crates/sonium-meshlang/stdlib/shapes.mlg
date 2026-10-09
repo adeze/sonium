@@ -1,0 +1,39 @@
+/// MeshLang Standard Library: Shapes
+///
+/// Parameterized geometry components for common use cases.
+/// Import with: import "std/shapes.mlg" as shapes
+
+/// A box with rounded edges (fillet).
+/// Creates a box and applies fillets to all edges.
+pub geometry RoundedBox(w: Float, h: Float, d: Float, fillet_r: Float) {
+    let solid = Box(w, h, d) |> fillet(r: fillet_r)
+}
+
+/// A tube: cylinder with a concentric hole.
+pub geometry Tube(outer_r: Float, inner_r: Float, h: Float) {
+    let outer = Cylinder(r: outer_r, h: h)
+    let inner = Cylinder(r: inner_r, h: h)
+    let solid = outer - inner
+}
+
+/// A flanged tube: tube with a flat flange at one end.
+pub geometry FlangedTube(tube_r: Float, tube_h: Float, flange_r: Float, flange_h: Float) {
+    let tube = Cylinder(r: tube_r, h: tube_h)
+    let flange = Cylinder(r: flange_r, h: flange_h)
+    let solid = tube | flange
+}
+
+/// An exponential horn profile (for acoustic horns).
+/// Approximated as a sequence of conical frustums.
+pub geometry ExponentialHorn(throat_r: Float, mouth_r: Float, length: Float, segments: Int = 8) {
+    // Approximation using a single cone for now
+    let solid = Cone(r1: throat_r, r2: mouth_r, h: length)
+}
+
+/// A rectangular waveguide section.
+pub geometry Waveguide(w: Float, h: Float, length: Float, wall_thickness: Float) {
+    let outer = Box(w + 2.0 * wall_thickness, h + 2.0 * wall_thickness, length)
+    let inner = Box(w, h, length)
+        |> translate(wall_thickness, wall_thickness, 0.0)
+    let solid = outer - inner
+}

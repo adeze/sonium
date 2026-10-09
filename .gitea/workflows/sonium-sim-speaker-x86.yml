@@ -1,0 +1,128 @@
+name: sonium-sim-speaker native x86 golden
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-sim-speaker/**"
+      - "crates/sonium-sim-speaker-modeling/**"
+      - "crates/sonium-qa/**"
+      - ".gitea/workflows/sonium-sim-speaker-x86.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-sim-speaker/**"
+      - "crates/sonium-sim-speaker-modeling/**"
+      - "crates/sonium-qa/**"
+      - ".gitea/workflows/sonium-sim-speaker-x86.yml"
+
+jobs:
+  native-aarch64-reference:
+    # Produce the accepted speaker reference on the native aarch64 machine.
+    # This is an explicit reference-only mode; it never masquerades as x86
+    # evidence and is consumed by the native x86 comparison below.
+    runs-on: [self-hosted, macos, metal]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native aarch64 runner and record dispatch
+        run: |
+          set -eu
+          test "$(uname -m)" = "arm64"
+          rustc -Vv
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "aarch64-apple-darwin"
+          cargo -V
+          sysctl -n hw.model || true
+      - name: Run native aarch64 speaker reference producer
+        run: cargo run -p sonium-qa --release --features qa-binaries --bin qa-speaker-native-x86-golden
+        env:
+          SONIUM_AARCH64_REFERENCE_ONLY: "1"
+          SONIUM_OUTPUT_DIR: target/sonium-speaker-aarch64-reference
+      - name: Validate accepted aarch64 speaker artifact identity
+        run: |
+          test "$(jq -r .schema_version target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json)" = "3"
+          test "$(jq -r .target_arch target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json)" = "aarch64"
+          test "$(jq -r '.directivity | length' target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json)" = "2"
+          test "$(jq -r '.driver_model_reference.schema_version' target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json)" = "2"
+          test "$(jq -r '.projected_driver_model_reference.schema_version' target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json)" = "2"
+          jq -e '(.dispatch | contains(["simd=neon"])) and any(.dispatch[]; startswith("vendor=") and (.[7:] | length > 0) and ((.[7:] | ascii_downcase) != "unknown"))' target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json
+          cd target/sonium-speaker-aarch64-reference
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum speaker_native_x86_golden.json > speaker_native_x86_golden.json.sha256
+            sha256sum -c speaker_native_x86_golden.json.sha256
+          else
+            shasum -a 256 speaker_native_x86_golden.json > speaker_native_x86_golden.json.sha256
+            shasum -a 256 -c speaker_native_x86_golden.json.sha256
+          fi
+      - name: Upload accepted native aarch64 speaker artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-speaker-native-aarch64-reference
+          path: |
+            target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json
+            target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json.sha256
+
+  native-x86-64:
+    needs: native-aarch64-reference
+    # This runner must be a native x86_64 Linux host.  Rosetta/macOS jobs are
+    # intentionally not accepted as native-x86 performance evidence.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native x86_64 runner and record dispatch
+        run: |
+          test "$(uname -m)" = "x86_64"
+          rustc -Vv
+          cargo -V
+          grep -m1 -E 'vendor_id|model name' /proc/cpuinfo || true
+      - name: Download accepted native aarch64 speaker artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sonium-speaker-native-aarch64-reference
+          path: target/sonium-speaker-aarch64-reference
+      - name: Verify accepted native aarch64 speaker checksum
+        run: |
+          cd target/sonium-speaker-aarch64-reference
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c speaker_native_x86_golden.json.sha256
+          else
+            shasum -a 256 -c speaker_native_x86_golden.json.sha256
+          fi
+      - name: Run native x86 speaker golden
+        run: cargo run -p sonium-qa --release --features qa-binaries --bin qa-speaker-native-x86-golden
+        env:
+          SONIUM_OUTPUT_DIR: target/sonium-speaker-x86-golden
+          SONIUM_AARCH64_GOLDEN: target/sonium-speaker-aarch64-reference/speaker_native_x86_golden.json
+          SONIUM_REQUIRE_AARCH64_GOLDEN: "1"
+      - name: Verify native x86 speaker checksum
+        run: |
+          cd target/sonium-speaker-x86-golden
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum -c speaker_native_x86_golden.json.sha256
+          else
+            shasum -a 256 -c speaker_native_x86_golden.json.sha256
+          fi
+      - name: Validate native x86 speaker artifact identity
+        run: |
+          set -eu
+          artifact=target/sonium-speaker-x86-golden/speaker_native_x86_golden.json
+          test "$(jq -r .schema_version "$artifact")" = "3"
+          test "$(jq -r .target_arch "$artifact")" = "x86_64"
+          test "$(jq -r '.directivity | length' "$artifact")" = "2"
+          test "$(jq -r '.driver_model_reference.schema_version' "$artifact")" = "2"
+          test "$(jq -r '.projected_driver_model_reference.schema_version' "$artifact")" = "2"
+          jq -e '(.dispatch | contains(["avx2=true"])) and (.dispatch | contains(["fma=true"]))' "$artifact"
+      - name: Run native x86 typed-driver artifact smoke gate
+        run: cargo test -p sonium-sim-speaker-modeling --test native_x86_evidence native_x86_driver_artifact_smoke_evidence_v1 -- --exact
+      - name: Upload native x86 golden artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-speaker-native-x86-golden
+          path: |
+            target/sonium-speaker-x86-golden/speaker_native_x86_golden.json
+            target/sonium-speaker-x86-golden/speaker_native_x86_golden.json.sha256

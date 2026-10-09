@@ -1,0 +1,254 @@
+name: sonium-solvers-sparse evidence
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-solvers/**"
+      - "scripts/sonium-sanitizer-rustc-wrapper"
+      - "Justfile"
+      - ".gitea/workflows/sonium-solvers-sparse.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-solvers/**"
+      - "scripts/sonium-sanitizer-rustc-wrapper"
+      - "Justfile"
+      - ".gitea/workflows/sonium-solvers-sparse.yml"
+  workflow_dispatch:
+
+jobs:
+  native-x86-sparse:
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert native x86 AVX2/FMA runner and record provenance
+        shell: bash
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "x86_64-unknown-linux-gnu"
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw avx2
+          grep -m1 -E 'flags|Features' /proc/cpuinfo | grep -qw fma
+          mkdir -p target/sonium-solvers-sparse/x86
+          rustc -Vv | tee target/sonium-solvers-sparse/x86/rustc-vv.txt
+          cargo -V | tee target/sonium-solvers-sparse/x86/cargo-version.txt
+          lscpu > target/sonium-solvers-sparse/x86/lscpu.txt
+          grep -m1 'model name' /proc/cpuinfo > target/sonium-solvers-sparse/x86/cpu-model.txt
+          grep -m1 microcode /proc/cpuinfo > target/sonium-solvers-sparse/x86/microcode.txt
+      - name: Check sparse crate
+        run: cargo check -p sonium-solvers-sparse
+      - name: Strict sparse Clippy
+        run: cargo clippy -p sonium-solvers-sparse --lib --tests -- -D warnings
+      - name: Run native x86 sparse action matrix
+        env:
+          SONIUM_SPARSE_EVIDENCE_OUT: target/sonium-solvers-sparse/x86/native.json
+        run: cargo test --release -p sonium-solvers-sparse --test native_x86_sparse_evidence -- --nocapture
+      - name: Run forced scalar sparse action matrix
+        env:
+          SONIUM_SPARSE_FORCE_SCALAR: "1"
+          SONIUM_SPARSE_EVIDENCE_OUT: target/sonium-solvers-sparse/x86/scalar.json
+        run: cargo test --release -p sonium-solvers-sparse --test native_x86_sparse_evidence -- --nocapture
+      - name: Run explicit AVX2 without FMA sparse action matrix
+        env:
+          SONIUM_SPARSE_DISABLE_FMA: "1"
+          SONIUM_SPARSE_EVIDENCE_OUT: target/sonium-solvers-sparse/x86/avx2.json
+        run: cargo test --release -p sonium-solvers-sparse --test native_x86_sparse_evidence -- --nocapture
+      - name: Run explicit AVX2/FMA sparse action matrix
+        env:
+          SONIUM_SPARSE_EVIDENCE_OUT: target/sonium-solvers-sparse/x86/fma.json
+          RUSTFLAGS: -C target-feature=+avx2,+fma
+        run: cargo test --release -p sonium-solvers-sparse --test native_x86_sparse_evidence -- --nocapture
+      - name: Run sparse planner threshold evidence
+        env:
+          SONIUM_SPARSE_PLAN_EVIDENCE_OUT: target/sonium-solvers-sparse/x86/plan-thresholds.json
+        run: cargo bench -p sonium-solvers-sparse --bench sparse_x86 -- --noplot
+      - name: Run native x86 SpMV performance evidence
+        env:
+          SONIUM_SOLVERS_PERF_JSON: target/sonium-solvers-sparse/x86/spmv-perf.json
+        run: cargo bench -p sonium-solvers --features cli --bench spmv_bench -- --noplot
+      - name: Run forced scalar SpMV performance evidence
+        env:
+          SONIUM_SPARSE_FORCE_SCALAR: "1"
+          SONIUM_SOLVERS_PERF_JSON: target/sonium-solvers-sparse/x86/spmv-perf-scalar.json
+        run: cargo bench -p sonium-solvers --features cli --bench spmv_bench -- --noplot
+      - name: Validate sparse x86 evidence identities
+        shell: bash
+        run: |
+          set -eu
+          for artifact in native scalar avx2 fma; do
+            jq -e '.schema == 1 and .target_arch == "x86_64" and .case_count == 32' \
+              "target/sonium-solvers-sparse/x86/${artifact}.json"
+          done
+          jq -e '.status == "passed" and .avx2 == true and .force_scalar == false' \
+            target/sonium-solvers-sparse/x86/native.json
+          jq -e '.status == "scalar_baseline" and .force_scalar == true and ([.cases[].kernel] | unique) == ["scalar"]' \
+            target/sonium-solvers-sparse/x86/scalar.json
+          jq -e '.status == "passed" and .compile_avx2 == true and .compile_fma == true and .fma == true' \
+            target/sonium-solvers-sparse/x86/fma.json
+          jq -e '.selected_kernels.f32 == "avx2-fma" and .selected_kernels.f64 == "avx2-fma" and .selected_kernels.complex64 == "avx2-fma" and .selected_kernels.complex32 == "scalar" and (.dispatch_features | contains("avx2_fma=true"))' \
+            target/sonium-solvers-sparse/x86/native.json
+          jq -e '.selected_kernels.f32 == "scalar" and .selected_kernels.f64 == "scalar" and .selected_kernels.complex64 == "scalar" and .selected_kernels.complex32 == "scalar" and (.dispatch_features | contains("force_scalar=true"))' \
+            target/sonium-solvers-sparse/x86/scalar.json
+          jq -e '.status == "passed" and .avx2 == true and .fma == true and .disable_fma == true and .selected_kernels.f32 == "avx2" and .selected_kernels.f64 == "avx2" and .selected_kernels.complex64 == "avx2" and (.dispatch_features | contains("avx2_fma=false"))' \
+            target/sonium-solvers-sparse/x86/avx2.json
+          jq -e '.selected_kernels.f32 == "avx2-fma" and .selected_kernels.f64 == "avx2-fma" and .selected_kernels.complex64 == "avx2-fma" and .build_target_features.avx2 == true and .build_target_features.fma == true' \
+            target/sonium-solvers-sparse/x86/fma.json
+          jq -e '
+            all(.cases[];
+              .matrix_checksum != null
+              and .matrix_condition_proxy != null
+              and (.actions | sort) == ["accumulation", "block", "forward", "hermitian", "transpose"]
+              and .forward_max_abs != null
+              and .accumulation_max_abs != null
+              and .transpose_max_abs != null
+              and .hermitian_max_abs != null
+              and .block_max_abs != null
+              and .oracle == "independent_scalar_csr"
+            )
+            and ((.checked_failures | length) >= 13)
+            and all(.checked_failures[]; .error_kind != null and .operation != null and .destination_preserved == true)
+            and all(.adversarial_fixtures[]; .plan_cases == null or ((.plan_cases | length) == 10 and all(.plan_cases[]; (.actions | sort) == ["accumulation", "block", "forward", "hermitian", "transpose"])))
+          ' target/sonium-solvers-sparse/x86/native.json
+          jq -e -n --slurpfile native target/sonium-solvers-sparse/x86/native.json \
+            --slurpfile scalar target/sonium-solvers-sparse/x86/scalar.json '
+            ($native[0].cases | sort_by([.dtype, .format]) | map({dtype, format, matrix_checksum, matrix_rows, matrix_cols, matrix_nnz, norm_tolerance, ulp_budget, actions})) as $native_cases
+            | ($scalar[0].cases | sort_by([.dtype, .format]) | map({dtype, format, matrix_checksum, matrix_rows, matrix_cols, matrix_nnz, norm_tolerance, ulp_budget, actions})) as $scalar_cases
+            | $native_cases == $scalar_cases
+          '
+          jq -e '.schema == 1 and .status == "passed" and (.records | length >= 42) and all(.records[]; .format_match == true and .correctness_status == "passed" and .planned_max_abs <= .tolerance)' \
+            target/sonium-solvers-sparse/x86/plan-thresholds.json
+          jq -e '
+            ([.records[] | select(.family == "row_parallel" and .threshold_dimension == "nnz_and_rows")] | sort_by(.threshold_side)) as $nnz
+            | ([.records[] | select(.family == "row_parallel" and .threshold_dimension == "rows")] | sort_by(.threshold_side)) as $rows
+            | (($nnz | length) == 3 and ($rows | length) == 3)
+            and all($nnz[]; (.threshold_side == "below" and .runtime_parallel_selected == false) or (.threshold_side != "below" and .runtime_parallel_selected == true))
+            and all($rows[]; (.threshold_side == "below" and .runtime_parallel_selected == false) or (.threshold_side != "below" and .runtime_parallel_selected == true))
+          ' target/sonium-solvers-sparse/x86/plan-thresholds.json
+      - name: Validate native x86 SpMV performance evidence
+        shell: bash
+        run: |
+          set -eu
+          jq -e '
+            . as $report
+            | ($report.schema_version >= 10
+              and $report.hardware.arch == "x86_64"
+              and ($report.hardware.target_features | contains("runtime_avx2=true"))
+              and ($report.runs | length >= 50)
+              and all($report.runs[]; .correctness_status == "passed" and .correctness_max_abs != null and .correctness_tolerance != null and .correctness_max_abs <= .correctness_tolerance and .selected_kernel != null and .thread_affinity != null and .numa_policy != null and .matrix != null and .nrows != null and .ncols != null and .nnz != null)
+              and any($report.runs[]; .setup_ms != null)
+              and any($report.runs[]; .solve_ms != null)
+              and all(["f32", "complex32", "complex64", "f64"][]; . as $scalar | any($report.runs[]; .scalar == $scalar))
+              and any($report.runs[]; .group == "spmv/plan" and ((.notes // "") | contains("raw CSR baseline")))
+              and any($report.runs[]; .operation == "spmm" and .rhs_count > 1 and ((.action_parity // "") | contains("block=passed")))
+              and any($report.runs[]; ((.notes // "") | contains("raw CSR baseline for bsr2 transformed format")))
+              and any($report.runs[]; ((.notes // "") | contains("raw CSR baseline for bsr3 transformed format")))
+              and any($report.runs[]; ((.notes // "") | contains("raw CSR baseline for bsr4 transformed format")))
+              and all($report.runs[]; ((.notes // "") | contains("vendor_baseline=")))
+              and any($report.runs[]; .numa_policy == "shared_unpinned")
+              and any($report.runs[]; .numa_policy == "shared_pinned")
+              and any($report.runs[]; .numa_policy == "replicated_pinned")
+            )
+          ' target/sonium-solvers-sparse/x86/spmv-perf.json
+          jq -e '
+            . as $report
+            | ($report.schema_version >= 10
+              and $report.hardware.arch == "x86_64"
+              and ($report.hardware.target_features | contains("force_scalar=true"))
+              and ($report.runs | length >= 50)
+              and all($report.runs[]; .correctness_status == "passed" and .correctness_max_abs != null and .correctness_tolerance != null and .correctness_max_abs <= .correctness_tolerance and .selected_kernel == "scalar" and .thread_affinity != null and .numa_policy != null and .matrix != null and .nrows != null and .ncols != null and .nnz != null)
+              and any($report.runs[]; .setup_ms != null)
+              and any($report.runs[]; .solve_ms != null)
+              and all(["f32", "complex32", "complex64", "f64"][]; . as $scalar | any($report.runs[]; .scalar == $scalar))
+            )
+          ' target/sonium-solvers-sparse/x86/spmv-perf-scalar.json
+      - name: Upload native x86 sparse evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-solvers-sparse-native-x86
+          path: |
+            target/sonium-solvers-sparse/x86/**
+            target/criterion/**
+
+  sparse-sanitizer:
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert nightly sanitizer toolchain
+        run: |
+          test "$(uname -m)" = "x86_64"
+          rustc +nightly -Vv
+      - name: Configure sparse sanitizer toolchain
+        run: |
+          chmod +x scripts/sonium-sanitizer-rustc-wrapper
+          echo "RUSTC_WRAPPER=$PWD/scripts/sonium-sanitizer-rustc-wrapper" >> "$GITHUB_ENV"
+      - name: Run sparse action matrix under AddressSanitizer
+        env:
+          SONIUM_SPARSE_SANITIZER_RUN_KIND: ci
+        run: |
+          CARGO_TARGET_DIR=target/sonium-solvers-sparse/asan-target \
+          SONIUM_OUTPUT_DIR=target/sonium-solvers-sparse/asan \
+          bash scripts/run_unix_ss1_sanitizer_x86.sh
+      - name: Validate sanitizer bundle
+        run: python3 scripts/check_unix_ss1_sanitizer_x86.py target/sonium-solvers-sparse/asan/manifest.json --negative-probes
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonium-solvers-sparse-sanitizer
+          path: target/sonium-solvers-sparse/asan/**
+
+  sparse-numa-multi-socket:
+    runs-on: [self-hosted, linux, x86_64, numa, multi-socket]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert real multi-socket NUMA runner and record topology
+        shell: bash
+        run: |
+          set -eu
+          test "$(uname -m)" = "x86_64"
+          test "$(rustc -vV | sed -n 's/^host: //p')" = "x86_64-unknown-linux-gnu"
+          read -r sockets nodes < <(lscpu -p=socket,node | awk -F, '!/^#/ {s[$1]=1; n[$2]=1} END {print length(s), length(n)}')
+          test "$sockets" -ge 2
+          test "$nodes" -ge 2
+          command -v numastat
+          command -v numactl
+          mkdir -p target/sonium-solvers-sparse/numa
+          rustc -Vv | tee target/sonium-solvers-sparse/numa/rustc-vv.txt
+          lscpu | tee target/sonium-solvers-sparse/numa/lscpu.txt
+          numactl --hardware | tee target/sonium-solvers-sparse/numa/numactl-hardware.txt
+          numastat -m | tee target/sonium-solvers-sparse/numa/numastat-memory.txt
+          grep -m1 'model name' /proc/cpuinfo | tee target/sonium-solvers-sparse/numa/cpu-model.txt
+          grep -m1 microcode /proc/cpuinfo | tee target/sonium-solvers-sparse/numa/microcode.txt
+      - name: Run NUMA functional and admission tests
+        run: cargo test --release -p sonium-solvers-sparse --test numa_memory_admission -- --test-threads=1
+      - name: Run multi-socket NUMA policy benchmark
+        env:
+          SONIUM_SOLVERS_PERF_JSON: target/sonium-solvers-sparse/numa/perf.json
+        run: cargo bench -p sonium-solvers --features cli --bench two_socket_spmv_bench -- --noplot
+      - name: Validate multi-socket NUMA evidence
+        shell: bash
+        run: |
+          set -eu
+          jq -e '
+            . as $report
+            | $report.schema_version >= 10
+            and $report.hardware.socket_count >= 2
+            and $report.hardware.numa_node_count >= 2
+            and ([$report.runs[].numa_policy] | unique | sort) == ["replicated_pinned", "shared_pinned", "shared_unpinned"]
+            and ([$report.runs[].matrix] | unique | sort) == ["large_poisson", "skewed_rows", "small_poisson"]
+            and ([$report.runs[].id | split("/")[1]] | unique | length) >= 2
+            and all(["large_poisson", "skewed_rows", "small_poisson"][]; . as $matrix | all(["replicated_pinned", "shared_pinned", "shared_unpinned"][]; . as $policy | any($report.runs[]; .matrix == $matrix and .numa_policy == $policy)))
+            and all(.runs[]; .correctness_status == "passed" and .selected_kernel != null and (.action_parity | contains("forward=passed")) and (.action_parity | contains("transpose=passed")) and (.action_parity | contains("hermitian=passed")))
+            and all(.runs[]; (.thread_affinity | contains("contiguous_nnz_balanced_ranges=true")) and (.thread_affinity | contains("topology_matches_plan=true")) and (.thread_affinity | contains("partitions_match_plan=true")))
+            and any(.runs[]; (.thread_affinity | contains("placement_status=verified")))
+            and all(.runs[]; (.notes | contains("evidence_gate=two_socket_local_remote_counters")) and (.notes | contains("numastat_delta_mb")) and (.notes | contains("action_repetitions=2")) and .numa_local_node_delta_mb != null and .numa_other_node_delta_mb != null and .numa_remote_fraction != null)
+            and all(.runs[]; .notes | contains("replicated_input_accounted=true"))
+          ' target/sonium-solvers-sparse/numa/perf.json
+      - name: Upload multi-socket NUMA evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonium-solvers-sparse-multi-socket-numa
+          path: target/sonium-solvers-sparse/numa/**

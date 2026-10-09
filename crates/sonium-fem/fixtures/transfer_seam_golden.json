@@ -1,0 +1,30 @@
+{
+	"schema_version":1,
+	"case_id":"fem.transfer-seam-two-cell.v1",
+	"convention":"SI units; P1 exactness; outward\/inverse-distance contracts per module docs",
+	"generator":"crates\/sonium-fem\/fixtures\/transfer_seam.wls",
+	"wolfram_version":"15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+	"working_precision_digits":50,
+	"tet_volume":0.16666666666666666666666666666666666666666666666667,
+	"tet_lumped_integral":0.25000000000000000000000000000000000000000000000000,
+	"tet_correction":0,
+	"panel_idw_weights":[
+		1.0000000000000000000000000000000000000000000000000e6,
+		0.99999900000099999900000099999900000099999900000100
+	],
+	"panel_idw_value":3.0000000000000000000000000000000000000000000000000,
+	"transfer_adjoint_lhs":[
+		-0.25000000000000000000000000000000000000000000000000,
+		0.13541666666666666666666666666666666666666666666667
+	],
+	"transfer_adjoint_rhs":[
+		-0.25000000000000000000000000000000000000000000000000,
+		0.13541666666666666666666666666666666666666666666667
+	],
+	"transfer_adjoint_mismatch":0,
+	"tolerances":{
+		"conservation_abs":1.0e-12,
+		"idw_abs":1.0e-9,
+		"adjoint_abs":1.0e-12
+	}
+}

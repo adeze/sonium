@@ -1,0 +1,64 @@
+[package]
+name = "sonium-mesher"
+version = "0.1.4"
+description = "Mesh generation and partitioning for FEM/BEM"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[dependencies]
+# Common types (provides MeshView trait for VTU export)
+sonium-xem = { workspace = true }
+
+# Numerical computing
+delaunator = { workspace = true }
+num-complex = { workspace = true }
+num-traits = { workspace = true }
+
+# Serialization
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+log = { workspace = true }
+
+# Parallel processing
+rayon = { workspace = true }
+# Geometry helpers use deterministic seeded StdRng, so OS entropy is unnecessary.
+rand = { version = "0.9", default-features = false, features = ["std", "std_rng"] }
+
+# Adaptive-precision geometric predicates (Shewchuk's insphere/orient3d).
+# Required by the in-house Bowyer-Watson kernel so cocircular / coplanar
+# inputs do not corrupt topology.
+robust = { workspace = true }
+
+# Mesh I/O (optional)
+mshio = { workspace = true, optional = true }
+
+# MeshLang geometry language (optional)
+meshlang-compiler = { workspace = true, optional = true }
+
+# Subprocess temp files
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+directories = { workspace = true }
+
+[features]
+default = []
+mshio = ["dep:mshio"]
+meshlang = ["dep:meshlang-compiler", "dep:tempfile", "mshio"]
+
+[[test]]
+name = "wolfram_golden_meshlang"
+required-features = ["meshlang"]
+
+[[bench]]
+name = "tetrahedralize_bench"
+harness = false

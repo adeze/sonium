@@ -1,0 +1,1486 @@
+{
+  "$id": "https://sonium.dev/xem/room-config-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Versioned, unit-documented input shared by Sonium room solvers.",
+  "properties": {
+    "boundaries": {
+      "additionalProperties": false,
+      "properties": {
+        "back_wall": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "rigid"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coefficient": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "absorption"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "coefficient"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "impedance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "admittance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "air_gap": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ambient": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "density": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        "speed_of_sound": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "flow_resistivity": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "model": {
+                      "enum": [
+                        "delany_bazley",
+                        "miki"
+                      ],
+                      "type": "string"
+                    },
+                    "thickness": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "porous_layer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "model",
+                    "thickness",
+                    "flow_resistivity"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ceiling": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "rigid"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "coefficient": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "type": {
+                  "const": "absorption"
+                }
+              },
+              "required": [
+                "type",
+                "coefficient"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "imag": {
+                  "type": "number"
+                },
+                "real": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "impedance"
+                }
+              },
+              "required": [
+                "type",
+                "real",
+                "imag"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "imag": {
+                  "type": "number"
+                },
+                "real": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "admittance"
+                }
+              },
+              "required": [
+                "type",
+                "real",
+                "imag"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "air_gap": {
+                  "anyOf": [
+                    {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ambient": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "density": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "speed_of_sound": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "flow_resistivity": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "model": {
+                  "enum": [
+                    "delany_bazley",
+                    "miki"
+                  ],
+                  "type": "string"
+                },
+                "thickness": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "type": {
+                  "const": "porous_layer"
+                }
+              },
+              "required": [
+                "type",
+                "model",
+                "thickness",
+                "flow_resistivity"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "floor": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "rigid"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "coefficient": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "type": {
+                  "const": "absorption"
+                }
+              },
+              "required": [
+                "type",
+                "coefficient"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "imag": {
+                  "type": "number"
+                },
+                "real": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "impedance"
+                }
+              },
+              "required": [
+                "type",
+                "real",
+                "imag"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "imag": {
+                  "type": "number"
+                },
+                "real": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "admittance"
+                }
+              },
+              "required": [
+                "type",
+                "real",
+                "imag"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "air_gap": {
+                  "anyOf": [
+                    {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ambient": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "density": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "speed_of_sound": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "flow_resistivity": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "model": {
+                  "enum": [
+                    "delany_bazley",
+                    "miki"
+                  ],
+                  "type": "string"
+                },
+                "thickness": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "type": {
+                  "const": "porous_layer"
+                }
+              },
+              "required": [
+                "type",
+                "model",
+                "thickness",
+                "flow_resistivity"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "front_wall": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "rigid"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coefficient": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "absorption"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "coefficient"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "impedance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "admittance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "air_gap": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ambient": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "density": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        "speed_of_sound": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "flow_resistivity": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "model": {
+                      "enum": [
+                        "delany_bazley",
+                        "miki"
+                      ],
+                      "type": "string"
+                    },
+                    "thickness": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "porous_layer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "model",
+                    "thickness",
+                    "flow_resistivity"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "left_wall": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "rigid"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coefficient": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "absorption"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "coefficient"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "impedance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "admittance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "air_gap": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ambient": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "density": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        "speed_of_sound": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "flow_resistivity": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "model": {
+                      "enum": [
+                        "delany_bazley",
+                        "miki"
+                      ],
+                      "type": "string"
+                    },
+                    "thickness": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "porous_layer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "model",
+                    "thickness",
+                    "flow_resistivity"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "right_wall": {
+          "anyOf": [
+            {
+              "oneOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "type": {
+                      "const": "rigid"
+                    }
+                  },
+                  "required": [
+                    "type"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "coefficient": {
+                      "maximum": 1,
+                      "minimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "absorption"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "coefficient"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "impedance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "imag": {
+                      "type": "number"
+                    },
+                    "real": {
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "admittance"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "real",
+                    "imag"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "air_gap": {
+                      "anyOf": [
+                        {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "ambient": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "density": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        },
+                        "speed_of_sound": {
+                          "exclusiveMinimum": 0,
+                          "type": "number"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "flow_resistivity": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "model": {
+                      "enum": [
+                        "delany_bazley",
+                        "miki"
+                      ],
+                      "type": "string"
+                    },
+                    "thickness": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "type": {
+                      "const": "porous_layer"
+                    }
+                  },
+                  "required": [
+                    "type",
+                    "model",
+                    "thickness",
+                    "flow_resistivity"
+                  ],
+                  "type": "object"
+                }
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "walls": {
+          "oneOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "const": "rigid"
+                }
+              },
+              "required": [
+                "type"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "coefficient": {
+                  "maximum": 1,
+                  "minimum": 0,
+                  "type": "number"
+                },
+                "type": {
+                  "const": "absorption"
+                }
+              },
+              "required": [
+                "type",
+                "coefficient"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "imag": {
+                  "type": "number"
+                },
+                "real": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "impedance"
+                }
+              },
+              "required": [
+                "type",
+                "real",
+                "imag"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "imag": {
+                  "type": "number"
+                },
+                "real": {
+                  "type": "number"
+                },
+                "type": {
+                  "const": "admittance"
+                }
+              },
+              "required": [
+                "type",
+                "real",
+                "imag"
+              ],
+              "type": "object"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "air_gap": {
+                  "anyOf": [
+                    {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ambient": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "density": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "speed_of_sound": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    }
+                  },
+                  "type": "object"
+                },
+                "flow_resistivity": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "model": {
+                  "enum": [
+                    "delany_bazley",
+                    "miki"
+                  ],
+                  "type": "string"
+                },
+                "thickness": {
+                  "exclusiveMinimum": 0,
+                  "type": "number"
+                },
+                "type": {
+                  "const": "porous_layer"
+                }
+              },
+              "required": [
+                "type",
+                "model",
+                "thickness",
+                "flow_resistivity"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "conventions": {
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_frame": {
+          "enum": [
+            "WorldRightHanded",
+            "SourceLocalRightHanded"
+          ]
+        },
+        "harmonic_time": {
+          "enum": [
+            "ExpMinusIwt",
+            "ExpPlusIwt"
+          ]
+        },
+        "outward_normals": {
+          "type": "boolean"
+        },
+        "rms_amplitudes": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "frequencies": {
+      "additionalProperties": false,
+      "properties": {
+        "max_freq": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "min_freq": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "num_points": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "spacing": {
+          "enum": [
+            "linear",
+            "logarithmic"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "min_freq",
+        "max_freq",
+        "num_points"
+      ],
+      "type": "object"
+    },
+    "listening_positions": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "z": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "z"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "medium": {
+      "additionalProperties": false,
+      "properties": {
+        "density": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "speed_of_sound": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "metadata": {
+      "additionalProperties": false,
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "room": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "height": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "type": {
+              "const": "rectangular"
+            },
+            "width": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "width",
+            "depth",
+            "height"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "depth1": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "depth2": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "height": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "type": {
+              "const": "lshaped"
+            },
+            "width1": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            "width2": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "required": [
+            "type",
+            "width1",
+            "depth1",
+            "width2",
+            "depth2",
+            "height"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "schema_version": {
+      "const": 1,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "solver": {
+      "additionalProperties": false,
+      "properties": {
+        "adaptive_integration": {
+          "type": "boolean"
+        },
+        "adaptive_meshing": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "fmm": {
+          "additionalProperties": false,
+          "properties": {
+            "expansion_order": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "fmm_type": {
+              "enum": [
+                "slfmm",
+                "mlfmm"
+              ],
+              "type": "string"
+            },
+            "max_particles_per_leaf": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        },
+        "gmres": {
+          "additionalProperties": false,
+          "properties": {
+            "max_iter": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "restart": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "tolerance": {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "ilu": {
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "type": "string"
+            },
+            "scanning_degree": {
+              "type": "string"
+            },
+            "use_hierarchical": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "mesh_resolution": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "method": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "sources": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "amplitude": {
+            "type": "number"
+          },
+          "crossover": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "const": "fullrange"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cutoff_freq": {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  },
+                  "order": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "lowpass"
+                  }
+                },
+                "required": [
+                  "type",
+                  "cutoff_freq",
+                  "order"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cutoff_freq": {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  },
+                  "order": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "highpass"
+                  }
+                },
+                "required": [
+                  "type",
+                  "cutoff_freq",
+                  "order"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "high_cutoff": {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  },
+                  "low_cutoff": {
+                    "exclusiveMinimum": 0,
+                    "type": "number"
+                  },
+                  "order": {
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "bandpass"
+                  }
+                },
+                "required": [
+                  "type",
+                  "low_cutoff",
+                  "high_cutoff",
+                  "order"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "directivity": {
+            "oneOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "const": "omnidirectional"
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "horizontal_angle": {
+                    "type": "number"
+                  },
+                  "type": {
+                    "const": "classical"
+                  },
+                  "vertical_angle": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "type",
+                  "horizontal_angle",
+                  "vertical_angle"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "horizontal_angles": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  "magnitude": {
+                    "items": {
+                      "items": {
+                        "type": "number"
+                      },
+                      "type": "array"
+                    },
+                    "type": "array"
+                  },
+                  "type": {
+                    "const": "custom"
+                  },
+                  "vertical_angles": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "type",
+                  "horizontal_angles",
+                  "vertical_angles",
+                  "magnitude"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "frequencies": {
+                    "items": {
+                      "exclusiveMinimum": 0,
+                      "type": "number"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "horizontal_angles": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "type": "array"
+                  },
+                  "patterns": {
+                    "items": {
+                      "items": {
+                        "items": {
+                          "items": {
+                            "type": "number"
+                          },
+                          "maxItems": 2,
+                          "minItems": 2,
+                          "type": "array"
+                        },
+                        "type": "array"
+                      },
+                      "type": "array"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  },
+                  "type": {
+                    "const": "complex_grid"
+                  },
+                  "vertical_angles": {
+                    "items": {
+                      "type": "number"
+                    },
+                    "minItems": 2,
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "type",
+                  "horizontal_angles",
+                  "vertical_angles",
+                  "frequencies",
+                  "patterns"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "name": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "position": {
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              },
+              "z": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "z"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "position"
+        ],
+        "type": "object"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "visualization": {
+      "additionalProperties": false,
+      "properties": {
+        "generate_slices": {
+          "type": "boolean"
+        },
+        "slice_frequency_indices": {
+          "items": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "slice_resolution": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "required": [
+    "room",
+    "sources",
+    "listening_positions",
+    "frequencies"
+  ],
+  "title": "Sonium XEM room configuration",
+  "type": "object"
+}

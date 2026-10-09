@@ -1,0 +1,31 @@
+// A compact multi-port template fixture for the shipping MeshLang corpus.
+// It exercises canonical port materialization, downstream port transforms,
+// physical groups, and both native Gmsh backends.
+
+param width = 2.0
+
+geometry AcousticFrame(w: Float) -> (body: Solid, inlet: Solid) {
+    let body = Box(w, 1.0, 1.0)
+    let inlet = Cylinder(r: 0.1, h: 0.5)
+}
+
+geometry model {
+    let frame = AcousticFrame(width)
+    let outlet = frame.inlet |> translate(1.0, 0.0, 0.0)
+}
+
+mesh for model {
+    min_size: 0.1
+    max_size: 0.25
+}
+
+physics {
+    group frame_air: volume = model.frame.body
+    group inlet_air: volume = model.frame.inlet
+    group outlet_air: volume = model.outlet
+}
+
+export {
+    format: msh4
+    filename: "ported_acoustic_frame.msh"
+}

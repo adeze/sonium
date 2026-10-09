@@ -1,0 +1,14 @@
+/target
+Cargo.lock
+*.msh
+*.geo.map
+*.pyc
+__pycache__/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+node_modules/
+tree-sitter-meshlang/src/
+tree-sitter-meshlang/build/

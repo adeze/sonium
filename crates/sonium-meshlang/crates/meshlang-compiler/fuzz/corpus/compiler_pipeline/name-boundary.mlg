@@ -1,0 +1,3 @@
+geometry Main {
+    let solid = missing - missing
+}

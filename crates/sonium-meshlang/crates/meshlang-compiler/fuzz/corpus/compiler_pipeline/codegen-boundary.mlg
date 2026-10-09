@@ -1,0 +1,5 @@
+geometry Main {
+    let base = Box(1.0, 1.0, 1.0)
+    let moved = base |> translate(1.0, 2.0, 3.0)
+    let array = [base, moved]
+}

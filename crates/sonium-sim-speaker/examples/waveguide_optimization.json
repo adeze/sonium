@@ -1,0 +1,1131 @@
+{
+  "cabinet": {
+    "height": 0.4,
+    "width": 0.22,
+    "depth": 0.28
+  },
+  "woofer": {
+    "radius": 0.065,
+    "y_offset": -0.08,
+    "piston_velocity": 0.001,
+    "driver_model": {
+      "thiele_small": {
+        "voice_coil_resistance_ohm": 5.6,
+        "nominal_inductance_h": 0.00035,
+        "force_factor_tm": 6.5,
+        "moving_mass_kg": 0.014,
+        "compliance_m_per_n": 0.0011,
+        "mechanical_resistance_kg_per_s": 0.89,
+        "effective_piston_area_m2": 0.013273228961416878,
+        "resonance_hz": 40.55643487509979,
+        "mechanical_q": 4.008461056250987,
+        "electrical_q": 0.47285609241076726,
+        "total_q": 0.42296163577835705,
+        "equivalent_compliance_volume_m3": 0.027587952370148418
+      },
+      "bl_curve": [
+        {
+          "displacement_m": 0.0,
+          "force_factor_tm": 6.5
+        }
+      ],
+      "inductance_curve": [
+        {
+          "frequency_hz": 100.0,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 200.0,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 234.8,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 275.6,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 323.6,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 379.9,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 446.0,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 523.6,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 614.6,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 721.6,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 847.1,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 994.4,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1167.4,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1370.5,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1608.9,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1888.8,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 2217.4,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 2603.2,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 3056.1,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 3587.7,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 4211.8,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 4944.5,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 5804.7,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 6814.5,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 8000.0,
+          "inductance_h": 0.00115,
+          "eddy_resistance_ohm": 0.0
+        }
+      ],
+      "reference_voltage_rms_v": 2.83,
+      "velocity_transfer": [
+        {
+          "frequency_hz": 100.0,
+          "velocity_real_m_per_s": 0.2200306073815646,
+          "velocity_imag_m_per_s": -0.21938712322990458
+        },
+        {
+          "frequency_hz": 200.0,
+          "velocity_real_m_per_s": 0.0433809684426729,
+          "velocity_imag_m_per_s": -0.18174986853933137
+        },
+        {
+          "frequency_hz": 234.8,
+          "velocity_real_m_per_s": 0.01857753709744257,
+          "velocity_imag_m_per_s": -0.1595914556085819
+        },
+        {
+          "frequency_hz": 275.6,
+          "velocity_real_m_per_s": 2.067487101560617e-06,
+          "velocity_imag_m_per_s": -0.1366708401752195
+        },
+        {
+          "frequency_hz": 323.6,
+          "velocity_real_m_per_s": -0.013129398906227479,
+          "velocity_imag_m_per_s": -0.11419458587439803
+        },
+        {
+          "frequency_hz": 379.9,
+          "velocity_real_m_per_s": -0.02158839140769182,
+          "velocity_imag_m_per_s": -0.09312852973095721
+        },
+        {
+          "frequency_hz": 446.0,
+          "velocity_real_m_per_s": -0.02621499325004541,
+          "velocity_imag_m_per_s": -0.0740480560691767
+        },
+        {
+          "frequency_hz": 523.6,
+          "velocity_real_m_per_s": -0.027806323256364056,
+          "velocity_imag_m_per_s": -0.05733326772359239
+        },
+        {
+          "frequency_hz": 614.6,
+          "velocity_real_m_per_s": -0.027130109548035033,
+          "velocity_imag_m_per_s": -0.04319504496000443
+        },
+        {
+          "frequency_hz": 721.6,
+          "velocity_real_m_per_s": -0.024906897626420982,
+          "velocity_imag_m_per_s": -0.03162926767365491
+        },
+        {
+          "frequency_hz": 847.1,
+          "velocity_real_m_per_s": -0.021794357958804956,
+          "velocity_imag_m_per_s": -0.022540340892644676
+        },
+        {
+          "frequency_hz": 994.4,
+          "velocity_real_m_per_s": -0.018335588550412667,
+          "velocity_imag_m_per_s": -0.015655801236665802
+        },
+        {
+          "frequency_hz": 1167.4,
+          "velocity_real_m_per_s": -0.014932462750145096,
+          "velocity_imag_m_per_s": -0.010622921532654784
+        },
+        {
+          "frequency_hz": 1370.5,
+          "velocity_real_m_per_s": -0.011843535666135144,
+          "velocity_imag_m_per_s": -0.00706477300029878
+        },
+        {
+          "frequency_hz": 1608.9,
+          "velocity_real_m_per_s": -0.009196760491912164,
+          "velocity_imag_m_per_s": -0.00462073698519697
+        },
+        {
+          "frequency_hz": 1888.8,
+          "velocity_real_m_per_s": -0.007023028440289869,
+          "velocity_imag_m_per_s": -0.002981471361874945
+        },
+        {
+          "frequency_hz": 2217.4,
+          "velocity_real_m_per_s": -0.005294160539111598,
+          "velocity_imag_m_per_s": -0.0019033318024280856
+        },
+        {
+          "frequency_hz": 2603.2,
+          "velocity_real_m_per_s": -0.003951635029147617,
+          "velocity_imag_m_per_s": -0.00120504686868693
+        },
+        {
+          "frequency_hz": 3056.1,
+          "velocity_real_m_per_s": -0.002927755636295165,
+          "velocity_imag_m_per_s": -0.0007581960559933971
+        },
+        {
+          "frequency_hz": 3587.7,
+          "velocity_real_m_per_s": -0.002157272777492979,
+          "velocity_imag_m_per_s": -0.00047484067016636926
+        },
+        {
+          "frequency_hz": 4211.8,
+          "velocity_real_m_per_s": -0.001583011276898135,
+          "velocity_imag_m_per_s": -0.00029633531633817934
+        },
+        {
+          "frequency_hz": 4944.5,
+          "velocity_real_m_per_s": -0.0011580866730823258,
+          "velocity_imag_m_per_s": -0.00018445249808471894
+        },
+        {
+          "frequency_hz": 5804.7,
+          "velocity_real_m_per_s": -0.0008453308383029123,
+          "velocity_imag_m_per_s": -0.00011459071526229355
+        },
+        {
+          "frequency_hz": 6814.5,
+          "velocity_real_m_per_s": -0.0006160440615720732,
+          "velocity_imag_m_per_s": -7.109136242075702e-05
+        },
+        {
+          "frequency_hz": 8000.0,
+          "velocity_real_m_per_s": -0.0004484120773860147,
+          "velocity_imag_m_per_s": -4.405906972377392e-05
+        }
+      ],
+      "electrical_impedance": [
+        {
+          "frequency_hz": 100.0,
+          "real": 6.286068514137519,
+          "imaginary": -4.942969218462917
+        },
+        {
+          "frequency_hz": 200.0,
+          "real": 5.731766744091331,
+          "imaginary": -1.0524375097861858
+        },
+        {
+          "frequency_hz": 234.8,
+          "real": 5.693466813409519,
+          "imaginary": -0.40776981501599163
+        },
+        {
+          "frequency_hz": 275.6,
+          "real": 5.666749416229017,
+          "imaginary": 0.21255414061586708
+        },
+        {
+          "frequency_hz": 323.6,
+          "real": 5.6478517030561735,
+          "imaginary": 0.8317976949251096
+        },
+        {
+          "frequency_hz": 379.9,
+          "real": 5.634427317486473,
+          "imaginary": 1.4670836860129712
+        },
+        {
+          "frequency_hz": 446.0,
+          "real": 5.62482653901092,
+          "imaginary": 2.1373131354534936
+        },
+        {
+          "frequency_hz": 523.6,
+          "real": 5.6179334728140855,
+          "imaginary": 2.860852675138789
+        },
+        {
+          "frequency_hz": 614.6,
+          "real": 5.61297440898449,
+          "imaginary": 3.6561941032322824
+        },
+        {
+          "frequency_hz": 721.6,
+          "real": 5.609390095700799,
+          "imaginary": 4.546447598759087
+        },
+        {
+          "frequency_hz": 847.1,
+          "real": 5.606802406275221,
+          "imaginary": 5.5526365942105
+        },
+        {
+          "frequency_hz": 994.4,
+          "real": 5.604930370871159,
+          "imaginary": 6.701433109264022
+        },
+        {
+          "frequency_hz": 1167.4,
+          "real": 5.603574191263643,
+          "imaginary": 8.023339954583191
+        },
+        {
+          "frequency_hz": 1370.5,
+          "real": 5.602591672311935,
+          "imaginary": 9.552022201378463
+        },
+        {
+          "frequency_hz": 1608.9,
+          "real": 5.601879653108108,
+          "imaginary": 11.326660159916166
+        },
+        {
+          "frequency_hz": 1888.8,
+          "real": 5.6013633803978955,
+          "imaginary": 13.393430400076577
+        },
+        {
+          "frequency_hz": 2217.4,
+          "real": 5.6009889956760945,
+          "imaginary": 15.80550925728417
+        },
+        {
+          "frequency_hz": 2603.2,
+          "real": 5.600717447499113,
+          "imaginary": 18.625297854026314
+        },
+        {
+          "frequency_hz": 3056.1,
+          "real": 5.600520491940598,
+          "imaginary": 21.92515971090571
+        },
+        {
+          "frequency_hz": 3587.7,
+          "real": 5.600377638459593,
+          "imaginary": 25.789619482937674
+        },
+        {
+          "frequency_hz": 4211.8,
+          "real": 5.600273995522583,
+          "imaginary": 30.31899955385539
+        },
+        {
+          "frequency_hz": 4944.5,
+          "real": 5.6001987983474075,
+          "imaginary": 35.630145458828956
+        },
+        {
+          "frequency_hz": 5804.7,
+          "real": 5.600144238911221,
+          "imaginary": 41.860058347676556
+        },
+        {
+          "frequency_hz": 6814.5,
+          "real": 5.600104655661923,
+          "imaginary": 49.16879580572362
+        },
+        {
+          "frequency_hz": 8000.0,
+          "real": 5.600075935099532,
+          "imaginary": 57.74526501881351
+        }
+      ],
+      "intrinsic_mechanical_impedance": [
+        {
+          "frequency_hz": 100.0,
+          "real": 0.89,
+          "imaginary": 7.34959631103419
+        },
+        {
+          "frequency_hz": 200.0,
+          "real": 0.89,
+          "imaginary": 16.869487300594226
+        },
+        {
+          "frequency_hz": 234.8,
+          "real": 0.89,
+          "imaginary": 20.03787587335476
+        },
+        {
+          "frequency_hz": 275.6,
+          "real": 0.89,
+          "imaginary": 23.71805557129094
+        },
+        {
+          "frequency_hz": 323.6,
+          "real": 0.89,
+          "imaginary": 28.018228031154056
+        },
+        {
+          "frequency_hz": 379.9,
+          "real": 0.89,
+          "imaginary": 33.03689569774054
+        },
+        {
+          "frequency_hz": 446.0,
+          "real": 0.89,
+          "imaginary": 38.90780028694925
+        },
+        {
+          "frequency_hz": 523.6,
+          "real": 0.89,
+          "imaginary": 45.781931721085904
+        },
+        {
+          "frequency_hz": 614.6,
+          "real": 0.89,
+          "imaginary": 53.82762424560608
+        },
+        {
+          "frequency_hz": 721.6,
+          "real": 0.89,
+          "imaginary": 63.27474360880631
+        },
+        {
+          "frequency_hz": 847.1,
+          "real": 0.89,
+          "imaginary": 74.34400590550858
+        },
+        {
+          "frequency_hz": 994.4,
+          "real": 0.89,
+          "imaginary": 87.3264914542679
+        },
+        {
+          "frequency_hz": 1167.4,
+          "real": 0.89,
+          "imaginary": 102.56592845212039
+        },
+        {
+          "frequency_hz": 1370.5,
+          "real": 0.89,
+          "imaginary": 120.44990457210776
+        },
+        {
+          "frequency_hz": 1608.9,
+          "real": 0.89,
+          "imaginary": 141.43630705364401
+        },
+        {
+          "frequency_hz": 1888.8,
+          "real": 0.89,
+          "imaginary": 166.07092347428724
+        },
+        {
+          "frequency_hz": 2217.4,
+          "real": 0.89,
+          "imaginary": 194.9874409681631
+        },
+        {
+          "frequency_hz": 2603.2,
+          "real": 0.89,
+          "imaginary": 228.9338517079673
+        },
+        {
+          "frequency_hz": 3056.1,
+          "real": 0.89,
+          "imaginary": 268.78125319364807
+        },
+        {
+          "frequency_hz": 3587.7,
+          "real": 0.89,
+          "imaginary": 315.550246540954
+        },
+        {
+          "frequency_hz": 4211.8,
+          "real": 0.89,
+          "imaginary": 370.45492566749283
+        },
+        {
+          "frequency_hz": 4944.5,
+          "real": 0.89,
+          "imaginary": 434.91167444751994
+        },
+        {
+          "frequency_hz": 5804.7,
+          "real": 0.89,
+          "imaginary": 510.5831548187758
+        },
+        {
+          "frequency_hz": 6814.5,
+          "real": 0.89,
+          "imaginary": 599.413495736428
+        },
+        {
+          "frequency_hz": 8000.0,
+          "real": 0.89,
+          "imaginary": 703.6986686151259
+        }
+      ]
+    },
+    "cone": {
+      "cone_depth": 0.008,
+      "dustcap_radius": 0.015
+    }
+  },
+  "tweeter": {
+    "radius": 0.013,
+    "y_offset": 0.1,
+    "piston_velocity": 0.001,
+    "driver_model": {
+      "thiele_small": {
+        "voice_coil_resistance_ohm": 4.6,
+        "nominal_inductance_h": 5e-05,
+        "force_factor_tm": 2.3,
+        "moving_mass_kg": 0.0004,
+        "compliance_m_per_n": 7.83e-05,
+        "mechanical_resistance_kg_per_s": 0.75,
+        "effective_piston_area_m2": 0.000530929158456675,
+        "resonance_hz": 899.309652762177,
+        "mechanical_q": 3.013615571648046,
+        "electrical_q": 1.9654014597704648,
+        "total_q": 1.1895850940715968,
+        "equivalent_compliance_volume_m3": 3.1420169753929026e-06
+      },
+      "bl_curve": [
+        {
+          "displacement_m": 0.0,
+          "force_factor_tm": 2.3
+        }
+      ],
+      "inductance_curve": [
+        {
+          "frequency_hz": 100.0,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 200.0,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 234.8,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 275.6,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 323.6,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 379.9,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 446.0,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 523.6,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 614.6,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 721.6,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 847.1,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 994.4,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1167.4,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1370.5,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1608.9,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 1888.8,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 2217.4,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 2603.2,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 3056.1,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 3587.7,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 4211.8,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 4944.5,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 5804.7,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 6814.5,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        },
+        {
+          "frequency_hz": 8000.0,
+          "inductance_h": 5e-05,
+          "eddy_resistance_ohm": 0.0
+        }
+      ],
+      "reference_voltage_rms_v": 2.83,
+      "velocity_transfer": [
+        {
+          "frequency_hz": 100.0,
+          "velocity_real_m_per_s": -0.021871893440417334,
+          "velocity_imag_m_per_s": 0.008707524543509827
+        },
+        {
+          "frequency_hz": 200.0,
+          "velocity_real_m_per_s": -0.06557995709769583,
+          "velocity_imag_m_per_s": 0.059166026081182425
+        },
+        {
+          "frequency_hz": 234.8,
+          "velocity_real_m_per_s": -0.07815593772918134,
+          "velocity_imag_m_per_s": 0.08906558333243625
+        },
+        {
+          "frequency_hz": 275.6,
+          "velocity_real_m_per_s": -0.08760141541158685,
+          "velocity_imag_m_per_s": 0.13149159450427966
+        },
+        {
+          "frequency_hz": 323.6,
+          "velocity_real_m_per_s": -0.08851185837266849,
+          "velocity_imag_m_per_s": 0.18998464840744966
+        },
+        {
+          "frequency_hz": 379.9,
+          "velocity_real_m_per_s": -0.07138624455753285,
+          "velocity_imag_m_per_s": 0.2670417079103028
+        },
+        {
+          "frequency_hz": 446.0,
+          "velocity_real_m_per_s": -0.02013445864929816,
+          "velocity_imag_m_per_s": 0.36183490561159976
+        },
+        {
+          "frequency_hz": 523.6,
+          "velocity_real_m_per_s": 0.09047961564380973,
+          "velocity_imag_m_per_s": 0.46155840624244954
+        },
+        {
+          "frequency_hz": 614.6,
+          "velocity_real_m_per_s": 0.28705555162573354,
+          "velocity_imag_m_per_s": 0.5212403287682454
+        },
+        {
+          "frequency_hz": 721.6,
+          "velocity_real_m_per_s": 0.5477036928884158,
+          "velocity_imag_m_per_s": 0.4477502028315542
+        },
+        {
+          "frequency_hz": 847.1,
+          "velocity_real_m_per_s": 0.7251986827046752,
+          "velocity_imag_m_per_s": 0.19184334104350867
+        },
+        {
+          "frequency_hz": 994.4,
+          "velocity_real_m_per_s": 0.692719035094206,
+          "velocity_imag_m_per_s": -0.09990558857437656
+        },
+        {
+          "frequency_hz": 1167.4,
+          "velocity_real_m_per_s": 0.535543908301668,
+          "velocity_imag_m_per_s": -0.2722730219605174
+        },
+        {
+          "frequency_hz": 1370.5,
+          "velocity_real_m_per_s": 0.3745297329565459,
+          "velocity_imag_m_per_s": -0.3296161116778401
+        },
+        {
+          "frequency_hz": 1608.9,
+          "velocity_real_m_per_s": 0.25046561612391804,
+          "velocity_imag_m_per_s": -0.32652490977253334
+        },
+        {
+          "frequency_hz": 1888.8,
+          "velocity_real_m_per_s": 0.16257001247879102,
+          "velocity_imag_m_per_s": -0.2989177408251388
+        },
+        {
+          "frequency_hz": 2217.4,
+          "velocity_real_m_per_s": 0.10160611572319012,
+          "velocity_imag_m_per_s": -0.26369725927850785
+        },
+        {
+          "frequency_hz": 2603.2,
+          "velocity_real_m_per_s": 0.059383440142200046,
+          "velocity_imag_m_per_s": -0.22799448806276418
+        },
+        {
+          "frequency_hz": 3056.1,
+          "velocity_real_m_per_s": 0.030077587524224736,
+          "velocity_imag_m_per_s": -0.19460521287402865
+        },
+        {
+          "frequency_hz": 3587.7,
+          "velocity_real_m_per_s": 0.009755301308912608,
+          "velocity_imag_m_per_s": -0.1644587676709933
+        },
+        {
+          "frequency_hz": 4211.8,
+          "velocity_real_m_per_s": -0.00421680871009608,
+          "velocity_imag_m_per_s": -0.13768840968882615
+        },
+        {
+          "frequency_hz": 4944.5,
+          "velocity_real_m_per_s": -0.013600175713768946,
+          "velocity_imag_m_per_s": -0.11412257946271064
+        },
+        {
+          "frequency_hz": 5804.7,
+          "velocity_real_m_per_s": -0.01958628402794019,
+          "velocity_imag_m_per_s": -0.09349163740047414
+        },
+        {
+          "frequency_hz": 6814.5,
+          "velocity_real_m_per_s": -0.022993899011210284,
+          "velocity_imag_m_per_s": -0.0755274078831656
+        },
+        {
+          "frequency_hz": 8000.0,
+          "velocity_real_m_per_s": -0.024406733669157785,
+          "velocity_imag_m_per_s": -0.06000083017282233
+        }
+      ],
+      "electrical_impedance": [
+        {
+          "frequency_hz": 100.0,
+          "real": 4.609831078977622,
+          "imaginary": -12.968351119553112
+        },
+        {
+          "frequency_hz": 200.0,
+          "real": 4.6422579385622225,
+          "imaginary": -6.024313909583514
+        },
+        {
+          "frequency_hz": 234.8,
+          "real": 4.660448107853303,
+          "imaginary": -4.924676066128808
+        },
+        {
+          "frequency_hz": 275.6,
+          "real": 4.687737574930862,
+          "imaginary": -3.944037735140657
+        },
+        {
+          "frequency_hz": 323.6,
+          "real": 4.730245847081539,
+          "imaginary": -3.047308695082666
+        },
+        {
+          "frequency_hz": 379.9,
+          "real": 4.799530599081177,
+          "imaginary": -2.2023895031751053
+        },
+        {
+          "frequency_hz": 446.0,
+          "real": 4.920674680267332,
+          "imaginary": -1.3642807637503773
+        },
+        {
+          "frequency_hz": 523.6,
+          "real": 5.155108007594391,
+          "imaginary": -0.4692624088088062
+        },
+        {
+          "frequency_hz": 614.6,
+          "real": 5.681299240862521,
+          "imaginary": 0.5762798359844163
+        },
+        {
+          "frequency_hz": 721.6,
+          "real": 7.128633832806148,
+          "imaginary": 1.7712109343471498
+        },
+        {
+          "frequency_hz": 847.1,
+          "real": 10.841328314562173,
+          "imaginary": 0.9516596384243208
+        },
+        {
+          "frequency_hz": 994.4,
+          "real": 9.755029359784626,
+          "imaginary": -4.149588643572074
+        },
+        {
+          "frequency_hz": 1167.4,
+          "real": 6.598379904874735,
+          "imaginary": -3.9476772658274486
+        },
+        {
+          "frequency_hz": 1370.5,
+          "real": 5.4998141148078945,
+          "imaginary": -2.8902753634776355
+        },
+        {
+          "frequency_hz": 1608.9,
+          "real": 5.078459586604686,
+          "imaginary": -2.0925392563904524
+        },
+        {
+          "frequency_hz": 1888.8,
+          "real": 4.882622165275787,
+          "imaginary": -1.4921155319031638
+        },
+        {
+          "frequency_hz": 2217.4,
+          "real": 4.77836856543747,
+          "imaginary": -1.0088864143583398
+        },
+        {
+          "frequency_hz": 2603.2,
+          "real": 4.717520405839445,
+          "imaginary": -0.5944941773825589
+        },
+        {
+          "frequency_hz": 3056.1,
+          "real": 4.679696356031216,
+          "imaginary": -0.21938162702242203
+        },
+        {
+          "frequency_hz": 3587.7,
+          "real": 4.6551268451264285,
+          "imaginary": 0.13631272452723742
+        },
+        {
+          "frequency_hz": 4211.8,
+          "real": 4.638658605672487,
+          "imaginary": 0.4875299905769175
+        },
+        {
+          "frequency_hz": 4944.5,
+          "real": 4.627373051395999,
+          "imaginary": 0.8465795427230606
+        },
+        {
+          "frequency_hz": 5804.7,
+          "real": 4.619515383207707,
+          "imaginary": 1.2246180497536692
+        },
+        {
+          "frequency_hz": 6814.5,
+          "real": 4.613981963299276,
+          "imaginary": 1.6324845871444076
+        },
+        {
+          "frequency_hz": 8000.0,
+          "real": 4.610052729292084,
+          "imaginary": 2.0813971504398125
+        }
+      ],
+      "intrinsic_mechanical_impedance": [
+        {
+          "frequency_hz": 100.0,
+          "real": 0.75,
+          "imaginary": -20.07497438744402
+        },
+        {
+          "frequency_hz": 200.0,
+          "real": 0.75,
+          "imaginary": -9.660496075291233
+        },
+        {
+          "frequency_hz": 234.8,
+          "real": 0.75,
+          "imaginary": -8.06674090193402
+        },
+        {
+          "frequency_hz": 275.6,
+          "real": 0.75,
+          "imaginary": -6.682632580521428
+        },
+        {
+          "frequency_hz": 323.6,
+          "real": 0.75,
+          "imaginary": -5.468009129107896
+        },
+        {
+          "frequency_hz": 379.9,
+          "real": 0.75,
+          "imaginary": -4.395641959281455
+        },
+        {
+          "frequency_hz": 446.0,
+          "real": 0.75,
+          "imaginary": -3.4365465124393415
+        },
+        {
+          "frequency_hz": 523.6,
+          "real": 0.75,
+          "imaginary": -2.5660782788386385
+        },
+        {
+          "frequency_hz": 614.6,
+          "real": 0.75,
+          "imaginary": -1.762582498526707
+        },
+        {
+          "frequency_hz": 721.6,
+          "real": 0.75,
+          "imaginary": -1.0032592254926698
+        },
+        {
+          "frequency_hz": 847.1,
+          "real": 0.75,
+          "imaginary": -0.27052169872341514
+        },
+        {
+          "frequency_hz": 994.4,
+          "real": 0.75,
+          "imaginary": 0.4551227765477104
+        },
+        {
+          "frequency_hz": 1167.4,
+          "real": 0.75,
+          "imaginary": 1.1928362144900233
+        },
+        {
+          "frequency_hz": 1370.5,
+          "real": 0.75,
+          "imaginary": 1.9613118096401978
+        },
+        {
+          "frequency_hz": 1608.9,
+          "real": 0.75,
+          "imaginary": 2.780240349332736
+        },
+        {
+          "frequency_hz": 1888.8,
+          "real": 0.75,
+          "imaginary": 3.67092319040171
+        },
+        {
+          "frequency_hz": 2217.4,
+          "real": 0.75,
+          "imaginary": 4.656261279176995
+        },
+        {
+          "frequency_hz": 2603.2,
+          "real": 0.75,
+          "imaginary": 5.761735367229597
+        },
+        {
+          "frequency_hz": 3056.1,
+          "real": 0.75,
+          "imaginary": 7.015711134152775
+        },
+        {
+          "frequency_hz": 3587.7,
+          "real": 0.75,
+          "imaginary": 8.450318345838943
+        },
+        {
+          "frequency_hz": 4211.8,
+          "real": 0.75,
+          "imaginary": 10.102804270581217
+        },
+        {
+          "frequency_hz": 4944.5,
+          "real": 0.75,
+          "imaginary": 12.015794775254495
+        },
+        {
+          "frequency_hz": 5804.7,
+          "real": 0.75,
+          "imaginary": 14.238632579950684
+        },
+        {
+          "frequency_hz": 6814.5,
+          "real": 0.75,
+          "imaginary": 16.828426345958643
+        },
+        {
+          "frequency_hz": 8000.0,
+          "real": 0.75,
+          "imaginary": 19.852114210478035
+        }
+      ],
+      "series_capacitance_f": 0.00012
+    },
+    "cone": {
+      "cone_depth": 0.003,
+      "dustcap_radius": 0.005
+    }
+  },
+  "separator": {
+    "y_position": 0.02,
+    "thickness": 0.018
+  },
+  "waveguide": {
+    "horizontal_spline": [
+      [
+        0.0,
+        0.05
+      ],
+      [
+        0.5,
+        0.03
+      ],
+      [
+        1.0,
+        0.013
+      ]
+    ],
+    "vertical_spline": [
+      [
+        0.0,
+        0.04
+      ],
+      [
+        0.5,
+        0.025
+      ],
+      [
+        1.0,
+        0.013
+      ]
+    ],
+    "depth": 0.025
+  },
+  "simulation": {
+    "freq_start": 200.0,
+    "freq_end": 5000.0,
+    "freq_points": 50,
+    "speed_of_sound": 343.0,
+    "air_density": 1.21,
+    "max_mesh_frequency": 5000.0
+  }
+}

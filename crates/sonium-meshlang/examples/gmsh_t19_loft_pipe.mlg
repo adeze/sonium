@@ -1,0 +1,121 @@
+/// Gmsh Tutorial 19: ThruSections (Loft), fillets, pipes, curvature sizing
+///
+/// Translation of tutorials/t19.geo — demonstrates:
+///   1. Loft: volume from closed cross-sections at different heights
+///   2. Fillet: rounding all edges of a volume
+///   3. Pipe extrusion along a helical spline path
+///   4. Curvature-based mesh sizing
+///
+/// Both .geo and Python backends support all operations shown here.
+///
+/// Differences from original:
+///   - MeshSizeFromCurvature (automatic curvature-based sizing) is not a native
+///     MeshLang option; approximated with refine-near blocks.
+///
+/// Reference: https://gmsh.info/doc/textures/t19_geo.png
+
+param npts = 20
+param helix_r = 1.0
+param helix_h = 1.0
+
+geometry loft_demo {
+    // --- Lofted volume from three circular cross-sections ---
+    //
+    // Original .geo:
+    //   Circle(1) = {0,0,0, 0.5};       Curve Loop(1) = 1;
+    //   Circle(2) = {0.1,0.05,1, 0.1};  Curve Loop(2) = 2;
+    //   Circle(3) = {-0.1,-0.1,2, 0.3}; Curve Loop(3) = 3;
+    //   ThruSections(1) = {1:3};
+
+    let section_bot = Circle(r: 0.5)
+    let section_mid = Circle(r: 0.1) |> translate(0.1, 0.05, 1.0)
+    let section_top = Circle(r: 0.3) |> translate(-0.1, -0.1, 2.0)
+
+    let vase = Loft(sections: [section_bot, section_mid, section_top])
+
+    // --- Second lofted volume, offset by x=2 (ruled = linear between sections) ---
+    //
+    // Original .geo: Ruled ThruSections(11) = {11:13};
+    // `ruled: true` selects linear interpolation between consecutive sections
+    // (gmsh `Ruled ThruSections`). The result is bounded by the convex hull
+    // of the input sections — no spline overshoot, useful for sections with
+    // sharp corners.
+
+    let section2_bot = Circle(r: 0.5)  |> translate(2.0, 0.0, 0.0)
+    let section2_mid = Circle(r: 0.1)  |> translate(2.1, 0.05, 1.0)
+    let section2_top = Circle(r: 0.3)  |> translate(1.9, -0.1, 2.0)
+
+    let vase2 = Loft(sections: [section2_bot, section2_mid, section2_top], ruled: true)
+
+    // --- Copy + translate + fillet ---
+    //
+    // Original t19.geo:
+    //   v() = Translate{4,0,0} { Duplicata{ Volume{1}; } };
+    //   f() = Boundary{ Volume{v(0)}; };
+    //   e() = Unique(Boundary{ Surface{f()}; });
+    //   Fillet{v(0)}{e()}{0.1}
+
+    let vase3 = Loft(sections: [section_bot, section_mid, section_top])
+        |> translate(4.0, 0.0, 0.0)
+        |> fillet(r: 0.1)
+
+    // --- Helical pipe extrusion ---
+    //
+    // Original t19.geo defines 20 points along a helix using Cos/Sin,
+    // then creates a Spline, Wire, Disk, and extrudes the disk along it.
+    //
+    // In MeshLang: use for-loop with trig functions to create helix points,
+    // then Spline through them, and sweep a disk along the path.
+
+    // 20 points along a single-turn helix (radius=1, height=1)
+    for i in 0..20 {
+        let hp = Point(
+            helix_r * cos(i * 2.0 * PI / npts),
+            helix_r * sin(i * 2.0 * PI / npts),
+            i * helix_h / npts
+        )
+    }
+
+    // Spline through all helix points
+    let helix = Spline(hp_0, hp_1, hp_2, hp_3, hp_4,
+                        hp_5, hp_6, hp_7, hp_8, hp_9,
+                        hp_10, hp_11, hp_12, hp_13, hp_14,
+                        hp_15, hp_16, hp_17, hp_18, hp_19)
+
+    // Disk cross-section, rotated to face along the helix start direction
+    let pipe_section = Disk(r: 0.2)
+        |> translate(1.0, 0.0, 0.0)
+        |> rotate(axis: X, angle: 90)
+
+    // Extrude disk along the helical path
+    let pipe = pipe_section |> sweep(path: helix)
+}
+
+mesh for loft_demo {
+    min_size: 0.001
+    max_size: 0.3
+
+    // Curvature-based sizing: ~20 elements per 2*pi radians
+    // Original .geo: Mesh.MeshSizeFromCurvature = 20;
+    refine near(loft_demo.vase, distance: 0.1) {
+        size: 0.05
+    }
+    refine near(loft_demo.vase2, distance: 0.1) {
+        size: 0.05
+    }
+    refine near(loft_demo.vase3, distance: 0.1) {
+        size: 0.05
+    }
+}
+
+physics {
+    group body_1: volume = loft_demo.vase
+    group body_2: volume = loft_demo.vase2
+    group body_3: volume = loft_demo.vase3
+    group pipe: volume = loft_demo.pipe
+}
+
+export {
+    format: msh4
+    filename: "t19_loft.msh"
+}

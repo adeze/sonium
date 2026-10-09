@@ -1,0 +1,400 @@
+{
+  "cross_architecture": {
+    "reason": "Arm64 comparison is explicitly waived for this host; no Rosetta or synthetic Arm64 result is claimed",
+    "status": "waived",
+    "targets": [
+      "aarch64",
+      "x86_64"
+    ]
+  },
+  "deterministic_mode": true,
+  "host": {
+    "cargo_target_dir": ".target-unix-pf3",
+    "cpu_model": "model name\t: AMD Ryzen Threadripper PRO 3995WX 64-Cores",
+    "features": "none",
+    "kernel": "6.8.0-137-generic",
+    "locale": "C.UTF-8",
+    "rayon_thread_policy": "unset",
+    "rustc": "rustc 1.95.0 (59807616e 2026-04-14)\nbinary: rustc\ncommit-hash: 59807616e1fa2540724bfbac14d7976d7e4a3860\ncommit-date: 2026-04-14\nhost: x86_64-unknown-linux-gnu\nrelease: 1.95.0\nLLVM version: 22.1.2",
+    "target_arch": "x86_64",
+    "target_os": "linux"
+  },
+  "independent_budgets": {
+    "gradient_relative_error": 0.005,
+    "ledger_admission": "config.cfd conservation tolerances; every field finite",
+    "objective_decomposition_absolute": 1e-10,
+    "transient_step_residual": 10.0
+  },
+  "reduced_objective_gradient": {
+    "finite_difference": {
+      "budget_relative_max": 0.005,
+      "component_errors": [
+        3.191831599894921e-8,
+        0.0,
+        2.7252090665457594e-10,
+        0.0,
+        1.1027736410875562e-9,
+        0.0,
+        4.065265579357628e-10,
+        0.0,
+        8.793994733268254e-10,
+        0.0,
+        6.622849273142038e-12,
+        3.3193885662243067e-10,
+        7.149861799837787e-9,
+        3.3196102117161175e-12,
+        3.6279156778838433e-12,
+        2.170008709335904e-10,
+        2.1215189827117342e-8,
+        3.0246222193497374e-12,
+        3.8260031767698446e-11,
+        7.664396160401968e-11,
+        4.646195850277479e-8,
+        1.6893569876330616e-12,
+        6.249776370355002e-11,
+        5.6029159932573806e-11,
+        1.0360771829852443e-8,
+        3.0995692124058394e-12,
+        1.3302988258160981e-12,
+        4.831789231557255e-10,
+        5.510601419622674e-8,
+        1.120550874311732e-11,
+        1.9442480948451485e-7,
+        7.319888712825031e-10,
+        0.000014753973873817243,
+        0.000014753973873817243,
+        0.000014753973873817243,
+        0.000014753973873817243,
+        0.000014753973873817243
+      ],
+      "independent_oracle": "centered finite difference of evaluate_pc_fan objective",
+      "maximum_relative_error": 0.000014753973873817243
+    },
+    "gradient": {
+      "count": 37,
+      "finite": true,
+      "l2": 7259.234547207499,
+      "max": 5552.5312821558255,
+      "mean": 296.71067848340874,
+      "min": -2723.7985039406067,
+      "sha256_le_f64": "f2c360b4a913cd1bd8318cd0f2ebc602f262af211f8db24129c48c0b04ca7d7a"
+    },
+    "model": "ReducedOrder",
+    "objective": {
+      "a_weighted_acoustic_level_db": 17.926412149193286,
+      "acoustic_level_db": 30.50499289658626,
+      "airflow_cfm": 10.931386728169226,
+      "airflow_penalty": 2.4982646793351084,
+      "collision_penalty": 0.0,
+      "decomposition_error": 0.0,
+      "finite": true,
+      "flow_field": {
+        "airflow_cfm": 10.931386728169226,
+        "axial_velocity_m_s": 0.6335545681426243,
+        "mach_number": 0.0018470978663050273,
+        "pressure_rise_pa": 0.12485623994464733,
+        "reynolds_number": 3365.3321535347222
+      },
+      "objective": 21.38813319226767
+    },
+    "provenance": "reduced-order-discrete-adjoint:v1",
+    "residual_max_abs": 0.0
+  },
+  "release_gate": "blocked: Arm64 comparison waived and PF1/PF2/shared QA fan-in remain incomplete",
+  "schema": "sonium.pcfan.native-x86-pf3.v1",
+  "scope": "native Linux x86_64 CPU/f64; Arm64 and Windows waived",
+  "seed": "sonium.native-x86.pcfan-pf3.reference.v1",
+  "status": "partial",
+  "steady": {
+    "fields": {
+      "node_count": 83,
+      "nodes": {
+        "count": 249,
+        "finite": true,
+        "l2": 0.6004165220911237,
+        "max": 0.06,
+        "mean": 0.001666666666666669,
+        "min": -0.06,
+        "sha256_le_f64": "447b72bc22234ad896bff51b174e2fbdf5c44bdd62321fe8e70927ae41255eed"
+      },
+      "pressure_count": 83,
+      "pressure_pa": {
+        "count": 83,
+        "finite": true,
+        "l2": 0.009017999599166816,
+        "max": 0.0019816859686465015,
+        "mean": 3.5799687526970977e-6,
+        "min": -0.002001862629343722,
+        "sha256_le_f64": "195b2537f40372c3753239b3566c4d86015ec32be361962341c54dc73939a222"
+      },
+      "velocity_count": 83,
+      "velocity_m_s": {
+        "count": 249,
+        "finite": true,
+        "l2": 12.173603810114537,
+        "max": 2.784813370607714,
+        "mean": 0.26652341182532163,
+        "min": -1.4562650510216215,
+        "sha256_le_f64": "27f78103c7528b13e17b2b55ab0a43acd9177b658f6f1849a2d5e9c3b592ab4b"
+      }
+    },
+    "flow_model": "IncompressibleCfd",
+    "ledger": {
+      "axial_momentum_residual_n": -0.00445534762380351,
+      "body_force_n": 0.003417032655426021,
+      "inlet_axial_momentum_flux_n": 0.02171357976987894,
+      "inlet_mass_flow_kg_s": 0.024733574569897117,
+      "outlet_axial_momentum_flux_n": 0.020644351841691968,
+      "outlet_mass_flow_kg_s": 0.02411691752789093,
+      "pressure_force_from_loading_n": 0.003417032655426021,
+      "pressure_force_n": -0.00003091295980948226,
+      "pressure_power_w": 6.27123462995163e-7,
+      "relative_energy_imbalance": 0.9998734589647904,
+      "relative_mass_imbalance": 0.02493198224395397,
+      "relative_momentum_imbalance": 1.303864514355376,
+      "relative_pressure_closure": 0.9909532735192347,
+      "shaft_power_to_fluid_w": 0.004955890094914491
+    },
+    "metrics": {
+      "airflow_cfm": 42.44257000899112,
+      "iterations": 1,
+      "max_velocity_m_s": 2.7848133706083207,
+      "pressure_drop_pa": -0.0021467333201029347,
+      "residual": 1.0,
+      "reynolds_number": 22046.56634441042
+    },
+    "objective": {
+      "a_weighted_acoustic_level_db": 24.310232885314846,
+      "acoustic_level_db": 31.50552502624679,
+      "airflow_cfm": 42.44257000899112,
+      "airflow_penalty": 20.89493342862516,
+      "collision_penalty": 0.0,
+      "decomposition_error": 0.0,
+      "finite": true,
+      "flow_field": {
+        "airflow_cfm": 42.44257000899112,
+        "axial_velocity_m_s": 2.4598602886875374,
+        "mach_number": 0.007171604340196902,
+        "pressure_rise_pa": 0.0021467333201029347,
+        "reynolds_number": 22046.56634441042
+      },
+      "objective": 46.80879013957816
+    },
+    "provenance": {
+      "actual_backend": "Cpu",
+      "environment": {
+        "actual_backend": "Cpu",
+        "backend_preconditioner": "PolynomialJacobi",
+        "compiler": "unknown",
+        "cpu_features": "avx2,fma,avx,sse4.2",
+        "cpu_preconditioner": "Ilu",
+        "execution_mode": "Cpu",
+        "linear_solver": "F64",
+        "linear_solver_max_iterations": 5000,
+        "linear_solver_tolerance": 0.0001,
+        "requested_backend": "Cpu",
+        "reuse_validity": {
+          "aeroacoustic_state_reused": false,
+          "flow_state_reused": false,
+          "mesh_reused": false,
+          "preconditioner_reused": false,
+          "sparsity_reused": false,
+          "transported_state_reused": false
+        },
+        "simd_dispatch": "avx2-fma",
+        "target_arch": "x86_64",
+        "target_os": "linux",
+        "thread_count": 128
+      },
+      "execution_mode": "Cpu",
+      "fallback_reason": null,
+      "requested_backend": "Cpu"
+    }
+  },
+  "transient": {
+    "flow_model": "IncompressibleCfdFull",
+    "gradient": {
+      "adjoint_residual_norm": 8.001278658480975e-11,
+      "backend": "Cpu",
+      "converged": true,
+      "design_gradient": {
+        "count": 37,
+        "finite": true,
+        "l2": 0.00237282194678819,
+        "max": 0.0017018909533179053,
+        "mean": 0.00004858058897751578,
+        "min": -0.0009296069966716683,
+        "sha256_le_f64": "4689884916f6be89864950698caf5b1a65eb9248233c2abae0b5970d7a9bca83"
+      },
+      "flow_model": "IncompressibleCfdFull",
+      "iterations": 311,
+      "objective": "RotatingWallAxialLoading",
+      "provenance": "transient-adjoint:production:pcfan:rotating-wall-bdf-objective:v1;state-jacobian:fem:navier-stokes:bdf-newton-laminar:v1; derivatives:analytic:production-frozen-immersed-topology:v2",
+      "state_residual_norm": 0.1806277306727185
+    },
+    "observation": {
+      "airflow_cfm": 0.0007062557652043671,
+      "axial_loading_n": -1.698682483004295e-8,
+      "conservation": {
+        "axial_momentum_residual_n": 5.787881778474847e-7,
+        "body_force_n": -1.698682483004295e-8,
+        "inlet_axial_momentum_flux_n": 5.619249963780511e-11,
+        "inlet_mass_flow_kg_s": -1.1643937052935096e-6,
+        "outlet_axial_momentum_flux_n": 6.4211641420230996e-12,
+        "outlet_mass_flow_kg_s": -4.013119855706895e-7,
+        "pressure_force_from_loading_n": -1.698682483004295e-8,
+        "pressure_force_n": -5.618511243529375e-7,
+        "pressure_power_w": -3.5834893358582746e-13,
+        "relative_energy_imbalance": 1.000000000184663,
+        "relative_mass_imbalance": 0.6454528488289101,
+        "relative_momentum_imbalance": 1.0307568370921443,
+        "relative_pressure_closure": 1.0308486842884548,
+        "shaft_power_to_fluid_w": 0.0019436461872741322
+      },
+      "converged": true,
+      "final_time_s": 0.002,
+      "pressure_drop_pa": -0.00003901743919117622,
+      "residual": 9.812611667360056e-16
+    },
+    "provenance": {
+      "actual_backend": "Cpu",
+      "backend_preconditioner": "PolynomialJacobi",
+      "compiler": "unknown",
+      "cpu_features": "avx2,fma,avx,sse4.2",
+      "cpu_preconditioner": "Ilu",
+      "execution_mode": "Cpu",
+      "linear_solver": "F64",
+      "linear_solver_max_iterations": 5000,
+      "linear_solver_tolerance": 0.0001,
+      "requested_backend": "Cpu",
+      "reuse_validity": {
+        "aeroacoustic_state_reused": false,
+        "flow_state_reused": false,
+        "mesh_reused": false,
+        "preconditioner_reused": false,
+        "sparsity_reused": false,
+        "transported_state_reused": false
+      },
+      "simd_dispatch": "avx2-fma",
+      "target_arch": "x86_64",
+      "target_os": "linux",
+      "thread_count": 128
+    },
+    "rotor_revolutions": 0.001,
+    "steps": [
+      {
+        "actual_backend": "Cpu",
+        "ledger": {
+          "axial_momentum_residual_n": 5.996992469246531e-7,
+          "body_force_n": -1.068242248258289e-8,
+          "inlet_axial_momentum_flux_n": 1.6781442904989025e-11,
+          "inlet_mass_flow_kg_s": -6.875999271582267e-7,
+          "outlet_axial_momentum_flux_n": 2.406810143221412e-12,
+          "outlet_mass_flow_kg_s": -2.6040066484374186e-7,
+          "pressure_force_from_loading_n": -1.068242248258289e-8,
+          "pressure_force_n": -5.89031199074832e-7,
+          "pressure_power_w": -2.31894487305054e-13,
+          "relative_energy_imbalance": 1.0000000001187797,
+          "relative_mass_imbalance": 0.6212904414927026,
+          "relative_momentum_imbalance": 1.0181111762272983,
+          "relative_pressure_closure": 1.0181355800836378,
+          "shaft_power_to_fluid_w": 0.0019523090265647354
+        },
+        "provenance": {
+          "actual_backend": "Cpu",
+          "backend_preconditioner": "PolynomialJacobi",
+          "compiler": "unknown",
+          "cpu_features": "avx2,fma,avx,sse4.2",
+          "cpu_preconditioner": "Ilu",
+          "execution_mode": "Cpu",
+          "linear_solver": "F64",
+          "linear_solver_max_iterations": 5000,
+          "linear_solver_tolerance": 0.0001,
+          "requested_backend": "Cpu",
+          "reuse_validity": {
+            "aeroacoustic_state_reused": false,
+            "flow_state_reused": false,
+            "mesh_reused": false,
+            "preconditioner_reused": false,
+            "sparsity_reused": false,
+            "transported_state_reused": false
+          },
+          "simd_dispatch": "avx2-fma",
+          "target_arch": "x86_64",
+          "target_os": "linux",
+          "thread_count": 128
+        },
+        "residual": 0.1806277306727185,
+        "state": {
+          "count": 1406,
+          "finite": true,
+          "l2": 0.4582403368561039,
+          "max": 0.09344779624914235,
+          "mean": 0.00001732190171632259,
+          "min": -0.09344779624914257,
+          "sha256_le_f64": "54cd2fa8a95b28d352d9d473b421380c33e7c47e128b829baaff832aec8dd43b"
+        },
+        "state_jacobian_provenance": "fem:navier-stokes:bdf-newton-laminar:v1",
+        "step": 0,
+        "time_s": 0.001
+      },
+      {
+        "actual_backend": "Cpu",
+        "ledger": {
+          "axial_momentum_residual_n": 5.578771087703164e-7,
+          "body_force_n": -2.329122717750301e-8,
+          "inlet_axial_momentum_flux_n": 9.560355637062119e-11,
+          "inlet_mass_flow_kg_s": -1.6411874834287925e-6,
+          "outlet_axial_momentum_flux_n": 1.0435518140824788e-11,
+          "outlet_mass_flow_kg_s": -5.422233062976371e-7,
+          "pressure_force_from_loading_n": -2.329122717750301e-8,
+          "pressure_force_n": -5.346710496310431e-7,
+          "pressure_power_w": -4.84803379866601e-13,
+          "relative_energy_imbalance": 1.0000000002505465,
+          "relative_mass_imbalance": 0.6696152561651175,
+          "relative_momentum_imbalance": 1.0434024979569905,
+          "relative_pressure_closure": 1.0435617884932717,
+          "shaft_power_to_fluid_w": 0.001934983347983529
+        },
+        "provenance": {
+          "actual_backend": "Cpu",
+          "backend_preconditioner": "PolynomialJacobi",
+          "compiler": "unknown",
+          "cpu_features": "avx2,fma,avx,sse4.2",
+          "cpu_preconditioner": "Ilu",
+          "execution_mode": "Cpu",
+          "linear_solver": "F64",
+          "linear_solver_max_iterations": 5000,
+          "linear_solver_tolerance": 0.0001,
+          "requested_backend": "Cpu",
+          "reuse_validity": {
+            "aeroacoustic_state_reused": false,
+            "flow_state_reused": false,
+            "mesh_reused": false,
+            "preconditioner_reused": false,
+            "sparsity_reused": false,
+            "transported_state_reused": false
+          },
+          "simd_dispatch": "avx2-fma",
+          "target_arch": "x86_64",
+          "target_os": "linux",
+          "thread_count": 128
+        },
+        "residual": 0.1143804143604015,
+        "state": {
+          "count": 1406,
+          "finite": true,
+          "l2": 1.0424430077715923,
+          "max": 0.2141549166460013,
+          "mean": 0.000022002214912551843,
+          "min": -0.2141549166460016,
+          "sha256_le_f64": "cff99a7e863df320439af02f35b391cda7620e92590cf71b7f073e9c5b822bf6"
+        },
+        "state_jacobian_provenance": "fem:navier-stokes:bdf-newton-laminar:v1",
+        "step": 1,
+        "time_s": 0.002
+      }
+    ],
+    "time_step_s": 0.001
+  }
+}

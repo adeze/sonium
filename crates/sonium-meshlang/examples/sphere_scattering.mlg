@@ -1,0 +1,47 @@
+/// Rigid sphere scattering -- BEM validation benchmark
+///
+/// Plane wave scattering from a rigid sphere has an exact analytical
+/// solution (series expansion in spherical harmonics), making it the
+/// canonical BEM validation case.
+///
+/// Reference: EAA benchmark problems for computational acoustics
+
+const C_AIR = 343.0
+const PI = 3.14159265
+
+param f_max = 4000.0
+param sphere_r = 0.1
+
+// Mesh sizing: 6 quadratic elements per wavelength at f_max
+param wavelength = C_AIR / f_max
+param elem_size = wavelength / 6.0
+
+// Helmholtz number at f_max
+param ka_max = 2.0 * PI * f_max * sphere_r / C_AIR
+
+geometry sphere {
+    let ball = Sphere(r: sphere_r)
+}
+
+mesh for sphere {
+    default_size: elem_size
+    min_size: elem_size / 4.0
+    order: 2
+    algorithm_2d: delaunay
+    smoothing_steps: 10
+}
+
+physics {
+    group surface: neumann = sphere.ball.faces
+}
+
+export {
+    format: msh4
+    order: 2
+    filename: "sphere_bem.msh"
+}
+
+export as "stl_visual" {
+    format: stl
+    filename: "sphere_visual.stl"
+}

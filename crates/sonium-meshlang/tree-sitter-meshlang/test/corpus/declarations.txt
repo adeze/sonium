@@ -1,0 +1,296 @@
+================================================================================
+Parameter with unit
+================================================================================
+
+param freq = 1000.0 Hz
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (param_decl
+    name: (identifier)
+    value: (float_literal)
+    unit: (simple_unit)))
+
+================================================================================
+Parameter with type annotation
+================================================================================
+
+param c: Float = 343.0 m/s
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (param_decl
+    name: (identifier)
+    type: (type_identifier)
+    value: (float_literal)
+    unit: (compound_unit (simple_unit) (simple_unit))))
+
+================================================================================
+Const declaration
+================================================================================
+
+const PI = 3.14159265358979
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (const_decl
+    name: (identifier)
+    value: (float_literal)))
+
+================================================================================
+Parameter with expression
+================================================================================
+
+param elem_size = c / freq / 6.0
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (param_decl
+    name: (identifier)
+    value: (multiplicative_expr
+      (multiplicative_expr
+        (identifier)
+        (identifier))
+      (float_literal))))
+
+================================================================================
+Simple geometry block
+================================================================================
+
+geometry box {
+    let outer = Box(0.3 m, 0.4 m, 0.25 m)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (geometry_block
+    name: (identifier)
+    body: (block
+      (let_statement
+        name: (identifier)
+        value: (constructor_expr
+          type_name: (type_identifier)
+          (argument_list
+            (argument value: (float_literal))
+            (argument value: (float_literal))
+            (argument value: (float_literal))))))))
+
+================================================================================
+CSG difference
+================================================================================
+
+geometry example {
+    let a = Box(1 m, 1 m, 1 m)
+    let b = Sphere(r: 0.6 m)
+    let result = a - b
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (geometry_block
+    name: (identifier)
+    body: (block
+      (let_statement
+        name: (identifier)
+        value: (constructor_expr
+          type_name: (type_identifier)
+          (argument_list
+            (argument value: (integer_literal))
+            (argument value: (integer_literal))
+            (argument value: (integer_literal)))))
+      (let_statement
+        name: (identifier)
+        value: (constructor_expr
+          type_name: (type_identifier)
+          (argument_list
+            (argument
+              name: (identifier)
+              value: (float_literal)))))
+      (let_statement
+        name: (identifier)
+        value: (csg_expr
+          (identifier)
+          (identifier))))))
+
+================================================================================
+Pipe transforms
+================================================================================
+
+geometry pipe_example {
+    let moved = Cylinder(r: 0.1 m, h: 0.5 m)
+        |> translate(0.2 m, 0.0 m, 0.1 m)
+        |> rotate(axis: Z, angle: 45 deg)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (geometry_block
+    name: (identifier)
+    body: (block
+      (let_statement
+        name: (identifier)
+        value: (pipe_expr
+          (pipe_expr
+            (constructor_expr
+              type_name: (type_identifier)
+              (argument_list
+                (argument name: (identifier) value: (float_literal))
+                (argument name: (identifier) value: (float_literal))))
+            fn: (identifier)
+            (argument_list
+              (argument value: (float_literal))
+              (argument value: (float_literal))
+              (argument value: (float_literal))))
+          fn: (identifier)
+          (argument_list
+            (argument name: (identifier) value: (type_identifier))
+            (argument name: (identifier) value: (integer_literal))))))))
+
+================================================================================
+Mesh block with refinement
+================================================================================
+
+mesh for cabinet {
+    default_size: 0.01 m
+
+    refine near(cabinet.port, distance: 0.02 m) {
+        size: 0.002 m
+    }
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (mesh_block
+    target: (identifier)
+    (kv_pair
+      key: (identifier)
+      value: (float_literal)
+      unit: (simple_unit))
+    (refine_statement
+      kind: (refine_kind
+        (postfix_expr
+          (identifier)
+          field: (identifier))
+        (kv_args
+          (kv_arg
+            key: (identifier)
+            value: (float_literal))))
+      body: (block
+        (kv_pair
+          key: (identifier)
+          value: (float_literal)
+          unit: (simple_unit))))))
+
+================================================================================
+Physics block
+================================================================================
+
+physics {
+    group wall: neumann = cab.outer.faces
+    group inlet: dirichlet = cab.port.faces.top
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (physics_block
+    (group_decl
+      name: (identifier)
+      bc_type: (identifier)
+      value: (postfix_expr
+        (postfix_expr
+          (identifier)
+          field: (identifier))
+        field: (identifier)))
+    (group_decl
+      name: (identifier)
+      bc_type: (identifier)
+      value: (postfix_expr
+        (postfix_expr
+          (postfix_expr
+            (identifier)
+            field: (identifier))
+          field: (identifier))
+        field: (identifier)))))
+
+================================================================================
+Export block
+================================================================================
+
+export {
+    format: msh4
+    order: 2
+    binary: true
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (export_block
+    (kv_pair key: (identifier) value: (identifier))
+    (kv_pair key: (identifier) value: (integer_literal))
+    (kv_pair key: (identifier) value: (bool_literal))))
+
+================================================================================
+Import declarations
+================================================================================
+
+import "acoustics/port.mlg"
+import "lib.mlg" as mylib
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (import_decl path: (string_literal))
+  (import_decl path: (string_literal) alias: (identifier)))
+
+================================================================================
+Function declaration
+================================================================================
+
+pub fn port(radius: Length, depth: Length) -> Solid {
+    Cylinder(r: radius, h: depth)
+}
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (fn_decl
+    name: (identifier)
+    params: (param_list
+      (param_def name: (identifier) type: (type_identifier))
+      (param_def name: (identifier) type: (type_identifier)))
+    return_type: (type_identifier)
+    body: (block
+      (constructor_expr
+        type_name: (type_identifier)
+        (argument_list
+          (argument name: (identifier) value: (identifier))
+          (argument name: (identifier) value: (identifier)))))))
+
+================================================================================
+Dot access chain
+================================================================================
+
+param x = cabinet.shell.faces.top
+
+--------------------------------------------------------------------------------
+
+(source_file
+  (param_decl
+    name: (identifier)
+    value: (postfix_expr
+      (postfix_expr
+        (postfix_expr
+          (identifier)
+          field: (identifier))
+        field: (identifier))
+      field: (identifier))))

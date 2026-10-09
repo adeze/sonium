@@ -1,0 +1,61 @@
+name: FFT and fastmath bounded fuzz smoke
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/fft-fastmath-fuzz.yml"
+      - "crates/sonium-fft/**"
+      - "crates/sonium-fastmath/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".gitea/workflows/fft-fastmath-fuzz.yml"
+      - "crates/sonium-fft/**"
+      - "crates/sonium-fastmath/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+jobs:
+  fuzz-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cross-validation targets
+        run: rustup target add x86_64-apple-darwin wasm32-unknown-unknown
+      - name: CPU correctness suites
+        run: |
+          cargo test --offline -p sonium-fastmath
+          cargo test --offline -p sonium-fft
+      - name: Cross-architecture SIMD parity
+        run: just validate-simd
+      - name: Compile fuzz targets
+        run: |
+          cargo check --offline --manifest-path crates/sonium-fastmath/fuzz/Cargo.toml
+          cargo check --offline --manifest-path crates/sonium-fft/fuzz/Cargo.toml
+      - name: Bounded fuzz campaigns
+        run: |
+          cargo install cargo-fuzz --locked
+          python3 - <<'PY'
+          import subprocess
+
+          commands = [
+              ["cargo", "fuzz", "run", "--manifest-path", "crates/sonium-fastmath/fuzz/Cargo.toml", "sincos_inputs", "--", "-runs=100", "-max_len=512", "-rss_limit_mb=256"],
+              ["cargo", "fuzz", "run", "--manifest-path", "crates/sonium-fft/fuzz/Cargo.toml", "planner_round_trip", "--", "-runs=100", "-max_len=512", "-rss_limit_mb=256"],
+          ]
+          for command in commands:
+              subprocess.run(command, check=True, timeout=45)
+          PY
+
+  native-x86-64:
+    # This is an actual x86_64 execution lane, not Rosetta parity. Runtime
+    # feature dispatch remains responsible for avoiding unsupported AVX paths.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native x86_64 FastMath and FFT suites
+        run: |
+          uname -m | grep -x 'x86_64'
+          cargo test -p sonium-fastmath
+          cargo test -p sonium-fft

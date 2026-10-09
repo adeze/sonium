@@ -1,0 +1,230 @@
+{
+  "artifact_version": 1,
+  "cases": [
+    {
+      "assembly": {
+        "assembled_matrix_entries": 63,
+        "budgets": {
+          "constant_field_residual_l2_max": 2e-11,
+          "mass_domain_abs_error": 2e-11,
+          "symmetry_max_abs": 2e-12
+        },
+        "constant_field_residual_l2": 1.3263274147823762e-15,
+        "element_matrix_triplets": 72,
+        "mass_domain_abs_error": 3.774758283725532e-15,
+        "symmetry_max_abs": 0.0
+      },
+      "boundary_conditions": {
+        "budget": 0.0,
+        "constrained_dofs": 8,
+        "destination_preserved_contract_max_abs": 0.0,
+        "kind": "homogeneous-dirichlet"
+      },
+      "cell_family": "triangle-2d",
+      "dimension": 2,
+      "element_type": "Triangle",
+      "interpolation": {
+        "budgets": {
+          "gradient_rate_min": 1.0,
+          "l2_rate_min": 2.0
+        },
+        "coarse_gradient": 0.2500000000000006,
+        "coarse_l2": 0.03857583749052288,
+        "fine_gradient": 0.06250000000000012,
+        "fine_l2": 0.004821979686315351,
+        "gradient_rate": 2.0000000000000004,
+        "l2_rate": 3.0000000000000027,
+        "reference": "analytic-cubic-value-and-gradient"
+      },
+      "status": "pass",
+      "topology": {
+        "boundary_markers": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "elements": 2,
+        "global_dofs": 9,
+        "nodes": 4
+      }
+    },
+    {
+      "assembly": {
+        "assembled_matrix_entries": 81,
+        "budgets": {
+          "constant_field_residual_l2_max": 2e-11,
+          "mass_domain_abs_error": 2e-11,
+          "symmetry_max_abs": 2e-12
+        },
+        "constant_field_residual_l2": 1.0906210770260937e-15,
+        "element_matrix_triplets": 81,
+        "mass_domain_abs_error": 0.0,
+        "symmetry_max_abs": 0.0
+      },
+      "boundary_conditions": {
+        "budget": 0.0,
+        "constrained_dofs": 8,
+        "destination_preserved_contract_max_abs": 0.0,
+        "kind": "homogeneous-dirichlet"
+      },
+      "cell_family": "quadrilateral-2d",
+      "dimension": 2,
+      "element_type": "Quadrilateral",
+      "interpolation": {
+        "budgets": {
+          "gradient_rate_min": 1.0,
+          "l2_rate_min": 2.0
+        },
+        "coarse_gradient": 0.2499999999999999,
+        "coarse_l2": 0.03857583749052299,
+        "fine_gradient": 0.06250000000000003,
+        "fine_l2": 0.004821979686315372,
+        "gradient_rate": 1.9999999999999987,
+        "l2_rate": 3.0000000000000004,
+        "reference": "analytic-cubic-value-and-gradient"
+      },
+      "status": "pass",
+      "topology": {
+        "boundary_markers": [
+          0
+        ],
+        "elements": 1,
+        "global_dofs": 9,
+        "nodes": 4
+      }
+    },
+    {
+      "assembly": {
+        "assembled_matrix_entries": 393,
+        "budgets": {
+          "constant_field_residual_l2_max": 2e-11,
+          "mass_domain_abs_error": 2e-11,
+          "symmetry_max_abs": 2e-12
+        },
+        "constant_field_residual_l2": 6.477512660671567e-15,
+        "element_matrix_triplets": 600,
+        "mass_domain_abs_error": 7.771561172376096e-16,
+        "symmetry_max_abs": 0.0
+      },
+      "boundary_conditions": {
+        "budget": 0.0,
+        "constrained_dofs": 26,
+        "destination_preserved_contract_max_abs": 0.0,
+        "kind": "homogeneous-dirichlet"
+      },
+      "cell_family": "tetrahedron-3d",
+      "dimension": 3,
+      "element_type": "Tetrahedron",
+      "interpolation": {
+        "budgets": {
+          "gradient_rate_min": 1.0,
+          "l2_rate_min": 2.0
+        },
+        "coarse_gradient": 0.26856098003991574,
+        "coarse_l2": 0.041311982452793224,
+        "fine_gradient": 0.06714024500997913,
+        "fine_l2": 0.005163997806599155,
+        "gradient_rate": 1.9999999999999958,
+        "l2_rate": 2.9999999999999996,
+        "reference": "analytic-cubic-value-and-gradient"
+      },
+      "status": "pass",
+      "topology": {
+        "boundary_markers": [
+          0
+        ],
+        "elements": 6,
+        "global_dofs": 27,
+        "nodes": 8
+      }
+    },
+    {
+      "assembly": {
+        "assembled_matrix_entries": 729,
+        "budgets": {
+          "constant_field_residual_l2_max": 2e-11,
+          "mass_domain_abs_error": 2e-11,
+          "symmetry_max_abs": 2e-12
+        },
+        "constant_field_residual_l2": 5.939628331914834e-15,
+        "element_matrix_triplets": 729,
+        "mass_domain_abs_error": 8.881784197001252e-16,
+        "symmetry_max_abs": 0.0
+      },
+      "boundary_conditions": {
+        "budget": 0.0,
+        "constrained_dofs": 26,
+        "destination_preserved_contract_max_abs": 0.0,
+        "kind": "homogeneous-dirichlet"
+      },
+      "cell_family": "hexahedron-3d",
+      "dimension": 3,
+      "element_type": "Hexahedron",
+      "interpolation": {
+        "budgets": {
+          "gradient_rate_min": 1.0,
+          "l2_rate_min": 2.0
+        },
+        "coarse_gradient": 0.2561737691489898,
+        "coarse_l2": 0.03952847075210475,
+        "fine_gradient": 0.0640434422872476,
+        "fine_l2": 0.004941058844013115,
+        "gradient_rate": 1.9999999999999967,
+        "l2_rate": 2.999999999999994,
+        "reference": "analytic-cubic-value-and-gradient"
+      },
+      "status": "pass",
+      "topology": {
+        "boundary_markers": [
+          0
+        ],
+        "elements": 1,
+        "global_dofs": 27,
+        "nodes": 8
+      }
+    }
+  ],
+  "cross_architecture": {
+    "comparison": "not-run",
+    "reason": "User-authorized Arm64 waiver; no aarch64 result is fabricated or treated as a pass.",
+    "status": "waived"
+  },
+  "deterministic_mode": {
+    "environment": "SONIUM_FEM_DETERMINISTIC",
+    "rayon_threads": "default",
+    "requested": true
+  },
+  "dispatch": {
+    "provenance": "public-fem-space-assembly-boundary-APIs",
+    "selected_path": "portable-rust-reference",
+    "simd_kernel": "not-used-by-sonium-fem-core",
+    "vendor_library": "none-linked"
+  },
+  "reference_gates": [
+    "analytic cubic interpolation value/gradient",
+    "constant-field stiffness residual and unit-domain mass",
+    "symmetric assembled operator",
+    "checked homogeneous Dirichlet row/column elimination"
+  ],
+  "schema": "sonium-fem-native-x86-evidence/v1",
+  "scope": "native-linux-x86_64",
+  "status": "pass",
+  "target": {
+    "arch": "x86_64",
+    "compile_target_features": {
+      "avx2": false,
+      "avx512f": false,
+      "fma": false
+    },
+    "compiler": "rustc 1.98.0 (88d9e12ae 2026-08-18)",
+    "cpu_model": "AMD Ryzen Threadripper PRO 3995WX 64-Cores",
+    "microcode": "0x830107c",
+    "os": "linux",
+    "runtime_features": {
+      "avx2": true,
+      "avx512f": false,
+      "fma": true
+    }
+  }
+}

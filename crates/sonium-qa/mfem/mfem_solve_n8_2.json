@@ -1,0 +1,1 @@
+{"nx":8,"order":2,"ndofs":4913,"mfem_version":"MFEM v4.5.2 (release)","l2_error":2.12092479944177623e-04,"cg_iters":4,"cg_final_res":1.05174844758283578e-13,"assemble_s":0.167086,"solve_s":0.000987}

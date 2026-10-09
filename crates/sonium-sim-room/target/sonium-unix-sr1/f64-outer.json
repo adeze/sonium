@@ -1,0 +1,92 @@
+{
+  "artifact": "sonium-sim-room.sr1-cuda",
+  "backend": {
+    "actual": "cuda",
+    "fallback_status": "none",
+    "host_architecture": "x86_64",
+    "precision": "f64-outer (IR)",
+    "requested": "cuda"
+  },
+  "cancellation": {
+    "mid_frequency_interrupt": "not-exercised",
+    "pre_setup_test": "cuda_cancellation_rejects_before_device_setup",
+    "status": "frequency-boundary cooperative"
+  },
+  "frequency_stats": [
+    {
+      "allocation_high_water_bytes": 231522,
+      "allocation_operations": 210,
+      "converged": true,
+      "fallback_stage": 0,
+      "frequency_hz": 79.99999999999997,
+      "inner_iterations": 36,
+      "iterations": 6,
+      "max_residual": 6.039295783530495e-10,
+      "preconditioner_age": 0,
+      "preconditioner_rebuild_reason": "scheduled",
+      "retries": 0,
+      "synchronization_calls": 3,
+      "transfer": {
+        "d2d_bytes": 77008,
+        "d2d_operations": 144,
+        "d2h_bytes": 16060,
+        "d2h_operations": 63,
+        "h2d_bytes": 18100,
+        "h2d_operations": 23
+      }
+    },
+    {
+      "allocation_high_water_bytes": 231522,
+      "allocation_operations": 125,
+      "converged": true,
+      "fallback_stage": 0,
+      "frequency_hz": 119.99999999999997,
+      "inner_iterations": 30,
+      "iterations": 5,
+      "max_residual": 5.7533936138660905e-8,
+      "preconditioner_age": 1,
+      "preconditioner_rebuild_reason": "cached",
+      "retries": 0,
+      "synchronization_calls": 3,
+      "transfer": {
+        "d2d_bytes": 69680,
+        "d2d_operations": 123,
+        "d2h_bytes": 13300,
+        "d2h_operations": 49,
+        "h2d_bytes": 136,
+        "h2d_operations": 4
+      }
+    }
+  ],
+  "memory": {
+    "device_free_bytes": 101083840512,
+    "device_total_bytes": 102014189568,
+    "estimated_peak_bytes": 278740
+  },
+  "parity": {
+    "candidate_backend": "cuda-f64-outer",
+    "max_relative_error": 1.891941103176019e-7,
+    "reference_backend": "cpu-f64",
+    "rms_relative_error": 7.455396535613727e-8,
+    "sample_count": 8
+  },
+  "schema_version": 1,
+  "setup_transfer": {
+    "d2d_bytes": 0,
+    "d2d_operations": 0,
+    "d2h_bytes": 0,
+    "d2h_operations": 0,
+    "h2d_bytes": 140096,
+    "h2d_operations": 28
+  },
+  "status": "passed",
+  "total_transfer": {
+    "d2d_bytes": 146688,
+    "d2d_operations": 267,
+    "d2h_bytes": 29360,
+    "d2h_operations": 112,
+    "h2d_bytes": 18236,
+    "h2d_operations": 27
+  },
+  "workload": "f64-outer"
+}

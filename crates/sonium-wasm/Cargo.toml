@@ -1,0 +1,59 @@
+[package]
+name = "sonium-roomsim"
+version = "0.4.1"
+edition = "2024"
+authors = { workspace = true }
+description = "Room acoustic simulator"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["bem", "boundary-element", "acoustics", "numerical", "room-acoustics"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "room_simulator_bem"
+path = "bin/room_simulator_bem.rs"
+required-features = ["cli"]
+
+[features]
+cli = ["dep:chrono", "dep:clap"]
+## Enable the filesystem-free MeshLang editor/frontend API.
+meshlang = ["dep:meshlang-ast", "dep:meshlang-parser", "dep:meshlang-compiler"]
+
+[dependencies]
+wasm-bindgen = { workspace = true }
+js-sys = { workspace = true }
+wasm-bindgen-futures = { workspace = true }
+web-sys = { workspace = true, features = ["Window", "Navigator", "Performance"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+csv = { workspace = true }
+num-complex = { workspace = true, features = ["serde"] }
+console_error_panic_hook = { workspace = true }
+sonium-compute = { workspace = true }
+sonium-fft = { workspace = true }
+sonium-xem = { workspace = true }
+sonium-mesher = { workspace = true }
+rayon = { workspace = true }
+wasm-bindgen-rayon = { workspace = true, features = ["no-bundler"] }
+clap = { workspace = true, features = ["derive"], optional = true }
+chrono = { workspace = true, optional = true }
+
+# Math-BEM with WASM-optimized parallel processing via wasm-bindgen-rayon
+sonium-bem = { workspace = true }
+meshlang-parser = { workspace = true, optional = true }
+meshlang-compiler = { workspace = true, optional = true }
+meshlang-ast = { workspace = true, optional = true }
+
+[dev-dependencies]
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+sonium-sim-room = { workspace = true }
+
+[package.metadata.wasm-pack.profile.release]
+wasm-opt = true

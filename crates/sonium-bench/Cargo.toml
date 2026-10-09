@@ -1,0 +1,19 @@
+[package]
+name = "sonium-bench"
+version = "0.2.0"
+edition = { workspace = true }
+license = { workspace = true }
+publish = false
+description = "Vendor comparison and performance harnesses for Sonium"
+
+[dependencies]
+chrono = "0.4"
+rayon = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sonium-compute = { workspace = true }
+sonium-fft = { workspace = true }
+
+[[bin]]
+name = "bench-compute-macos-evidence"
+path = "bin/compute_macos_evidence.rs"

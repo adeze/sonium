@@ -1,0 +1,461 @@
+//! Generic differentiable cascade of second-order sections.
+
+#![allow(
+    clippy::cast_precision_loss,
+    reason = "nfft is an audio buffer length that fits exactly in f64 for practical values"
+)]
+#![allow(
+    clippy::similar_names,
+    reason = "coefficient derivative names are intentionally paired (dh_db/dh_da)"
+)]
+#![allow(
+    clippy::type_complexity,
+    reason = "SOS coefficient tensors are inherently multi-dimensional"
+)]
+#![allow(
+    clippy::uninlined_format_args,
+    reason = "format strings are clearer with explicit arguments in error messages"
+)]
+
+use crate::autodiff::tensor::{Axis, IxDyn, NdArray};
+use num_complex::Complex;
+
+use crate::autodiff::error::AutodiffError;
+use crate::autodiff::iir::response::BasisCache;
+use crate::autodiff::iir::response::{
+    SosFrequencyBasis, sos_coefficient_vjp_with_basis, sos_frequency_response,
+};
+use crate::autodiff::module::{DiffModule, Scalar, fconst, validate_spectral_gradient_shape};
+use crate::autodiff::tensor::DiffTensor;
+
+/// Split the packed SOS parameter tensor into separate b and a coefficient tensors.
+///
+/// Input shape: `(K, 6, N_out, N_in)` where the 6 slots are `[b0, b1, b2, a0, a1, a2]`.
+/// Output shapes: `(K, 3, N_out, N_in)` for `b` and `(K, 3, N_out, N_in)` for `a`.
+fn split_param<T: Scalar>(
+    param: &NdArray<T>,
+) -> Result<(NdArray<Complex<T>>, NdArray<Complex<T>>), AutodiffError> {
+    let shape = param.shape();
+    if shape.len() != 4 || shape[1] != 6 {
+        return Err(AutodiffError::Message(format!(
+            "SosFilter: expected param shape (K, 6, N_out, N_in), got {:?}",
+            shape
+        )));
+    }
+    let (k, n_out, n_in) = (shape[0], shape[2], shape[3]);
+    let mut b = NdArray::zeros(IxDyn(&[k, 3, n_out, n_in]));
+    let mut a = NdArray::zeros(IxDyn(&[k, 3, n_out, n_in]));
+    for section in 0..k {
+        for out_ch in 0..n_out {
+            for in_ch in 0..n_in {
+                for tap in 0..3 {
+                    b[[section, tap, out_ch, in_ch]] =
+                        Complex::new(param[[section, tap, out_ch, in_ch]], T::zero());
+                    a[[section, tap, out_ch, in_ch]] =
+                        Complex::new(param[[section, 3 + tap, out_ch, in_ch]], T::zero());
+                }
+            }
+        }
+    }
+    Ok((b, a))
+}
+
+fn validate_stable_denominators<T: Scalar>(a: &NdArray<Complex<T>>) -> Result<(), AutodiffError> {
+    for section in 0..a.dim4().0 {
+        for out_ch in 0..a.dim4().2 {
+            for in_ch in 0..a.dim4().3 {
+                let a0 = a[[section, 0, out_ch, in_ch]];
+                let a1 = a[[section, 1, out_ch, in_ch]];
+                let a2 = a[[section, 2, out_ch, in_ch]];
+                if !(a0.re.is_finite() && a0.im.is_finite()) || a0.norm() <= T::epsilon() {
+                    return Err(AutodiffError::Message(format!(
+                        "SosFilter: denominator section {section} has an invalid leading coefficient"
+                    )));
+                }
+                let discriminant = (a1 * a1 - Complex::from(fconst::<T>(4.0)) * a0 * a2).sqrt();
+                let denominator = Complex::from(fconst::<T>(2.0)) * a0;
+                let pole_a = (-a1 + discriminant) / denominator;
+                let pole_b = (-a1 - discriminant) / denominator;
+                if !(pole_a.re.is_finite()
+                    && pole_a.im.is_finite()
+                    && pole_b.re.is_finite()
+                    && pole_b.im.is_finite())
+                    || pole_a.norm() >= T::one()
+                    || pole_b.norm() >= T::one()
+                {
+                    return Err(AutodiffError::Message(format!(
+                        "SosFilter: denominator section {section} has an unstable pole"
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Generic cascade of second-order sections with learnable coefficients.
+///
+/// The raw-coefficient interface intentionally exposes pole stability to the
+/// optimizer, but forward and backward reject non-finite or unit-circle poles
+/// with [`AutodiffError`] instead of producing NaNs.
+#[derive(Debug, Clone)]
+pub struct SosFilter<T = f64> {
+    pub nfft: usize,
+    pub n_sections: usize,
+    pub n_out: usize,
+    pub n_in: usize,
+    pub alias_decay_db: T,
+    pub param: NdArray<T>,
+    pub param_grad: NdArray<T>,
+    work_h: NdArray<Complex<T>>,
+    work_b_response: NdArray<Complex<T>>,
+    work_a_response: NdArray<Complex<T>>,
+    work_dl_dh: NdArray<Complex<T>>,
+    work_grad_input: NdArray<Complex<T>>,
+}
+
+impl<T: BasisCache> SosFilter<T> {
+    /// Create a finite zero-response SOS filter with unit denominator leading
+    /// coefficients and zero-initialized gradients.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `nfft` or `n_sections` is zero.
+    pub fn new(
+        nfft: usize,
+        n_sections: usize,
+        n_out: usize,
+        n_in: usize,
+        alias_decay_db: T,
+    ) -> Result<Self, AutodiffError> {
+        if nfft == 0 {
+            return Err(AutodiffError::Message(
+                "SosFilter: nfft must be greater than 0".to_string(),
+            ));
+        }
+        if n_sections == 0 {
+            return Err(AutodiffError::Message(
+                "SosFilter: n_sections must be greater than 0".to_string(),
+            ));
+        }
+        if n_out == 0 {
+            return Err(AutodiffError::Message(
+                "SosFilter: n_out must be greater than 0".to_string(),
+            ));
+        }
+        if n_in == 0 {
+            return Err(AutodiffError::Message(
+                "SosFilter: n_in must be greater than 0".to_string(),
+            ));
+        }
+        if !alias_decay_db.is_finite() {
+            return Err(AutodiffError::Message(
+                "SosFilter: alias_decay_db must be finite".to_string(),
+            ));
+        }
+        let mut param = NdArray::zeros(IxDyn(&[n_sections, 6, n_out, n_in]));
+        for section in 0..n_sections {
+            for out_ch in 0..n_out {
+                for in_ch in 0..n_in {
+                    param[[section, 3, out_ch, in_ch]] = T::one();
+                }
+            }
+        }
+        Ok(Self {
+            nfft,
+            n_sections,
+            n_out,
+            n_in,
+            alias_decay_db,
+            param,
+            param_grad: NdArray::zeros(IxDyn(&[n_sections, 6, n_out, n_in])),
+            work_h: NdArray::zeros(IxDyn(&[0, 0, 0])),
+            work_b_response: NdArray::zeros(IxDyn(&[0, 0, 0, 0])),
+            work_a_response: NdArray::zeros(IxDyn(&[0, 0, 0, 0])),
+            work_dl_dh: NdArray::zeros(IxDyn(&[0, 0, 0])),
+            work_grad_input: NdArray::zeros(IxDyn(&[])),
+        })
+    }
+
+    fn n_bins(&self) -> usize {
+        self.nfft / 2 + 1
+    }
+
+    fn gamma(&self) -> [T; 3] {
+        let gamma = fconst::<T>(10.0)
+            .powf(-self.alias_decay_db.abs() / (fconst::<T>(20.0) * fconst::<T>(self.nfft as f64)));
+        [T::one(), gamma, gamma * gamma]
+    }
+}
+
+impl<T: BasisCache> DiffModule<T> for SosFilter<T> {
+    fn forward(&self, input: &DiffTensor<T>) -> Result<DiffTensor<T>, AutodiffError> {
+        let input_shape = input.data.shape();
+        if input_shape.len() < 3 {
+            return Err(AutodiffError::Message(format!(
+                "SosFilter::forward: input must have at least 3 dimensions, got {:?}",
+                input_shape
+            )));
+        }
+        let n_bins = input_shape[1];
+        let n_in = input_shape[2];
+        if n_bins != self.n_bins() {
+            return Err(AutodiffError::Message(format!(
+                "SosFilter::forward: expected {} frequency bins, got {}",
+                self.n_bins(),
+                n_bins
+            )));
+        }
+        if n_in != self.n_in {
+            return Err(AutodiffError::Message(format!(
+                "SosFilter::forward: expected {} input channels, got {}",
+                self.n_in, n_in
+            )));
+        }
+
+        let (b, a) = split_param(&self.param)?;
+        validate_stable_denominators(&a)?;
+        let gamma = self.gamma();
+        let h = sos_frequency_response(&b, &a, self.nfft, Some(&gamma))?;
+
+        let mut output_shape = input_shape.to_vec();
+        output_shape[2] = self.n_out;
+        let mut output = NdArray::zeros(IxDyn(&output_shape));
+
+        if input_shape.len() == 3
+            && let Some(h_data) = h.as_slice()
+            && let Some(input_data) = input.data.as_slice()
+            && let Some(output_data) = output.as_slice_mut()
+        {
+            // Contiguous fast path: flat indexing, no per-bin view creation.
+            let batch = input_shape[0];
+            let n_out = self.n_out;
+            for out_ch in 0..n_out {
+                for in_ch in 0..n_in {
+                    for bin in 0..n_bins {
+                        let h_val = h_data[(bin * n_out + out_ch) * n_in + in_ch];
+                        for batch_index in 0..batch {
+                            let frame = batch_index * n_bins + bin;
+                            output_data[frame * n_out + out_ch] +=
+                                input_data[frame * n_in + in_ch] * h_val;
+                        }
+                    }
+                }
+            }
+            return Ok(DiffTensor::from_array(output));
+        }
+
+        for out_ch in 0..self.n_out {
+            for in_ch in 0..n_in {
+                for bin in 0..n_bins {
+                    let h_val = h[[bin, out_ch, in_ch]];
+                    let input_slice = input.data.index_axis(Axis(1), bin);
+                    let input_bin = input_slice.index_axis(Axis(1), in_ch);
+                    let mut output_slice = output.index_axis_mut(Axis(1), bin);
+                    let mut output_bin = output_slice.index_axis_mut(Axis(1), out_ch);
+                    for (destination, &source) in output_bin.iter_mut().zip(input_bin.iter()) {
+                        *destination += source * h_val;
+                    }
+                }
+            }
+        }
+
+        Ok(DiffTensor::from_array(output))
+    }
+
+    #[allow(clippy::too_many_lines)]
+    fn backward(
+        &mut self,
+        input: &DiffTensor<T>,
+        _output: &DiffTensor<T>,
+        grad_output: &DiffTensor<T>,
+    ) -> Result<DiffTensor<T>, AutodiffError> {
+        let input_shape = input.data.shape();
+        let grad_shape = grad_output.data.shape();
+        validate_spectral_gradient_shape(
+            "SosFilter::backward",
+            input_shape,
+            grad_shape,
+            self.n_out,
+        )?;
+        let n_bins = input_shape[1];
+        let n_in = input_shape[2];
+        let n_out = grad_shape[2];
+        if n_bins != self.n_bins() {
+            return Err(AutodiffError::Message(format!(
+                "SosFilter::backward: expected {} frequency bins, got {}",
+                self.n_bins(),
+                n_bins
+            )));
+        }
+        if n_out != self.n_out {
+            return Err(AutodiffError::Message(format!(
+                "SosFilter::backward: expected {} output channels, got {}",
+                self.n_out, n_out
+            )));
+        }
+        if n_in != self.n_in {
+            return Err(AutodiffError::Message(format!(
+                "SosFilter::backward: expected {} input channels, got {}",
+                self.n_in, n_in
+            )));
+        }
+
+        let (b, a) = split_param(&self.param)?;
+        validate_stable_denominators(&a)?;
+        let gamma = self.gamma();
+        let basis = SosFrequencyBasis::new(self.nfft, &gamma);
+
+        if self.work_dl_dh.dim3() != (n_bins, n_out, n_in) {
+            self.work_dl_dh = NdArray::zeros(IxDyn(&[n_bins, n_out, n_in]));
+        }
+        if self.work_h.dim3() != (n_bins, n_out, n_in) {
+            self.work_h = NdArray::zeros(IxDyn(&[n_bins, n_out, n_in]));
+        }
+        if self.work_b_response.dim4() != (self.n_sections, n_bins, n_out, n_in) {
+            self.work_b_response = NdArray::zeros(IxDyn(&[self.n_sections, n_bins, n_out, n_in]));
+        }
+        if self.work_a_response.dim4() != (self.n_sections, n_bins, n_out, n_in) {
+            self.work_a_response = NdArray::zeros(IxDyn(&[self.n_sections, n_bins, n_out, n_in]));
+        }
+        if self.work_grad_input.shape() != input_shape {
+            self.work_grad_input = NdArray::zeros(IxDyn(input_shape));
+        }
+        self.work_dl_dh.fill(Complex::new(T::zero(), T::zero()));
+        self.work_grad_input
+            .fill(Complex::new(T::zero(), T::zero()));
+
+        // dL/dH[bin, out, in] = sum_b grad_output[b, bin, out] * conj(input[b, bin, in])
+        if input_shape.len() == 3
+            && grad_shape.len() == 3
+            && let Some(grad_data) = grad_output.data.as_slice()
+            && let Some(input_data) = input.data.as_slice()
+            && let Some(dl_dh_data) = self.work_dl_dh.as_slice_mut()
+        {
+            // Contiguous fast path: flat indexing, no per-bin view creation.
+            let batch = input_shape[0];
+            for out_ch in 0..n_out {
+                for in_ch in 0..n_in {
+                    for bin in 0..n_bins {
+                        let mut accum = Complex::new(T::zero(), T::zero());
+                        for batch_index in 0..batch {
+                            let frame = batch_index * n_bins + bin;
+                            accum += grad_data[frame * n_out + out_ch]
+                                * input_data[frame * n_in + in_ch].conj();
+                        }
+                        dl_dh_data[(bin * n_out + out_ch) * n_in + in_ch] = accum;
+                    }
+                }
+            }
+        } else {
+            for bin in 0..n_bins {
+                for out_ch in 0..n_out {
+                    for in_ch in 0..n_in {
+                        let grad_slice = grad_output.data.index_axis(Axis(1), bin);
+                        let grad_bin = grad_slice.index_axis(Axis(1), out_ch);
+                        let input_slice = input.data.index_axis(Axis(1), bin);
+                        let input_bin = input_slice.index_axis(Axis(1), in_ch);
+                        self.work_dl_dh[[bin, out_ch, in_ch]] = grad_bin
+                            .iter()
+                            .zip(input_bin.iter())
+                            .map(|(g, x)| *g * x.conj())
+                            .sum::<Complex<T>>();
+                    }
+                }
+            }
+        }
+
+        let (response_db, response_da) = sos_coefficient_vjp_with_basis(
+            &b,
+            &a,
+            &basis,
+            &self.work_dl_dh,
+            &mut self.work_h,
+            &mut self.work_b_response,
+            &mut self.work_a_response,
+        )?;
+
+        {
+            // `param_grad` already carries this shape; borrow it directly.
+            let param_grad = &mut self.param_grad;
+
+            for section in 0..self.n_sections {
+                for out_ch in 0..n_out {
+                    for in_ch in 0..n_in {
+                        for tap in 0..3 {
+                            let accum_b = response_db[[section, tap, out_ch, in_ch]];
+                            let accum_a = response_da[[section, tap, out_ch, in_ch]];
+                            param_grad[[section, tap, out_ch, in_ch]] += accum_b;
+                            param_grad[[section, 3 + tap, out_ch, in_ch]] += accum_a;
+                        }
+                    }
+                }
+            }
+        }
+        if input_shape.len() == 3
+            && grad_shape.len() == 3
+            && let Some(h_data) = self.work_h.as_slice()
+            && let Some(grad_data) = grad_output.data.as_slice()
+            && let Some(grad_input_data) = self.work_grad_input.as_slice_mut()
+        {
+            // Contiguous fast path: flat indexing, no per-bin view creation.
+            let batch = input_shape[0];
+            for in_ch in 0..n_in {
+                for out_ch in 0..n_out {
+                    for bin in 0..n_bins {
+                        let h_conj = h_data[(bin * n_out + out_ch) * n_in + in_ch].conj();
+                        for batch_index in 0..batch {
+                            let frame = batch_index * n_bins + bin;
+                            grad_input_data[frame * n_in + in_ch] +=
+                                grad_data[frame * n_out + out_ch] * h_conj;
+                        }
+                    }
+                }
+            }
+        } else {
+            let h = &self.work_h;
+            for in_ch in 0..n_in {
+                for out_ch in 0..n_out {
+                    for bin in 0..n_bins {
+                        let h_conj = h[[bin, out_ch, in_ch]].conj();
+                        let grad_slice = grad_output.data.index_axis(Axis(1), bin);
+                        let grad_bin = grad_slice.index_axis(Axis(1), out_ch);
+                        let mut input_grad_slice =
+                            self.work_grad_input.index_axis_mut(Axis(1), bin);
+                        let mut input_grad_bin = input_grad_slice.index_axis_mut(Axis(1), in_ch);
+                        for (destination, &gradient) in
+                            input_grad_bin.iter_mut().zip(grad_bin.iter())
+                        {
+                            *destination += gradient * h_conj;
+                        }
+                    }
+                }
+            }
+        }
+
+        let grad_input = std::mem::replace(&mut self.work_grad_input, NdArray::zeros(IxDyn(&[])));
+        Ok(DiffTensor::from_array(grad_input))
+    }
+
+    fn input_channels(&self) -> usize {
+        self.n_in
+    }
+    fn output_channels(&self) -> usize {
+        self.n_out
+    }
+    fn n_bins(&self) -> usize {
+        self.n_bins()
+    }
+    fn parameters(&self) -> Vec<&NdArray<T>> {
+        vec![&self.param]
+    }
+    fn parameters_mut(&mut self) -> Vec<&mut NdArray<T>> {
+        vec![&mut self.param]
+    }
+    fn gradients(&self) -> Vec<&NdArray<T>> {
+        vec![&self.param_grad]
+    }
+    fn zero_grad(&mut self) {
+        self.param_grad.fill(T::zero());
+    }
+}

@@ -1,0 +1,44 @@
+[package]
+name = "sonium-compute-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+num-complex = "0.4"
+sonium-compute = { path = ".." }
+
+[[bin]]
+name = "fuzz_compute_blas"
+path = "fuzz_targets/fuzz_compute_blas.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "fuzz_segmented"
+path = "fuzz_targets/fuzz_segmented.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "checked_views"
+path = "fuzz_targets/checked_views.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compute_blas"
+path = "fuzz_targets/compute_blas.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

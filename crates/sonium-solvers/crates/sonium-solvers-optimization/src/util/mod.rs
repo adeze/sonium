@@ -1,0 +1,9 @@
+pub mod continuous_area;
+pub mod dense_linalg;
+pub mod finite_diff;
+pub mod function_registry;
+pub mod parallel_eval;
+pub mod recorder;
+pub mod run_recorded;
+pub mod surrogate;
+pub mod trust_region_subproblem;

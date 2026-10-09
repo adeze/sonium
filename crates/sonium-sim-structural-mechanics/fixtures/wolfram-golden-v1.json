@@ -1,0 +1,1 @@
+{"meta":{"engine":"Wolfram Engine 15.0.0","protocol":"audit-oracle-hermetic-v1"},"values":{"euler_pinned_load_n":{"value":"26318.94506957162","exact":"Pi^2*200*10^9*(0.02*0.02^3\/12)\/1^2"},"plate_center_deflection_m":{"value":"29.6067420201087","exact":"q0*(1\/(D*lambda^2) + 1\/(S*lambda)), Navier+Mindlin"}}}

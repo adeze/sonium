@@ -1,0 +1,42 @@
+##-------------------------------------------
+## Minimal Mesh2HRTF-style project for tests
+##-------------------------------------------
+Mesh2HRTF 1.0.0
+##
+Sample tetrahedron radiator
+##
+## Controlparameter I
+0 0 0 0 7 0
+##
+## Controlparameter II
+1 1 0.000001 0.00e+00 1 0 0
+##
+## Load Frequency Curve
+0 3
+0.000000 1.000000e+02 0.0
+0.000001 5.000000e+02 0.0
+0.000002 1.000000e+03 0.0
+##
+## 1. Main Parameters I
+2 4 4 1 0 2 0 0 0
+##
+## 2. Main Parameters II
+1 1 0 0.0000e+00 0 0 0
+##
+## 3. Main Parameters III
+0 0 0 0
+##
+## 4. Main Parameters IV
+343 1.21 1.0 0.0 0.0 0.0 0.0
+##
+NODES
+nodes.txt
+##
+ELEMENTS
+elements.txt
+##
+BOUNDARY
+ELEM 0 TO 0 VELO 1.0 -1 0.0 -1
+RETU
+##
+END

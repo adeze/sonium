@@ -1,0 +1,65 @@
+[package]
+name = "sonium-audio"
+version = "0.1.0"
+description = "Audio DSP: IIR/FIR filters, RIR analysis, analog coloration, differentiable DSP"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+
+[lib]
+name = "sonium_audio"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { workspace = true }
+hound = { workspace = true }
+log = { workspace = true }
+num-complex = { workspace = true }
+rand = { workspace = true }
+num-traits = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sonium-fft = { workspace = true }
+sonium-solvers-core = { workspace = true }
+sonium-solvers-direct = { workspace = true }
+sonium-solvers-eigen = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+criterion = { workspace = true }
+stats_alloc = "0.1.10"
+
+[[bench]]
+name = "biquad_bench"
+harness = false
+[[bench]]
+name = "response_bench"
+harness = false
+[[bench]]
+name = "fir_design_bench"
+harness = false
+[[bench]]
+name = "iso3382"
+harness = false
+[[bench]]
+name = "welch_spectrum"
+harness = false
+[[bench]]
+name = "audio_features"
+harness = false
+
+[[bin]]
+name = "filter_bench"
+path = "bin/filter_bench.rs"
+[[bin]]
+name = "wav2csv"
+path = "bin/wav2csv.rs"
+[[bin]]
+name = "simd-fuzzer"
+path = "bin/simd_fuzzer.rs"
+
+[lints]
+workspace = true

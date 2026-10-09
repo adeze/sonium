@@ -1,0 +1,50 @@
+name: physics regression gates
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/physics-regressions.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Justfile"
+      - "crates/sonium-bem/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-sim-room/**"
+      - "crates/sonium-solvers/**"
+      - "crates/sonium-wave/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitea/workflows/physics-regressions.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Justfile"
+      - "crates/sonium-bem/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-sim-room/**"
+      - "crates/sonium-solvers/**"
+      - "crates/sonium-wave/**"
+
+jobs:
+  cpu-physics-required:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Sonium core physics checks
+        run: >-
+          cargo test -p sonium-bem public_builder_matches_explicit_and_dense_across_ka_transition &&
+          cargo test -p sonium-fem basis::shape::tests::test_evaluate_shape_p2_tetrahedron_partition_of_unity &&
+          cargo test -p sonium-fem spaces::h1::tests
+      - name: Exercise room reference-comparison pipeline
+        run: >-
+          cargo run -p sonium-qa --release --features qa-binaries,legacy-sims
+          --bin compare-freefem-room --
+          --emit-only
+          --mesh-source sonium
+          --min-freq 80
+          --max-freq 80
+          --num-freqs 1
+          --output-dir "${RUNNER_TEMP}/sonium-freefem-compare"

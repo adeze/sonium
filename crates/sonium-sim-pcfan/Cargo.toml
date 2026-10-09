@@ -1,0 +1,44 @@
+[package]
+name = "sonium-sim-pcfan"
+version = "0.3.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "PC fan aeroacoustic optimization workflow"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["pc-fan", "aeroacoustics", "simulation", "optimization"]
+categories = ["science", "mathematics", "simulation"]
+
+[lib]
+name = "sonium_sim_pcfan"
+path = "src/lib.rs"
+
+[dependencies]
+sonium-fem = { workspace = true }
+sonium-solvers = { workspace = true }
+sonium-solvers-optimization = { workspace = true }
+sonium-solvers-time-integration = { workspace = true }
+sonium-xem = { workspace = true }
+sonium-compute = { workspace = true }
+meshlang-compiler = { workspace = true }
+num-complex = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+clap = { workspace = true }
+rayon = { workspace = true }
+serde = { workspace = true }
+
+[[bin]]
+name = "pcfan-opt"
+path = "src/bin/pcfan_opt.rs"
+
+# Forward GPU backend features to sonium-compute and sonium-fem so the
+# CUDA/Metal arms inside the Picard linear-solve dispatch are compiled in.
+[features]
+default = []
+cuda = ["sonium-compute/cuda", "sonium-fem/cuda"]
+metal = ["sonium-compute/metal", "sonium-fem/metal"]
+
+[dev-dependencies]
+tempfile = { workspace = true }

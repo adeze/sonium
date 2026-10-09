@@ -1,0 +1,39 @@
+//! Kautz filter implementation for room mode correction.
+//!
+//! This module uses a Kautz-inspired fixed-pole modal structure where each
+//! section has an independently chosen complex-conjugate pole pair. By placing
+//! poles at detected room mode frequencies, the filter concentrates its
+//! frequency resolution exactly where it is needed.
+//! A 5-section Kautz filter can model 5 room modes more accurately than 5 standard
+//! biquad PEQs, using fewer parameters.
+//!
+//! # Structure
+//!
+//! Each [`KautzSection`] implements a second-order allpass with complex pole at
+//! `r * exp(jθ)`. The overall [`KautzFilter`] is a parallel bank of sections whose
+//! weighted basis function outputs are summed.
+//!
+//! Each implemented second-order section exposes one real resonant basis output.
+//! It is not the complete two-output orthonormal real Kautz pair; the API is
+//! intended for regularized modal correction rather than orthonormal expansion.
+//!
+//! # Gain optimization
+//!
+//! Given a measured room response and a flat target, [`KautzFilter::optimize_gains`]
+//! solves the linear least-squares problem `Φ g = t` where `Φ[i][j]` is section j's
+//! dB response at frequency i and `t` is the correction needed. The regularized
+//! system is solved with modified Gram-Schmidt QR on `[Φ; sqrt(λ) I]`, avoiding
+//! the condition-number squaring of normal equations for closely spaced poles.
+
+mod correction;
+mod correction_fit;
+mod kautz_filter;
+mod kautz_section;
+mod misc;
+#[cfg(test)]
+mod tests;
+
+pub use correction::*;
+pub use correction_fit::*;
+pub use kautz_filter::*;
+pub use kautz_section::*;

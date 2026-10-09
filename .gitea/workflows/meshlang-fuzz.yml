@@ -1,0 +1,59 @@
+name: MeshLang bounded fuzz smoke
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/meshlang-fuzz.yml"
+      - "crates/sonium-meshlang/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".gitea/workflows/meshlang-fuzz.yml"
+      - "crates/sonium-meshlang/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+jobs:
+  fuzz-smoke:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parser/compiler regression suites
+        run: |
+          cargo test --offline -p meshlang-parser
+          cargo test --offline -p meshlang-compiler
+      - name: Compile fuzz targets
+        run: |
+          cargo check --offline --manifest-path crates/sonium-meshlang/crates/meshlang-parser/fuzz/Cargo.toml
+          cargo check --offline --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/fuzz/Cargo.toml
+
+      - name: Record parser and compiler throughput baselines
+        run: |
+          mkdir -p "$RUNNER_TEMP/meshlang-bench"
+          cargo bench --offline --manifest-path crates/sonium-meshlang/crates/meshlang-parser/Cargo.toml --bench parser_bench -- --noplot \
+            | tee "$RUNNER_TEMP/meshlang-bench/parser_bench.txt"
+          cargo bench --offline --manifest-path crates/sonium-meshlang/crates/meshlang-compiler/Cargo.toml --bench compiler_bench -- --noplot \
+            | tee "$RUNNER_TEMP/meshlang-bench/compiler_bench.txt"
+          test -s "$RUNNER_TEMP/meshlang-bench/parser_bench.txt"
+          test -s "$RUNNER_TEMP/meshlang-bench/compiler_bench.txt"
+
+      - name: Upload parser/compiler benchmark baselines
+        uses: actions/upload-artifact@v4
+        with:
+          name: meshlang-bench-baselines
+          path: ${{ runner.temp }}/meshlang-bench
+      - name: Bounded fuzz campaigns
+        run: |
+          cargo install cargo-fuzz --locked
+          python3 - <<'PY'
+          import subprocess
+
+          commands = [
+              ["cargo", "fuzz", "run", "--manifest-path", "crates/sonium-meshlang/crates/meshlang-parser/fuzz/Cargo.toml", "parse_recovering", "--", "-runs=100", "-max_len=4096", "-rss_limit_mb=256"],
+              ["cargo", "fuzz", "run", "--manifest-path", "crates/sonium-meshlang/crates/meshlang-compiler/fuzz/Cargo.toml", "compiler_pipeline", "--", "-runs=100", "-max_len=4096", "-rss_limit_mb=256"],
+          ]
+          for command in commands:
+              subprocess.run(command, check=True, timeout=60)
+          PY

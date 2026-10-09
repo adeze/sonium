@@ -1,0 +1,29 @@
+[package]
+name = "meshlang-parser"
+version = "0.1.5"
+edition = { workspace = true }
+license = { workspace = true }
+description = "Recursive-descent parser for MeshLang"
+
+[features]
+default = ["wasm-exports"]
+wasm-exports = []
+
+[dependencies]
+meshlang-ast = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+wasm-bindgen-test = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "parser_bench"
+harness = false

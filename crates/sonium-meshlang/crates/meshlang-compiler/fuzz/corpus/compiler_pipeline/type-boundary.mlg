@@ -1,0 +1,5 @@
+geometry Main {
+    let surface = Rectangle(1.0, 1.0)
+    let volume = Box(1.0, 1.0, 1.0)
+    let invalid = surface - volume
+}

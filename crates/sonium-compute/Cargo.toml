@@ -1,0 +1,159 @@
+[package]
+name = "sonium-compute"
+autobenches = false
+version = "0.1.6"
+description = "Compute backend abstraction (CPU / NVIDIA CUDA / future Metal,Vulkan) with strict device-memory quotas"
+edition = { workspace = true }
+authors = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["gpu", "cuda", "linear-algebra", "backend"]
+categories = ["science", "mathematics"]
+
+[lib]
+name = "sonium_compute"
+path = "src/lib.rs"
+
+[dependencies]
+num-complex = { workspace = true }
+num-traits = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+rayon = { workspace = true }
+libc = { workspace = true }
+half = { workspace = true }
+sonium-fastmath = { workspace = true }
+# NVIDIA CUDA backend via the mature cudarc bindings.
+cudarc = { workspace = true, optional = true }
+libloading = { workspace = true, optional = true }
+
+# Direct Metal API (Apple Silicon GPU). Only pulled when the `metal`
+# feature is enabled. We drive Metal via the objc2 family rather than the
+# older `metal-rs` crate so we get proper Retained<T> ARC ownership and a
+# clear migration path to MPSMatrixMultiplication / MPSMatrixFFT (which
+# metal-rs 0.33 only exposes for ray tracing).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", optional = true, features = ["NSString", "NSError"] }
+objc2-metal = { version = "0.3", optional = true, features = [
+    "MTLDevice",
+    "MTLBuffer",
+    "MTLCommandQueue",
+    "MTLCommandBuffer",
+    "MTLCommandEncoder",
+    "MTLComputeCommandEncoder",
+    "MTLBlitCommandEncoder",
+    "MTLComputePipeline",
+    "MTLLibrary",
+    "MTLResource",
+    "MTLTypes",
+    "MTLPipeline",
+] }
+# MPSMatrixMultiplication unlocks the Apple-Silicon tensor-core matmul.
+# Single-precision GEMM (NoTrans / Trans / ConjTrans) routes through it;
+# the SME2-CPU `cpu_blas3` path is the f64 / Complex32 / Complex64 fallback.
+objc2-metal-performance-shaders = { version = "0.3", optional = true, features = [
+    "MPSCore",
+    "MPSCoreTypes",
+    "MPSMatrix",
+    "MPSMatrixTypes",
+    "MPSMatrixMultiplication",
+] }
+
+[build-dependencies]
+cc = "1"
+
+[features]
+default = ["cpu"]
+# CPU host backend. Always-on in practice: every GPU backend reuses the
+# in-house CPU BLAS-2/3 kernels (in `src/cpu/blas2/`, `src/cpu/blas3/`)
+# as the host-staged correctness baseline for f64/Complex64 ops the GPU
+# can't run natively.
+cpu = []
+# Portable WebAssembly CPU backend. This deliberately reuses the scalar-safe
+# CPU implementation and does not enable SIMD or platform GPU dependencies.
+wasm = ["cpu"]
+# NVIDIA CUDA backend via the mature cudarc bindings (cuBLAS + cuSPARSE).
+# Dynamic-loaded so the crate compiles on any host; libcuda.so / cublas /
+# cusparse are resolved at runtime. Supports f32, f64, Complex32, Complex64.
+cuda = ["cpu", "dep:cudarc", "dep:libloading"]
+
+# Apple Metal backend via the objc2-metal bindings. Native f32 MSL kernels
+# for SpMV-CSR and BLAS-1/2 (axpy/dot/nrm2/scale, gemv NoTrans); f64 ops are
+# host-staged (Apple Silicon Metal compiler rejects `double`). macOS only at
+# runtime.
+metal = [
+    "cpu",
+    "dep:objc2",
+    "dep:objc2-foundation",
+    "dep:objc2-metal",
+    "dep:objc2-metal-performance-shaders",
+]
+# Opt-in: when building benchmarks, link to system `libopenblas.so`. Only
+# meaningful on Linux; macOS uses the always-on Accelerate framework.
+# Compiles cleanly even when the library is missing — the link directive
+# only fires when an `openblas` symbol is actually referenced, which is
+# behind this same cfg.
+bench-openblas = []
+
+[dev-dependencies]
+approx = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+# Kept as a dev-dep so the BLAS-{1,2,3} benchmarks can compare our
+# in-house kernels against oxiblas-blas. Not in [dependencies] —
+# runtime sonium has no oxiblas-blas linkage.
+oxiblas-blas = { workspace = true }
+# Needed to construct `MatRef` views for oxiblas BLAS-2/3 calls in the
+# benchmark harness. Dev-only.
+oxiblas-matrix = "0.2"
+criterion = { workspace = true }
+# Benchmark-only CUDA comparator. Production sonium-compute exposes only the
+# cudarc-backed `cuda` feature; oxicuda is retained for bench harnesses that
+# want to compare against the older pure-Rust CUDA stack.
+oxicuda = { workspace = true }
+
+[[bench]]
+name = "blas1_compare"
+harness = false
+
+[[bench]]
+name = "blas2_compare"
+harness = false
+
+[[bench]]
+name = "blas3_compare"
+harness = false
+
+[[bench]]
+name = "roofline_preflight"
+harness = false
+
+[[bench]]
+name = "bem_regular_pair_compare"
+harness = false
+
+[[bench]]
+name = "block_gmres_accelerator"
+harness = false
+
+# CUDA-only scratch probes: `cargo test` skips them unless `--features cuda`
+# is on (without the gate, their crate-level `#![cfg(feature = "cuda")]`
+# removes `fn main` and breaks a default build with E0601).
+[[example]]
+name = "cublas2_tmp"
+required-features = ["cuda"]
+
+[[example]]
+name = "cudabench_tmp"
+required-features = ["cuda"]
+
+[[example]]
+name = "cuspbench_tmp"
+required-features = ["cuda"]
+
+[[example]]
+name = "spmvdiag_tmp"
+required-features = ["cuda"]

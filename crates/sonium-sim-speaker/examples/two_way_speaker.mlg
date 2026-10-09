@@ -1,0 +1,39 @@
+/// Two-way sealed loudspeaker for BEM simulation.
+///
+/// Conical driver shells with parametric y-positions.
+/// Mesh sized for the full 5 kHz simulation bandwidth.
+
+const c_air = 343.0
+const rho_air = 1.21
+
+// Cabinet outer dimensions (m)
+const cab_h = 0.40
+const cab_w = 0.22
+const cab_d = 0.28
+
+// Woofer: 130 mm cone with 30 mm dustcap, 8 mm depth
+const woofer_r = 0.065
+const woofer_cone_depth = 0.008
+const woofer_dustcap_r = 0.015
+
+// Tweeter: 26 mm dome with 10 mm dustcap, 3 mm depth
+const tweeter_r = 0.013
+const tweeter_cone_depth = 0.003
+const tweeter_dustcap_r = 0.005
+
+// Piston velocity (m/s)
+const piston_v = 0.001
+
+// Driver positions (the only unknowns for optimisation)
+param woofer_y = -0.08
+param tweeter_y = 0.10
+
+// Internal separator
+const sep_y = 0.02
+const sep_t = 0.018
+
+// Simulation parameters
+const freq_start = 200.0
+const freq_end = 5000.0
+const freq_points = 50
+const max_mesh_freq = 5000.0

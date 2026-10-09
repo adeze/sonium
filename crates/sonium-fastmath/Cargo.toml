@@ -1,0 +1,39 @@
+[package]
+name = "sonium-fastmath"
+version = "0.1.0"
+edition = { workspace = true }
+authors = { workspace = true }
+description = "Vectorised math primitives (sincos f32/f64) with NEON, AVX2, AVX-512, WASM SIMD, and scalar fallback"
+license = { workspace = true }
+repository = { workspace = true }
+keywords = ["simd", "neon", "math", "sin", "minimax"]
+categories = ["mathematics"]
+
+[lib]
+name = "sonium_fastmath"
+path = "src/lib.rs"
+
+[dependencies]
+num-bigint = "0.4"
+num-complex = { workspace = true }
+num-traits = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+criterion = { workspace = true }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dev-dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
+
+[[bench]]
+name = "sincos_bench"
+harness = false
+
+[[bin]]
+name = "fastmath_benchmark"
+path = "src/bin/fastmath_benchmark.rs"
