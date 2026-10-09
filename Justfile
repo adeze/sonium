@@ -104,24 +104,6 @@ simulation-galleries dir:
     {{cargo}} run -p sonium-sim-room --bin generate-roomeq-data -- --solver fast-hybrid --scenario small_stereo_2_0 --min-freq 50 --max-freq 100 --num-points 2 --gallery {{dir}}/sim-room --output-dir {{dir}}/sim-room-data
     {{cargo}} run -p sonium-sim-pcfan --bin pcfan-opt -- --solve-only --gallery {{dir}}/pcfan --cfd-cells-x 2 --cfd-cells-y 2 --cfd-cells-z 2 --cfd-picard-iterations 2 --cfd-linear-iterations 40
 
-# Website-quality galleries: dense slice grids (roomsim 400, sim-room 128),
-# sim-room sweep encoded as a movie, Blender 3D flow/pressure renders.
-# Needs release builds, ffmpeg, blender, pyvista. ~10 min on the x86 box.
-[group('gallery')]
-website-galleries out='website/public/gallery' work='/tmp/website-galleries':
-    rm -rf {{work}}
-    SONIUM_CARGO="{{cargo}}" python3 scripts/website_gallery.py --work-dir {{work}} --out-dir {{out}}
-
-# Regenerate every generated website asset, including all six GPUI demos.
-[group('website')]
-website-rebuild *args:
-    SONIUM_CARGO="{{cargo}}" python3 scripts/regenerate_website.py {{args}}
-
-# Serve the complete site with isolated WASM and local durable solver APIs.
-[group('website')]
-website-serve *args:
-    python3 website/serve.py {{args}}
-
 # --- Per-platform performance records (perf/*.md) ---
 #
 # Each platform owner runs its recipe and commits the results:

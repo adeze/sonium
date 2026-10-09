@@ -79,7 +79,7 @@ default-members = [
 edition = "2024"
 authors = ["Pierre <pierre@sonium.io>"]
 license = "BUSL-1.1"
-repository = "https://github.com/sonium-labs/sonium"
+repository = "https://github.com/pierreaubert/sonium"
 
 [workspace.dependencies]
 # --- Internal crates ---

@@ -368,6 +368,6 @@ BUSL-1.1 (workspace license; see the repository root).
   title = {sonium-bem: Rust Boundary Element Method Library},
   author = {Sonium Contributors},
   year = {2026},
-  url = {https://github.com/sonium-labs/sonium/tree/main/crates/sonium-bem}
+  url = {https://github.com/pierreaubert/sonium/tree/main/crates/sonium-bem}
 }
 ```
