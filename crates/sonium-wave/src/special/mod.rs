@@ -14,8 +14,10 @@
 
 pub mod helmholtz;
 mod legendre;
+pub mod ring;
 pub mod spherical;
 
 pub use helmholtz::*;
 pub use legendre::*;
+pub use ring::*;
 pub use spherical::*;

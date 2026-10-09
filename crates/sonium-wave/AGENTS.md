@@ -1,4 +1,4 @@
-# sonium-wave (lib: `sonium_wave`, version: 0.4.0)
+# sonium-wave (lib: `sonium_wave`, version: 0.5.0)
 
 Analytical solutions for wave and Helmholtz equations.
 

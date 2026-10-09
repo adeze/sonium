@@ -112,30 +112,61 @@ pub fn stationary_fwh_pressure(
         // Revalidate public fields because callers can construct the public POD
         // directly rather than through FwhSurfacePatch::new.
         validate_patch(patch)?;
-        let displacement = std::array::from_fn(|i| observer[i] - patch.position[i]);
-        let distance = norm(displacement);
-        if distance <= f64::EPSILON {
-            return Err(AeroacousticsError::SingularObserver);
-        }
-        let direction = displacement.map(|x| x / distance);
-        let green = Complex64::from_polar(1.0 / (4.0 * PI * distance), -wavenumber * distance);
-
-        // Source-normal derivative of G(x,y), with R = x-y:
-        // dG/dn_y = G (ik + 1/R) (R_hat . n_y).
-        let normal_projection = dot(direction, patch.outward_normal);
-        let green_normal_derivative =
-            green * Complex64::new(1.0 / distance, wavenumber) * normal_projection;
-
-        // For exp(i omega t), dp/dn = -i omega rho u_n. The exterior
-        // representation is p*dG/dn - G*dp/dn.
-        thickness += Complex64::new(0.0, angular_frequency * density)
-            * patch.normal_velocity
-            * green
-            * patch.area;
-        loading += patch.pressure * green_normal_derivative * patch.area;
+        let sample = fwh_patch_bare(
+            patch.position,
+            patch.outward_normal,
+            patch.area,
+            patch.pressure,
+            patch.normal_velocity,
+            observer,
+            wavenumber,
+            angular_frequency * density,
+        )
+        .ok_or(AeroacousticsError::SingularObserver)?;
+        thickness += sample.thickness;
+        loading += sample.loading;
     }
 
     Ok(FwhComponents {
+        thickness,
+        loading,
+        total: thickness + loading,
+    })
+}
+
+/// Bare single-patch FW-H evaluator shared with revolved surfaces.
+///
+/// Returns `None` for a coincident observer instead of validating inputs.
+/// `omega_times_density` carries the `iωρ` thickness prefactor.
+pub(crate) fn fwh_patch_bare(
+    position: [f64; 3],
+    outward_normal: [f64; 3],
+    area: f64,
+    pressure: Complex64,
+    normal_velocity: Complex64,
+    observer: [f64; 3],
+    wavenumber: f64,
+    omega_times_density: f64,
+) -> Option<FwhComponents> {
+    let displacement = std::array::from_fn(|i| observer[i] - position[i]);
+    let distance = norm(displacement);
+    if distance <= f64::EPSILON {
+        return None;
+    }
+    let direction = displacement.map(|x| x / distance);
+    let green = Complex64::from_polar(1.0 / (4.0 * PI * distance), -wavenumber * distance);
+
+    // Source-normal derivative of G(x,y), with R = x-y:
+    // dG/dn_y = G (ik + 1/R) (R_hat . n_y).
+    let normal_projection = dot(direction, outward_normal);
+    let green_normal_derivative =
+        green * Complex64::new(1.0 / distance, wavenumber) * normal_projection;
+
+    // For exp(i omega t), dp/dn = -i omega rho u_n. The exterior
+    // representation is p*dG/dn - G*dp/dn.
+    let thickness = Complex64::new(0.0, omega_times_density) * normal_velocity * green * area;
+    let loading = pressure * green_normal_derivative * area;
+    Some(FwhComponents {
         thickness,
         loading,
         total: thickness + loading,

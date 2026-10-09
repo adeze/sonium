@@ -1,4 +1,4 @@
-# sonium-qa (lib: `sonium_qa`, version: 0.1.2)
+# sonium-qa (lib: `sonium_qa`, version: 0.1.5)
 
 QA harness for sonium: 214+ standalone validation binaries plus shared library helpers.
 

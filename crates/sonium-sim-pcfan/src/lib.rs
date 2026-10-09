@@ -8,6 +8,7 @@
 //! Alternative geometry can be described via MeshLang DSL - see `meshlang_geometry`.
 
 mod accelerator_parity;
+mod annular_fwh;
 mod cfd;
 mod cfd_independence;
 mod correlation;
@@ -32,6 +33,10 @@ mod transient_adjoint;
 mod transported_turbulence;
 
 pub use accelerator_parity::*;
+pub use annular_fwh::{
+    AnnularFwhError, AnnularTone, AnnularToneSpec, annular_loading_tones,
+    blade_passing_frequency_hz, modal_loading_amplitude_pa,
+};
 pub use cfd::{
     PC_FAN_TRANSPORTED_BDF_NEWTON_PROVENANCE, PcFanCfdBodyFittedRemeshLevel,
     PcFanCfdTransientBdfState, PcFanCfdTransientConvergence, PcFanCfdTransientConvergenceConfig,

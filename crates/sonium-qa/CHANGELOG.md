@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added — aeroacoustics 2-D/axisymmetric QA
+
+- `qa-fem-aeroacoustics-analogies-drp` grows four planar/axisymmetric
+  checks: 2-D Lighthill cylindrical spreading, spinning-ring (m = 3)
+  and revolved-strip (m = 2) on-axis nulls, and closed-contour
+  cylindrical spreading of a compact pulsating contour.
+
 ### Added — `bem-step1.md` Phase 1.1 + 1.2 CI gates
 
 - New `qa-bem-mie-ci` binary: strict regression detector for BEM with

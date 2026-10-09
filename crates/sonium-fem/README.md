@@ -6,7 +6,7 @@ Multi-physics Finite Element Method solver with a layered, physics-agnostic arch
 
 ```toml
 [dependencies]
-sonium-fem = { version = "0.5" }
+sonium-fem = { version = "0.6" }
 ```
 
 ## Architecture

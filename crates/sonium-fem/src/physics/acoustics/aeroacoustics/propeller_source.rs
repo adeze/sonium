@@ -162,6 +162,104 @@ impl PropellerSource {
         let annulus_area = PI * (self.tip_radius.powi(2) - self.hub_radius.powi(2)).max(0.0);
         self.inlet_pressure_amplitude_for_area(harmonic, annulus_area)
     }
+
+    /// Azimuthal order of the n-th rotor-alone harmonic (`m = nB`).
+    ///
+    /// Isolated-rotor harmonics spin with the blade count times the
+    /// harmonic index; rotor-stator stages instead radiate the
+    /// Tyler-Sofrin orders from [`interaction_mode_order`].
+    pub fn rotor_alone_order(&self, harmonic: usize) -> i32 {
+        (harmonic.saturating_mul(self.n_blades)) as i32
+    }
+
+    /// Polar directivity of one harmonic, normalized to the disc plane.
+    ///
+    /// Returns `J_{|m|}(nB·M_t·sinθ) / J_{|m|}(nB·M_t)` with `θ` measured
+    /// from the rotation axis: unity in the disc plane (`θ = π/2`),
+    /// matching [`PropellerSource::harmonic_amplitudes`], with the
+    /// on-axis null of spinning modes.
+    pub fn harmonic_directivity(&self, harmonic: usize, polar_angle_rad: f64) -> f64 {
+        let helix = harmonic as f64 * self.n_blades as f64 * self.tip_mach();
+        spinning_mode_directivity(self.rotor_alone_order(harmonic), helix, polar_angle_rad)
+    }
+
+    /// Peak pressure phasor [Pa] of one harmonic at distance and polar angle.
+    ///
+    /// Scales the disc-plane [`PropellerSource::harmonic_amplitudes_at_distance`]
+    /// level by [`PropellerSource::harmonic_directivity`]. Returns zero for
+    /// the zeroth harmonic.
+    pub fn harmonic_amplitude_at_direction(
+        &self,
+        harmonic: usize,
+        distance_m: f64,
+        polar_angle_rad: f64,
+    ) -> f64 {
+        if harmonic == 0 {
+            return 0.0;
+        }
+        self.harmonic_amplitudes_at_distance(harmonic, distance_m)[harmonic - 1]
+            * self.harmonic_directivity(harmonic, polar_angle_rad)
+    }
+}
+
+/// Tyler-Sofrin interaction order for one stator-lobe count.
+///
+/// Returns `m = nB − kV` for `B` rotor blades, `V` stator vanes, `n`-th
+/// blade-passing harmonic, and `k` stator lobes.
+pub fn interaction_mode_order(
+    blades: usize,
+    vanes: usize,
+    harmonic: usize,
+    stator_lobes: usize,
+) -> i32 {
+    (harmonic.saturating_mul(blades)) as i32 - (stator_lobes.saturating_mul(vanes)) as i32
+}
+
+/// Polar directivity of one rotor-stator interaction mode.
+///
+/// Returns `(m, directivity)` with the Tyler-Sofrin order and the
+/// spinning-mode directivity at the rotor helix argument `nB·M_t`.
+/// Spinning modes (`m ≠ 0`) vanish on the axis; the cut-on/cut-off
+/// screening of these orders lives in [`crate::physics::acoustics::aeroacoustics::duct_modes`].
+pub fn interaction_mode_directivity(
+    blades: usize,
+    vanes: usize,
+    harmonic: usize,
+    stator_lobes: usize,
+    tip_mach: f64,
+    polar_angle_rad: f64,
+) -> (i32, f64) {
+    let order = interaction_mode_order(blades, vanes, harmonic, stator_lobes);
+    let helix = harmonic as f64 * blades as f64 * tip_mach.abs();
+    (
+        order,
+        spinning_mode_directivity(order, helix, polar_angle_rad),
+    )
+}
+
+/// Normalized polar directivity of a spinning tonal mode.
+///
+/// Returns `J_{|m|}(z·sinθ) / J_{|m|}(z)` for azimuthal order `m`, helix
+/// argument `z`, and polar angle `θ` from the axis: unity in the disc
+/// plane, an on-axis null for spinning modes, and omnidirectional unit
+/// response in the compact (`z → 0`, `m = 0`) limit. Near an in-plane
+/// null the small-argument shape `sinθ^|m|` keeps the ratio bounded.
+pub fn spinning_mode_directivity(
+    azimuthal_order: i32,
+    helix_argument: f64,
+    polar_angle_rad: f64,
+) -> f64 {
+    use spec_math::Bessel as _;
+    if !helix_argument.is_finite() || !polar_angle_rad.is_finite() {
+        return 0.0;
+    }
+    let order = azimuthal_order.unsigned_abs();
+    let sine = polar_angle_rad.sin().abs();
+    let reference = helix_argument.bessel_jv(f64::from(order));
+    if reference.abs() <= 1e-15 {
+        return sine.powi(order as i32);
+    }
+    (helix_argument * sine).bessel_jv(f64::from(order)) / reference
 }
 
 /// Bessel `J_n(x)` evaluated via the small-argument power series:
@@ -351,6 +449,43 @@ mod tests {
         assert!(source.blade_passing_frequency() > 0.0);
         assert!(source.harmonic_frequency(2) > 0.0);
         assert!(source.tip_mach() > 0.0);
+    }
+
+    #[test]
+    fn test_spinning_directivity_is_unity_in_plane_with_on_axis_null() {
+        // Rotor-alone m = nB = 2 at drone tip Mach.
+        let prop = PropellerSource::drone_5inch(10_000.0);
+        let in_plane = prop.harmonic_directivity(1, PI / 2.0);
+        assert!((in_plane - 1.0).abs() < 1e-15, "in-plane {in_plane}");
+        let on_axis = prop.harmonic_directivity(1, 0.0);
+        assert!(on_axis.abs() < 1e-12, "on-axis {on_axis}");
+        // Compact axisymmetric mode is omnidirectional.
+        assert!((spinning_mode_directivity(0, 0.0, 0.3) - 1.0).abs() < 1e-15);
+        assert!((spinning_mode_directivity(0, 0.0, 2.1) - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_directional_amplitude_matches_disc_plane_level() {
+        let prop = PropellerSource::drone_5inch(18_000.0);
+        let disc = prop.harmonic_amplitudes_at_distance(2, 3.0)[1];
+        let directed = prop.harmonic_amplitude_at_direction(2, 3.0, PI / 2.0);
+        assert!((directed / disc - 1.0).abs() < 1e-15);
+        assert_eq!(prop.harmonic_amplitude_at_direction(0, 3.0, PI / 2.0), 0.0);
+        // Amplitude falls toward the axis for spinning harmonics.
+        let near_axis = prop.harmonic_amplitude_at_direction(2, 3.0, 0.2);
+        assert!(near_axis < directed);
+    }
+
+    #[test]
+    fn test_interaction_orders_follow_tyler_sofrin() {
+        assert_eq!(interaction_mode_order(9, 10, 1, 0), 9);
+        assert_eq!(interaction_mode_order(9, 10, 1, 1), -1);
+        assert_eq!(interaction_mode_order(9, 10, 1, 2), -11);
+        let (order, directivity) = interaction_mode_directivity(9, 10, 1, 1, 0.1, PI / 2.0);
+        assert_eq!(order, -1);
+        assert!((directivity - 1.0).abs() < 1e-15);
+        let (_, on_axis) = interaction_mode_directivity(9, 10, 1, 1, 0.1, 0.0);
+        assert!(on_axis.abs() < 1e-12);
     }
 
     #[test]

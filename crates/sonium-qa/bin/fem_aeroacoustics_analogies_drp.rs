@@ -6,9 +6,12 @@
 
 use num_complex::Complex64;
 use sonium_fem::physics::acoustics::aeroacoustics::{
-    AcousticBranch, DrpEuler1d, DrpEuler1dConfig, DrpWaveState, FwhSurfacePatch,
-    LighthillQuadrupole, TAM_WEBB_DRP_7, lighthill_far_field_pressure, lighthill_pressure,
-    stationary_fwh_pressure,
+    AcousticBranch, AzimuthalMode, DrpEuler1d, DrpEuler1dConfig, DrpWaveState, FwhContourSegment,
+    FwhSurfacePatch, LighthillQuadrupole, LighthillQuadrupole2d, RevolvedQuadrature,
+    TAM_WEBB_DRP_7, lighthill_far_field_pressure, lighthill_far_field_pressure_2d,
+    lighthill_pressure, lighthill_ring_pressure, revolved_patch_from_modal_data,
+    ring_source_from_modal_stress, stationary_fwh_pressure, stationary_fwh_pressure_2d,
+    stationary_fwh_ring_pressure,
 };
 use std::f64::consts::PI;
 
@@ -264,6 +267,119 @@ fn all_method_comparison() -> (QaCheck, [f64; 3]) {
     )
 }
 
+fn planar_axi_checks() -> Vec<QaCheck> {
+    let (omega, c) = (2.0, 1.0);
+
+    // 2-D quadrupole: cylindrical far-field spreading (4x distance halves).
+    let mut planar = [[Complex64::new(0.0, 0.0); 2]; 2];
+    planar[0][0] = Complex64::new(1.0, 0.25);
+    let quad_2d = LighthillQuadrupole2d::new([0.0, 0.0], planar).unwrap();
+    let near_2d = lighthill_far_field_pressure_2d(&quad_2d, [10.0, 0.0], omega, c).unwrap();
+    let far_2d = lighthill_far_field_pressure_2d(&quad_2d, [40.0, 0.0], omega, c).unwrap();
+    let cylindrical_error = (near_2d.norm() / far_2d.norm() / 2.0 - 1.0).abs();
+
+    // Spinning ring (m = 3): exact null on the axis.
+    let mut stress = [[Complex64::new(0.0, 0.0); 3]; 3];
+    stress[2][2] = Complex64::new(1.0, 0.0);
+    let ring = ring_source_from_modal_stress(0.5, 0.0, AzimuthalMode::new(3), stress, 1.0).unwrap();
+    let ring_axis = lighthill_ring_pressure(&ring, [0.0, 0.0, 5.0], omega, c, 1e-10).unwrap();
+    let ring_side = lighthill_ring_pressure(&ring, [5.0, 0.0, 0.0], omega, c, 1e-10).unwrap();
+    let ring_null = ring_axis.norm() / ring_side.norm().max(1e-30);
+
+    // Compact closed 2-D contour (ka ~ 0.3), uniform normal-velocity
+    // pulsation: cylindrical spreading of the thickness field.
+    let mut contour = Vec::new();
+    let half_side = 0.1;
+    let sides: [([f64; 2], [f64; 2]); 4] = [
+        ([0.0, -half_side], [0.0, -1.0]),
+        ([0.0, half_side], [0.0, 1.0]),
+        ([-half_side, 0.0], [-1.0, 0.0]),
+        ([half_side, 0.0], [1.0, 0.0]),
+    ];
+    for (tangent_point, normal) in sides {
+        for index in 0..4 {
+            let offset = -half_side + 2.0 * half_side * (index as f64 + 0.5) / 4.0;
+            let position = if tangent_point[1].abs() > 0.5 * half_side {
+                [offset, tangent_point[1]]
+            } else {
+                [tangent_point[0], offset]
+            };
+            contour.push(
+                FwhContourSegment::new(
+                    position,
+                    normal,
+                    half_side / 2.0,
+                    Complex64::new(0.0, 0.0),
+                    Complex64::new(1.0, 0.0),
+                )
+                .unwrap(),
+            );
+        }
+    }
+    let contour_near = stationary_fwh_pressure_2d(&contour, [20.0, 0.0], omega, 1.2, c)
+        .unwrap()
+        .total;
+    let contour_far = stationary_fwh_pressure_2d(&contour, [80.0, 0.0], omega, 1.2, c)
+        .unwrap()
+        .total;
+    let contour_spreading = (contour_near.norm() / contour_far.norm() / 2.0 - 1.0).abs();
+
+    // Revolved strip (m = 2): exact null on the axis.
+    let strip = revolved_patch_from_modal_data(
+        [0.4, 0.0],
+        [0.6, 0.0],
+        [0.0, 1.0],
+        AzimuthalMode::new(2),
+        Complex64::new(1.0, 0.0),
+        Complex64::new(0.0, 0.5),
+    )
+    .unwrap();
+    let quadrature = RevolvedQuadrature::new(1e-10, 8).unwrap();
+    let strip_axis = stationary_fwh_ring_pressure(
+        std::slice::from_ref(&strip),
+        [0.0, 0.0, 5.0],
+        omega,
+        1.2,
+        c,
+        quadrature,
+    )
+    .unwrap()
+    .total;
+    let strip_side = stationary_fwh_ring_pressure(
+        std::slice::from_ref(&strip),
+        [5.0, 0.0, 0.0],
+        omega,
+        1.2,
+        c,
+        quadrature,
+    )
+    .unwrap()
+    .total;
+    let strip_null = strip_axis.norm() / strip_side.norm().max(1e-30);
+
+    vec![
+        check(
+            "Lighthill 2D",
+            "cylindrical far-field spreading",
+            cylindrical_error,
+            2e-2,
+        ),
+        check(
+            "Lighthill ring",
+            "spinning m=3 on-axis null",
+            ring_null,
+            1e-9,
+        ),
+        check(
+            "FW-H 2D",
+            "closed-contour cylindrical spreading",
+            contour_spreading,
+            5e-2,
+        ),
+        check("FW-H ring", "spinning m=2 on-axis null", strip_null, 1e-9),
+    ]
+}
+
 fn monopole_surface(
     radius: f64,
     n_mu: usize,
@@ -316,6 +432,7 @@ fn main() {
     checks.extend(lighthill_checks());
     checks.extend(fwh_checks());
     checks.extend(drp_euler_checks());
+    checks.extend(planar_axi_checks());
     let (comparison, speeds) = all_method_comparison();
     checks.push(comparison);
 

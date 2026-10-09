@@ -1,4 +1,4 @@
-# sonium-sim-propellers (lib: `sonium_sim_propellers`, version: 0.1.0)
+# sonium-sim-propellers (lib: `sonium_sim_propellers`, version: 0.1.1)
 
 Application-level propeller aeroacoustic simulation. Sits on top of `sonium-fem`'s `physics::aeroacoustics::PropellerSource`.
 

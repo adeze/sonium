@@ -250,6 +250,13 @@ underlying algorithm.
 - **Gutin, L.** (1948).
   "On the sound field of a rotating propeller."
   `crates/sonium-fem/src/physics/aeroacoustics/propeller_source.rs`
+- **Lighthill, M. J.** (1952).
+  "On sound generated aerodynamically. I. General theory." *Proc. R. Soc. A* 211.
+  Quadrupole radiation, exact and far-field forms.
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/lighthill.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/lighthill_2d_axi.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/distributed.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/snapshot.rs`
 - **Curle, N.** (1955) **(canonical)**.
   "The influence of solid boundaries upon aerodynamic sound." *Proc. R. Soc. A* 231.
   `../sonium-sim-pcfan/src/evaluation.rs` (Curle's equation form for TE noise)
@@ -257,12 +264,34 @@ underlying algorithm.
   "Influence of fluid motion past a plane boundary on sound reflection, absorption,
   and transmission." *JASA* 31.
   `crates/sonium-fem/src/physics/aeroacoustics/boundary.rs`
+- **Tyler, J. M., & Sofrin, T. G.** (1962).
+  "Axial flow compressor noise studies." *SAE Trans.* 70.
+  Rotor-stator spinning-mode orders and annular-duct cut-on.
+  `crates/sonium-wave/src/analytical/annular_duct_modes.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/duct_modes.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/propeller_source.rs`,
+  `crates/sonium-sim-pcfan/src/annular_fwh.rs`
 - **Sharland, I. J.** (1964).
   "Sources of noise in axial flow fans." *J. Sound Vib.* 1(3).
   `../sonium-sim-pcfan/src/evaluation.rs`
 - **Lowson, M. V.** (1965).
   "The sound field for singularities in motion."
   `crates/sonium-fem/src/physics/aeroacoustics/propeller_source.rs`
+- **Ffowcs Williams, J. E., & Hawkings, D. L.** (1969).
+  "Sound generation by turbulence and surfaces in arbitrary motion."
+  *Phil. Trans. R. Soc. A* 264. Stationary permeable surfaces here;
+  moving-surface kinematics are out of scope.
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/fwh.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/fwh_2d_axi.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/snapshot.rs`,
+  `crates/sonium-sim-speaker-modeling/src/port_noise.rs`,
+  `crates/sonium-sim-pcfan/src/annular_fwh.rs`,
+  `crates/sonium-sim-propellers/src/fwh_reference.rs`
+- **Goldstein, M. E.** (1976).
+  *Aeroacoustics.* McGraw-Hill. Uniform-flow convected wave equation and
+  Garrick-triangle Green's function.
+  `crates/sonium-wave/src/special/helmholtz.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/fwh_2d_axi.rs`
 - **Hanson, D. B.** (1980).
   "Helicoidal surface theory for harmonic noise of propellers." *JASA* 68(2).
   `crates/sonium-fem/src/physics/aeroacoustics/propeller_source.rs`
@@ -272,9 +301,30 @@ underlying algorithm.
 - **Brooks, T. F., Pope, D. S., & Marcolini, M. A.** (1989).
   *Airfoil Self-Noise and Prediction.* NASA RP-1218. (BPM TBL-TE noise model.)
   `../sonium-sim-pcfan/src/{model,evaluation}.rs`
+- **Tam, C. K. W., & Webb, J. C.** (1993).
+  "Dispersion-relation-preserving finite difference schemes for computational
+  acoustics." *J. Comput. Phys.* 107. Seven-point optimized stencil with
+  selective artificial damping.
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/drp_euler.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/drp_structured.rs`,
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/drp_axi.rs`
+- **Gottlieb, S., & Shu, C.-W.** (1998).
+  "Total variation diminishing Runge-Kutta schemes." *Math. Comp.* 67.
+  SSPRK(3,3) time stepping for the DG-LEE solver.
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/dg_lee.rs`
+- **Cockburn, B., & Shu, C.-W.** (2001).
+  "Runge-Kutta discontinuous Galerkin methods for convection-dominated
+  problems." *J. Sci. Comput.* 16. Strong-form upwind DG with exact
+  Riemann flux.
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/dg_lee.rs`
 - **Fukano, T., & Jang, C.-M.** (2004).
   Tip-leakage vortex broadband-noise empirical model.
   `../sonium-sim-pcfan/src/evaluation.rs`
+- **Hesthaven, J. S., & Warburton, T.** (2008).
+  *Nodal Discontinuous Galerkin Methods.* Springer. Nodal basis,
+  lift operators, and the strong/weak-form equivalence fixing the
+  surface-correction sign.
+  `crates/sonium-fem/src/physics/acoustics/aeroacoustics/dg_lee.rs`
 - **Brambley, E. J.** (2009).
   "Fundamental problems with the model of uniform flow over acoustic linings."
   *J. Sound Vib.* 322.

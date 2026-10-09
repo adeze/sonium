@@ -30,6 +30,43 @@ pub enum AeroacousticsError {
     /// The explicit step exceeds the conservative CFL contract.
     #[error("CFL number must be in (0, 1], got {0}")]
     InvalidCfl(f64),
+    /// Azimuthal ring quadrature failed to converge or saw invalid input.
+    #[error("azimuthal ring quadrature failed: {detail}")]
+    RingQuadrature { detail: String },
+    /// A mesh cell cannot host a distributed acoustic-analogy source.
+    #[error("mesh cell {index} is unusable for source integration: {detail}")]
+    InvalidSourceCell { index: usize, detail: &'static str },
+    /// A Mach vector was non-finite or not strictly subsonic.
+    #[error("Mach magnitude {magnitude} must be finite and below 1")]
+    InvalidMach { magnitude: f64 },
+    /// A duct-mode evaluation failed to converge or saw invalid input.
+    #[error("duct mode evaluation failed: {detail}")]
+    DuctMode { detail: String },
+    /// A mesh, degree, or flow combination is outside the supported scope.
+    #[error("unsupported discretization: {detail}")]
+    UnsupportedDiscretization { detail: &'static str },
+    /// A mesh element has a non-positive Jacobian determinant.
+    #[error("mesh element {index} has a non-positive Jacobian determinant")]
+    DegenerateElement { index: usize },
+    /// A solver state vector misses the required length.
+    #[error("state length mismatch: expected {expected} values, got {actual}")]
+    InvalidStateLength { expected: usize, actual: usize },
+}
+
+impl From<sonium_wave::special::ring::RingQuadratureError> for AeroacousticsError {
+    fn from(error: sonium_wave::special::ring::RingQuadratureError) -> Self {
+        Self::RingQuadrature {
+            detail: error.to_string(),
+        }
+    }
+}
+
+impl From<sonium_wave::analytical::annular_duct_modes::DuctModeError> for AeroacousticsError {
+    fn from(error: sonium_wave::analytical::annular_duct_modes::DuctModeError) -> Self {
+        Self::DuctMode {
+            detail: error.to_string(),
+        }
+    }
 }
 
 pub(crate) fn require_positive(name: &'static str, value: f64) -> Result<(), AeroacousticsError> {
