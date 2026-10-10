@@ -220,5 +220,5 @@ pub fn theis_cooper_jacob_drawdown(
 ) -> f64 {
     let u = radius * radius * storativity / (4.0 * transmissivity * time);
     pumping_rate / (4.0 * std::f64::consts::PI * transmissivity)
-        * (-0.577_215_664_901_532_9 - u.ln())
+        * (-std::f64::consts::EULER_GAMMA - u.ln())
 }

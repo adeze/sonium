@@ -12,10 +12,9 @@ use sonium_xem::{
     ComplexStorage, ConventionRegistry, Domain, DomainKind, FieldKind, FieldSpec,
     MultiphysicsProblem, ScalarType, StorageOrder, TensorLayout,
 };
-use std::f64::consts::PI;
+use std::f64::consts::{EULER_GAMMA, PI};
 
 const FIELD_ID: &str = "pressure";
-const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
 
 fn xem_pressure_problem(element_count: usize) -> MultiphysicsProblem {
     MultiphysicsProblem {

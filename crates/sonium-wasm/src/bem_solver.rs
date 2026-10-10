@@ -44,7 +44,7 @@ impl BemWorkspaceBudget {
     }
 
     fn reserve(&self, bytes: usize) -> Result<BemWorkspaceLease<'_>, String> {
-        self.used.fetch_update(Ordering::AcqRel, Ordering::Acquire, |used| {
+        self.used.try_update(Ordering::AcqRel, Ordering::Acquire, |used| {
             used.checked_add(bytes).filter(|&next| next <= self.limit)
         }).map_err(|used| format!(
             "BEM workspace admission rejected: {bytes} bytes requested, {used} reserved, {} limit", self.limit

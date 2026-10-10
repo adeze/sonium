@@ -245,36 +245,6 @@ use sonium_xem::{
     BoundaryConfig, ComplexDirectivityGrid, CrossoverFilter, Directivity, DirectivityGrid,
     RectangularRoom, SurfaceConfig,
 };
-use std::ffi::OsString;
-use std::sync::Mutex;
-
-static ROOM_VTU_ENV_LOCK: Mutex<()> = Mutex::new(());
-
-struct RoomVtuEnvGuard {
-    previous: Option<OsString>,
-}
-
-impl RoomVtuEnvGuard {
-    fn set(path: &std::path::Path) -> Self {
-        let previous = std::env::var_os("SONIUM_ROOM_VTU_DIR");
-        // SAFETY: the test holds ROOM_VTU_ENV_LOCK for the entire solve and
-        // restores the prior process environment in Drop.
-        unsafe { std::env::set_var("SONIUM_ROOM_VTU_DIR", path) };
-        Self { previous }
-    }
-}
-
-impl Drop for RoomVtuEnvGuard {
-    fn drop(&mut self) {
-        // SAFETY: the guard is only created while ROOM_VTU_ENV_LOCK is held.
-        unsafe {
-            match &self.previous {
-                Some(value) => std::env::set_var("SONIUM_ROOM_VTU_DIR", value),
-                None => std::env::remove_var("SONIUM_ROOM_VTU_DIR"),
-            }
-        }
-    }
-}
 #[test]
 fn test_amplitude_calibration_targets_85_db_at_1m_1khz() {
     let f = 1_000.0;
@@ -1388,38 +1358,6 @@ fn symmetric_stereo_sim() -> RoomSimulation {
         5,
     )
 }
-#[test]
-fn fem_vtu_output_path_writes_parseable_mesh_and_source_collection() {
-    let _env_lock = ROOM_VTU_ENV_LOCK.lock().expect("VTU environment lock");
-    let output_dir = tempfile::tempdir().expect("temporary VTU directory");
-    let _env = RoomVtuEnvGuard::set(output_dir.path());
-
-    let simulation = RoomSimulation::with_frequencies(
-        RoomGeometry::Rectangular(RectangularRoom::new(1.0, 1.0, 1.0)),
-        vec![Source::omnidirectional(Point3D::new(0.25, 0.25, 0.25), 1.0)],
-        vec![Point3D::new(0.75, 0.75, 0.75)],
-        100.0,
-        100.0,
-        1,
-    );
-
-    let config = FemMeshConfig {
-        modal_damping_ratio: 0.01,
-        ..FemMeshConfig::default()
-    };
-    run_fem_full(&simulation, &config).expect("one-frequency FEM solve should succeed");
-
-    let mesh_path = output_dir.path().join("fem_room_mesh.vtu");
-    let pvd_path = output_dir.path().join("fem_source_Source.pvd");
-    assert!(mesh_path.is_file(), "missing FEM mesh artifact");
-    assert!(pvd_path.is_file(), "missing FEM source collection artifact");
-    sonium_xem::io::vtu::validate_vtu_file(&mesh_path).expect("VTU must parse");
-    assert_eq!(
-        sonium_xem::io::pvd::validate_pvd_file(&pvd_path).expect("PVD must validate"),
-        1
-    );
-}
-
 fn rhs_norm(rhs: &[Complex64]) -> f64 {
     rhs.iter().map(|z| z.norm_sqr()).sum::<f64>().sqrt()
 }

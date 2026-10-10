@@ -5,14 +5,14 @@
     dead_code,
     reason = "shared browser module includes playback helpers unused by the exporter"
 )]
-#[path = "../../../apps/speaker-demo/src/data.rs"]
+#[path = "../../../../apps/speaker-demo/src/data.rs"]
 mod data;
 
 #[expect(
     dead_code,
     reason = "shared browser module includes edit helpers unused by the worker"
 )]
-#[path = "../../../apps/speaker-demo/src/project.rs"]
+#[path = "../../../../apps/speaker-demo/src/project.rs"]
 mod project;
 use data::{Dataset, Design, Mesh};
 use num_complex::Complex64;

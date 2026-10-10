@@ -741,24 +741,24 @@ pub fn broadcast_bands<F: Fn(usize) + Sync>(nbands: usize, f: &F) {
     }
     // Nesting guard first: a spin worker broadcasting to its own pool
     // would deadlock (see `SpinPool::broadcast`).
-    if !super::spin_pool::SpinPool::on_worker() {
-        if let Some(pool) = super::spin_pool::spin_pool() {
-            // Spin only when the pool covers the ambient width: fewer
-            // workers than the rayon fallback would use loses parallelism
-            // on wide unmasked runs. (BLAS-1's rule is
-            // oversubscription-only because bandwidth saturates; these
-            // bands are compute-bound, so width matters.)
-            if pool.width() >= rayon::current_num_threads().max(1) {
-                let per = nbands.div_ceil(pool.width());
-                pool.broadcast(&|w: usize| {
-                    let b0 = (w * per).min(nbands);
-                    let b1 = (b0 + per).min(nbands);
-                    for b in b0..b1 {
-                        f(b);
-                    }
-                });
-                return;
-            }
+    if !super::spin_pool::SpinPool::on_worker()
+        && let Some(pool) = super::spin_pool::spin_pool()
+    {
+        // Spin only when the pool covers the ambient width: fewer
+        // workers than the rayon fallback would use loses parallelism
+        // on wide unmasked runs. (BLAS-1's rule is
+        // oversubscription-only because bandwidth saturates; these
+        // bands are compute-bound, so width matters.)
+        if pool.width() >= rayon::current_num_threads().max(1) {
+            let per = nbands.div_ceil(pool.width());
+            pool.broadcast(&|w: usize| {
+                let b0 = (w * per).min(nbands);
+                let b1 = (b0 + per).min(nbands);
+                for b in b0..b1 {
+                    f(b);
+                }
+            });
+            return;
         }
     }
     scope_pinned(|s| {

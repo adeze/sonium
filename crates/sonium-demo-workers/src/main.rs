@@ -3,7 +3,11 @@
 // Rust guideline compliant 2026-02-21
 mod adapters;
 mod catalog;
-#[path = "../../../apps/sim-demo/src/data.rs"]
+#[expect(
+    dead_code,
+    reason = "shared browser module includes helpers unused by the worker"
+)]
+#[path = "../../../../apps/sim-demo/src/data.rs"]
 mod data;
 use std::error::Error;
 use std::time::Instant;

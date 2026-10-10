@@ -1,10 +1,9 @@
 /// SIMD-optimized gain application for a single gain value
 #[inline]
 pub fn apply_gain_simd(buffer: &mut [f32], gain: f32) {
-    let len = buffer.len();
-
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
+        let len = buffer.len();
         use std::arch::x86_64::*;
         let gain_vec = unsafe { _mm256_set1_ps(gain) };
         let simd_len = (len / 8) * 8;
@@ -23,6 +22,7 @@ pub fn apply_gain_simd(buffer: &mut [f32], gain: f32) {
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
+        let len = buffer.len();
         use std::arch::aarch64::*;
         let gain_vec = unsafe { vdupq_n_f32(gain) };
         let simd_len = (len / 4) * 4;

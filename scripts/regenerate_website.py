@@ -8,14 +8,17 @@ import subprocess
 import sys
 import tomllib
 
-ROOT = Path(__file__).resolve().parents[1]
+# Two-root layout: this script lives in the open-source `sonium/` submodule,
+# while the demos and website live in the enclosing `all_of_sonium` checkout.
+SONIUM = Path(__file__).resolve().parents[1]
+ROOT = SONIUM.parent
 # NOTE: SONIUM_CARGO, not CARGO. CARGO is reserved by the cargo ecosystem
 # (cargo sets it for children; wrappers like mbx read it as the cargo
 # binary), so exporting CARGO=mbx makes mbx invoke itself and hang.
 CARGO = os.environ.get('SONIUM_CARGO', 'cargo')
 
 
-def run(*command, cwd=ROOT, env=None):
+def run(*command, cwd=SONIUM, env=None):
     print('+', ' '.join(map(str, command)), flush=True)
     if env is None:
         env = dict(os.environ, CARGO_TARGET_DIR=str(ROOT / 'target'))
@@ -47,7 +50,7 @@ def main():
         bindgen = str(tool)
     env['WASM_BINDGEN'] = bindgen
     if not args.skip_galleries:
-        run(sys.executable, ROOT / 'scripts/website_gallery.py', '--work-dir', ROOT / 'target/website-regenerate',
+        run(sys.executable, SONIUM / 'scripts/website_gallery.py', '--work-dir', ROOT / 'target/website-regenerate',
             '--out-dir', ROOT / 'website/public/gallery')
     run(sys.executable, ROOT / 'website/scripts/generate_qa_pages.py')
     run(CARGO, 'build', '--release', '-p', 'sonium-sim-speaker', '--example', 'speaker_lab_worker')

@@ -2614,7 +2614,7 @@ mod tests {
         // must succeed with identical bytes.
         let (rows, nb) = (8usize, 3usize);
         let mut pt = vec![0.25f64; nb * rows];
-        pt[1 * rows + 1] = f64::NAN;
+        pt[rows + 1] = f64::NAN;
         let taus = vec![2.0f64, 0.0, 2.0];
         let mut tmat_par = vec![0.0f64; QR_BLOCK_NB * QR_BLOCK_NB];
         let mut tmat_ser = vec![0.0f64; QR_BLOCK_NB * QR_BLOCK_NB];
@@ -2630,8 +2630,8 @@ mod tests {
         // the same first site, not its own up-front dot scan.
         let (rows, nb) = (8usize, 4usize);
         let mut pt = vec![0.0f64; nb * rows];
-        pt[0 * rows + 1] = 1e308;
-        pt[1 * rows + 1] = 1.0;
+        pt[1] = 1e308;
+        pt[rows + 1] = 1.0;
         pt[3 * rows + 3] = f64::NAN;
         let taus = vec![2.0f64; nb];
         let mut tmat_ser = vec![0.0f64; QR_BLOCK_NB * QR_BLOCK_NB];

@@ -79,10 +79,9 @@ pub fn scale_add_simd(dst: &mut [f32], src: &[f32], scale: f32) {
 /// Computes: `data[i] *= scale` for all `i`
 #[inline]
 pub fn scale_add_simd_inplace(data: &mut [f32], scale: f32) {
-    let len = data.len();
-
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
     {
+        let len = data.len();
         use std::arch::x86_64::*;
 
         let scale_vec = unsafe { _mm256_set1_ps(scale) };
@@ -103,6 +102,7 @@ pub fn scale_add_simd_inplace(data: &mut [f32], scale: f32) {
 
     #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
     {
+        let len = data.len();
         use std::arch::aarch64::*;
 
         let scale_vec = unsafe { vdupq_n_f32(scale) };

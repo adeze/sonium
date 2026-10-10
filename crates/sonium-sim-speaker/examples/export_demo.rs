@@ -5,7 +5,7 @@
     dead_code,
     reason = "shared browser module includes playback helpers unused by the exporter"
 )]
-#[path = "../../../apps/speaker-demo/src/data.rs"]
+#[path = "../../../../apps/speaker-demo/src/data.rs"]
 mod data;
 
 use data::{Dataset, Design, Mesh};

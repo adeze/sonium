@@ -102,7 +102,6 @@ pub fn exp1(z: Complex64) -> Complex64 {
 
 /// Series: `E1(z) = -γ - ln(z) - Σ_{n≥1} (-z)^n / (n · n!)`.
 fn exp1_series(z: Complex64) -> Complex64 {
-    const EULER_GAMMA: f64 = 0.577_215_664_901_532_9;
     let mut term = Complex64::new(1.0, 0.0);
     let mut sum = Complex64::new(0.0, 0.0);
     for n in 1..200 {
@@ -113,7 +112,7 @@ fn exp1_series(z: Complex64) -> Complex64 {
             break;
         }
     }
-    -Complex64::new(EULER_GAMMA, 0.0) - z.ln() - sum
+    -Complex64::new(std::f64::consts::EULER_GAMMA, 0.0) - z.ln() - sum
 }
 
 /// Numerical Recipes-style continued fraction for E_n(z) with n=1:
