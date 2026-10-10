@@ -1,4 +1,4 @@
-# sonium-sim-speaker-modeling (lib: `sonium_sim_speaker_modeling`, version: 0.1.0)
+# sonium-sim-speaker-modeling (lib: `sonium_sim_speaker_modeling`, version: 0.6.0)
 
 COMSOL-style speaker-driver modeling on top of existing Sonium FEM APIs. This
 crate owns driver-unit motor, moving assembly, enclosure, and FEM golden models.

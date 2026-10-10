@@ -395,10 +395,7 @@ type RitzCandidate = (f64, f64, f64, Vec<f64>);
 /// independent frequency pair for breakdown restarts.
 fn deterministic_start(n: usize, stream: u64) -> Vec<f64> {
     let (first, second) = if stream == 0 {
-        (
-            std::f64::consts::GOLDEN_RATIO,
-            0.754_877_666_246_692_7,
-        )
+        (std::f64::consts::GOLDEN_RATIO, 0.754_877_666_246_692_7)
     } else {
         (2.399_963_229_728_653, 1.193_280_050_738_878_7)
     };

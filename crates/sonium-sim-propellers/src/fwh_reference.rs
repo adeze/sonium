@@ -408,3 +408,99 @@ fn multiply_by_i(value: FwhComplexPressure, factor: f64) -> FwhComplexPressure {
 fn pressure_is_finite(pressure: FwhComplexPressure) -> bool {
     pressure.real_pa.is_finite() && pressure.imaginary_pa.is_finite()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sonium_fem::physics::acoustics::aeroacoustics::{FwhSurfacePatch, stationary_fwh_pressure};
+
+    /// Audit: the far-field-only reference agrees with the full-kernel
+    /// FEM evaluator at `kr >> 1`, where the `1/R` near-field loading
+    /// term is a sub-percent correction.
+    #[test]
+    fn far_field_reference_matches_full_kernel_fem_evaluator() {
+        // Six-element disk source with mixed thickness/loading phasors.
+        let elements: Vec<FwhSurfaceElement> = (0..6)
+            .map(|index| {
+                let angle = index as f64 * std::f64::consts::TAU / 6.0;
+                FwhSurfaceElement {
+                    position: Point3 {
+                        x: 0.05 * angle.cos(),
+                        y: 0.05 * angle.sin(),
+                        z: 0.0,
+                    },
+                    normal: Point3 {
+                        x: 0.0,
+                        y: 0.0,
+                        z: 1.0,
+                    },
+                    area_m2: 0.001,
+                    pressure_real_pa: 100.0 + 10.0 * index as f64,
+                    pressure_imaginary_pa: -20.0,
+                    normal_velocity_real_m_s: 0.01 * index as f64,
+                    normal_velocity_imaginary_m_s: 0.05,
+                }
+            })
+            .collect();
+        let options = FwhOptions {
+            frequency_hz: 1_000.0,
+            observer_position: Point3 {
+                x: 8.0,
+                y: 0.0,
+                z: 6.0,
+            },
+            ..FwhOptions::default()
+        };
+        let reference = evaluate_fwh_reference(&elements, options).unwrap();
+
+        let patches: Vec<FwhSurfacePatch> = elements
+            .iter()
+            .map(|element| {
+                FwhSurfacePatch::new(
+                    [element.position.x, element.position.y, element.position.z],
+                    [element.normal.x, element.normal.y, element.normal.z],
+                    element.area_m2,
+                    num_complex::Complex64::new(
+                        element.pressure_real_pa,
+                        element.pressure_imaginary_pa,
+                    ),
+                    num_complex::Complex64::new(
+                        element.normal_velocity_real_m_s,
+                        element.normal_velocity_imaginary_m_s,
+                    ),
+                )
+                .unwrap()
+            })
+            .collect();
+        let full = stationary_fwh_pressure(
+            &patches,
+            [
+                options.observer_position.x,
+                options.observer_position.y,
+                options.observer_position.z,
+            ],
+            std::f64::consts::TAU * options.frequency_hz,
+            options.density_kg_m3,
+            options.sound_speed_m_s,
+        )
+        .unwrap();
+
+        let relative = |a: FwhComplexPressure, b: num_complex::Complex64| {
+            ((a.real_pa - b.re).hypot(a.imaginary_pa - b.im)) / b.norm().max(1e-30)
+        };
+        // kr ~ 180: thickness matches to roundoff (identical closed
+        // form); loading carries the 1/(kr) near-field difference.
+        assert!(
+            relative(reference.monopole_pressure_pa, full.thickness) < 1e-12,
+            "thickness mismatch"
+        );
+        assert!(
+            relative(reference.dipole_pressure_pa, full.loading) < 2e-2,
+            "loading mismatch"
+        );
+        assert!(
+            relative(reference.total_pressure_pa, full.total) < 2e-2,
+            "total mismatch"
+        );
+    }
+}

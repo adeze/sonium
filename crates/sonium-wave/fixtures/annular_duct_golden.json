@@ -1,0 +1,19 @@
+{
+	"schema_version":1,
+	"case_id":"wave.annular-duct.v1",
+	"convention":"Hard-wall annulus sigma = 0.4; chi = kappa a roots of J_m'(s x)Y_m'(x) - J_m'(x)Y_m'(s x) = 0",
+	"generator":"crates\/sonium-wave\/fixtures\/annular_duct.wls",
+	"wolfram_version":"15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+	"working_precision_digits":55,
+	"hub_tip_ratio":0.40000000000000000000000000000000000000000000000000,
+	"roots":{
+		"m0_rank1":5.3911811995674460486484866280741379199342644516112,
+		"m0_rank2":10.557726455190982622325499340717012204215600596632,
+		"m1_rank0":1.4617819153786657358206476869695361491230536076802,
+		"m1_rank1":5.6591042462989572089068324261247381109734226351532,
+		"m3_rank0":4.1081634321074287553438218632643704415378495439708
+	},
+	"tolerances":{
+		"root_abs":1.0e-12
+	}
+}

@@ -1,20 +1,25 @@
 //! M4 one-way aeroacoustic post-processing of M1 port-flow snapshots.
 //!
 //! Compact sources use the existing Lighthill quadrupole evaluator. A closed
-//! three-dimensional fluid boundary uses the existing stationary permeable
-//! FW-H evaluator when `ka` exceeds the configured compactness limit. No flow
-//! solve or baffle-scattering correction occurs here.
+//! fluid boundary uses the stationary permeable FW-H evaluator (3-D patches,
+//! or the 2-D contour evaluator for slot meshes, which reports the
+//! infinite-line field) when `ka` exceeds the configured compactness limit.
+//! Snapshot-to-phasor coupling goes through the shared `snapshot` helper so
+//! the DFT convention stays identical across consumers. No flow solve or
+//! baffle-scattering correction occurs here.
+
+// Rust guideline compliant 2026-02-21
 
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use sonium_fem::basis::PolynomialDegree;
 use sonium_fem::mesh::{ElementType, Mesh};
 use sonium_fem::physics::acoustics::aeroacoustics::{
-    FwhSurfacePatch, LighthillQuadrupole, lighthill_far_field_pressure, stationary_fwh_pressure,
+    LighthillQuadrupole, dft_peak_phasor, fwh_contour_from_series, fwh_patch_from_series,
+    lighthill_far_field_pressure, stationary_fwh_pressure, stationary_fwh_pressure_2d,
 };
 use sonium_fem::spaces::{FunctionSpace, H1Space};
 
-use crate::port_flow::analysis::dft_phasor;
 use crate::port_flow::coupled::PortFlowFieldSnapshot;
 use crate::port_flow::measure::outward_normal_and_measure;
 use crate::{AcousticMedium, ModelingError, require_positive};
@@ -276,22 +281,23 @@ pub fn analyze_port_noise(
                     frequency_hz,
                     medium.sound_speed_m_per_s,
                 )?,
-                PortNoiseMethod::PermeableFwh => {
-                    if mesh.dimension != 3 {
-                        return Err(ModelingError::OutOfRange {
-                            field: "port_noise.method",
-                            constraint: "non-compact FW-H requires a closed 3D mesh boundary",
-                        });
-                    }
-                    fwh_at_frequency(
-                        mesh,
-                        snapshots,
-                        observer.position_m,
-                        sample_interval_s,
-                        frequency_hz,
-                        medium,
-                    )?
-                }
+                PortNoiseMethod::PermeableFwh if mesh.dimension == 3 => fwh_at_frequency(
+                    mesh,
+                    snapshots,
+                    observer.position_m,
+                    sample_interval_s,
+                    frequency_hz,
+                    medium,
+                )?,
+                // Slot meshes report the 2-D (infinite-line) FW-H field.
+                PortNoiseMethod::PermeableFwh => fwh_2d_at_frequency(
+                    mesh,
+                    snapshots,
+                    [observer.position_m[0], observer.position_m[1]],
+                    sample_interval_s,
+                    frequency_hz,
+                    medium,
+                )?,
                 PortNoiseMethod::Automatic => unreachable!(),
             };
             let pressure_rms_pa = pressure.norm() / std::f64::consts::SQRT_2;
@@ -411,7 +417,7 @@ fn lighthill_at_frequency(
     for i in 0..3 {
         for j in 0..3 {
             let signal = series.iter().map(|sample| sample[i][j]).collect::<Vec<_>>();
-            tensor[i][j] = dft_phasor(&signal, dt, frequency_hz).conj();
+            tensor[i][j] = dft_peak_phasor(&signal, dt, frequency_hz).map_err(aero_error)?;
         }
     }
     let source = LighthillQuadrupole::new(source_position, tensor).map_err(aero_error)?;
@@ -466,18 +472,85 @@ fn fwh_at_frequency(
         }
         let position = face_centroid(mesh, &face.nodes);
         patches.push(
-            FwhSurfacePatch::new(
+            fwh_patch_from_series(
                 position,
                 normal,
                 area,
-                dft_phasor(&pressure_signal, dt, frequency_hz).conj(),
-                dft_phasor(&velocity_signal, dt, frequency_hz).conj(),
+                &pressure_signal,
+                &velocity_signal,
+                dt,
+                frequency_hz,
             )
             .map_err(aero_error)?,
         );
     }
     stationary_fwh_pressure(
         &patches,
+        observer,
+        std::f64::consts::TAU * frequency_hz,
+        medium.density_kg_per_m3,
+        medium.sound_speed_m_per_s,
+    )
+    .map(|components| components.total)
+    .map_err(aero_error)
+}
+
+fn fwh_2d_at_frequency(
+    mesh: &Mesh,
+    snapshots: &[PortFlowFieldSnapshot],
+    observer: [f64; 2],
+    dt: f64,
+    frequency_hz: f64,
+    medium: AcousticMedium,
+) -> Result<Complex64, ModelingError> {
+    let mut segments = Vec::with_capacity(mesh.boundaries.len());
+    for face in &mesh.boundaries {
+        let (normal, length) = outward_normal_and_measure(mesh, face);
+        if length <= 0.0 {
+            continue;
+        }
+        let mut pressure_signal = Vec::with_capacity(snapshots.len());
+        let mut velocity_signal = Vec::with_capacity(snapshots.len());
+        for snapshot in snapshots {
+            let inv = 1.0 / face.nodes.len() as f64;
+            let pressure = face
+                .nodes
+                .iter()
+                .map(|&node| snapshot.pressure_dofs_pa[node])
+                .sum::<f64>()
+                * inv;
+            let normal_velocity = face
+                .nodes
+                .iter()
+                .map(|&node| {
+                    (0..mesh.dimension)
+                        .map(|component| {
+                            snapshot.velocity_dofs_m_per_s[node * mesh.dimension + component]
+                                * normal[component]
+                        })
+                        .sum::<f64>()
+                })
+                .sum::<f64>()
+                * inv;
+            pressure_signal.push(pressure);
+            velocity_signal.push(normal_velocity);
+        }
+        let centroid = face_centroid(mesh, &face.nodes);
+        segments.push(
+            fwh_contour_from_series(
+                [centroid[0], centroid[1]],
+                [normal[0], normal[1]],
+                length,
+                &pressure_signal,
+                &velocity_signal,
+                dt,
+                frequency_hz,
+            )
+            .map_err(aero_error)?,
+        );
+    }
+    stationary_fwh_pressure_2d(
+        &segments,
         observer,
         std::f64::consts::TAU * frequency_hz,
         medium.density_kg_per_m3,
@@ -542,7 +615,8 @@ fn aero_error(error: impl std::fmt::Display) -> ModelingError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sonium_fem::mesh::unit_cube_tetrahedra;
+    use crate::port_flow::analysis::dft_phasor;
+    use sonium_fem::mesh::{unit_cube_tetrahedra, unit_square_triangles};
     use std::f64::consts::TAU;
 
     fn synthetic_snapshots(
@@ -564,6 +638,77 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    fn synthetic_snapshots_2d(
+        mesh: &Mesh,
+        samples: usize,
+        dt: f64,
+        frequency: f64,
+        amplitude: f64,
+    ) -> Vec<PortFlowFieldSnapshot> {
+        (0..samples)
+            .map(|index| {
+                let velocity = amplitude * (TAU * frequency * index as f64 * dt).cos();
+                PortFlowFieldSnapshot {
+                    time_s: (index + 1) as f64 * dt,
+                    velocity_dofs_m_per_s: (0..mesh.num_nodes())
+                        .flat_map(|_| [velocity, 0.0])
+                        .collect(),
+                    pressure_dofs_pa: vec![0.0; mesh.num_nodes()],
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn snapshot_dft_matches_legacy_phasor_convention() {
+        // Locks the adoption: shared helper equals dft_phasor().conj().
+        let signal: Vec<f64> = (0..64)
+            .map(|index| 2.0 * (TAU * 100.0 * index as f64 / 6_400.0 + 0.3).cos())
+            .collect();
+        let shared = dft_peak_phasor(&signal, 1.0 / 6_400.0, 100.0).unwrap();
+        let legacy = dft_phasor(&signal, 1.0 / 6_400.0, 100.0).conj();
+        assert!((shared - legacy).norm() < 1e-12);
+    }
+
+    #[test]
+    fn slot_mesh_uses_planar_fwh_contour_with_cylindrical_spreading() {
+        let mesh = unit_square_triangles(2);
+        let velocity_space = H1Space::new(PolynomialDegree::P1);
+        let pressure_space = H1Space::new(PolynomialDegree::P1);
+        let snapshots = synthetic_snapshots_2d(&mesh, 64, 1.0 / 6_400.0, 100.0, 1.0);
+        let spec = PortNoiseSpec {
+            method: PortNoiseMethod::PermeableFwh,
+            frequencies_hz: vec![100.0],
+            observers: vec![
+                PortNoiseObserver {
+                    position_m: [10.0, 0.5, 0.0],
+                },
+                PortNoiseObserver {
+                    position_m: [40.0, 0.5, 0.0],
+                },
+            ],
+            characteristic_source_length_m: 1.0,
+            ..PortNoiseSpec::default()
+        };
+        let result = analyze_port_noise(
+            &mesh,
+            &velocity_space,
+            &pressure_space,
+            &snapshots,
+            AcousticMedium::standard_air(),
+            &spec,
+        )
+        .unwrap();
+        assert_eq!(
+            result.observers[0].spectrum[0].method,
+            PortNoiseMethod::PermeableFwh
+        );
+        // 2-D far field spreads as 1/sqrt(r): 4x distance halves pressure.
+        let ratio = result.observers[0].spectrum[0].pressure_rms_pa
+            / result.observers[1].spectrum[0].pressure_rms_pa;
+        assert!((ratio - 2.0).abs() < 0.12, "ratio={ratio}");
     }
 
     #[test]

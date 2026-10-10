@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `suggested_sphere_terms_for_grid`: grid-aware Mie-series truncation
+  that accounts for the observer radius (`n > kr` at the observer),
+  for cases where `suggested_sphere_terms(ka)` under-counts at small
+  `ka` with far observers.
+
 ### Fixed
 
 - `run_richardson` reuses one scratch buffer across iterations instead of
@@ -26,6 +33,22 @@
   Strided axes gather into one scratch buffer, transform lanes in parallel,
   and scatter back; serial and parallel paths agree bitwise
   (`parallel_lanes_match_serial_bitwise`, `pointwise_kernels_match_on_both_paths`).
+
+### Added — aeroacoustic kernels
+
+- Annular-duct modal analysis (`analytical::annular_duct_modes`):
+  hard/soft-wall radial modes with uniform axial flow, Tyler–Sofrin
+  rotor-stator spinning orders, and axial-branch selection.
+- Azimuthal-mode bookkeeping (`analytical::azimuthal::AzimuthalMode`):
+  spinning orders with axis-power rules and `exp(imφ)` modal phases
+  shared by rings, revolved patches, and modal propagators.
+- Azimuthal ring quadrature (`special::ring`): fixed and adaptive
+  `∫f(φ)exp(imφ)dφ` rules driving the spinning ring and revolved
+  evaluators.
+- 2-D Helmholtz kernel derivatives (`special::helmholtz`): Hankel
+  gradient, normal derivative, and Hessian (bare and checked forms)
+  plus uniform-flow Garrick convected kernels and a time-convention
+  flip helper.
 
 ## 0.4.1
 

@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "sonium-fem"
-version = "0.5.30"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2578,7 +2578,7 @@ dependencies = [
 
 [[package]]
 name = "sonium-qa"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "anyhow",
  "approx",
@@ -2670,7 +2670,7 @@ dependencies = [
 
 [[package]]
 name = "sonium-sim-pcfan"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "meshlang-compiler",
@@ -2690,7 +2690,7 @@ dependencies = [
 
 [[package]]
 name = "sonium-sim-propellers"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clap",
  "ed25519-zebra",
@@ -2762,7 +2762,7 @@ dependencies = [
 
 [[package]]
 name = "sonium-sim-speaker-modeling"
-version = "0.5.4"
+version = "0.6.0"
 dependencies = [
  "clap",
  "env_logger",
@@ -3012,7 +3012,7 @@ dependencies = [
 
 [[package]]
 name = "sonium-wave"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "approx",
  "criterion",

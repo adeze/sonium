@@ -1,6 +1,6 @@
 [package]
 name = "sonium-qa"
-version = "0.1.4"
+version = "0.1.5"
 description = "Quality assurance suite: accuracy validation binaries for sonium"
 edition = { workspace = true }
 authors = { workspace = true }
@@ -2304,6 +2304,24 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-aeroacoustics-validation"
 path = "bin/fem_aeroacoustics_validation.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-fwh-mie-scattering"
+path = "bin/fem_fwh_mie_scattering.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-annular-fwh-empirical"
+path = "bin/fem_annular_fwh_empirical.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-port-contour"
+path = "bin/fem_aeroacoustics_port_contour.rs"
 test = false
 required-features = ["qa-binaries"]
 

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Added — large-scale aeroacoustics validation
+
+- `qa-fem-fwh-mie-scattering`: FW-H and Kirchhoff reconstruction of the
+  Mie scattered field at ka = 1, 5, 10 (18 checks, 5% gates).
+- `qa-fem-annular-fwh-empirical`: annular FW-H tones on the PC-fan
+  product annulus vs the compact Gutin model, asserting the analytic
+  blade-width, radial-distribution, and dipole-obliquity decomposition
+  to ~3% (9 checks) plus a product-point suppression bound.
+- `qa-fem-aeroacoustics-port-contour`: end-to-end coupled unsteady
+  Navier-Stokes port run through the 2-D permeable FW-H contour,
+  gating drive-tone dominance and cylindrical spreading (6 checks).
+
+### Added — aeroacoustics 2-D/axisymmetric QA
+
+- `qa-fem-aeroacoustics-analogies-drp` grows four planar/axisymmetric
+  checks: 2-D Lighthill cylindrical spreading, spinning-ring (m = 3)
+  and revolved-strip (m = 2) on-axis nulls, and closed-contour
+  cylindrical spreading of a compact pulsating contour.
+
 ### Added — `bem-step1.md` Phase 1.1 + 1.2 CI gates
 
 - New `qa-bem-mie-ci` binary: strict regression detector for BEM with

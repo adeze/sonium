@@ -15,7 +15,9 @@ use std::fmt;
 
 pub mod acoustic_duct;
 pub mod acoustic_interface;
+pub mod annular_duct_modes;
 pub mod axisymmetric_duct;
+pub mod azimuthal;
 pub mod manufactured;
 pub mod manufactured_diffusion_2d;
 pub mod manufactured_diffusion_3d;
@@ -32,7 +34,9 @@ pub mod solutions_3d;
 
 pub use acoustic_duct::*;
 pub use acoustic_interface::*;
+pub use annular_duct_modes::*;
 pub use axisymmetric_duct::*;
+pub use azimuthal::*;
 pub use manufactured::*;
 pub use manufactured_diffusion_2d::*;
 pub use manufactured_diffusion_3d::*;

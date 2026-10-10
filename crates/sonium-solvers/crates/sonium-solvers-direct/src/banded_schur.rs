@@ -154,20 +154,12 @@ pub(crate) fn schur_update_lookahead_block<T: ComplexField>(
     let rows = n - panel_end;
     debug_assert!(panel_end - panel_start == panel_width);
     debug_assert!(panel_end + next_width <= n);
-    let Some((a, b, c)) = lookahead_block_slices(
-        matrix,
-        n,
-        panel_start,
-        panel_end,
-        panel_width,
-        next_width,
-    ) else {
+    let Some((a, b, c)) =
+        lookahead_block_slices(matrix, n, panel_start, panel_end, panel_width, next_width)
+    else {
         return;
     };
-    if T::lu_prefers_parallel_lookahead_update()
-        && lapar_on()
-        && rows >= LOOKAHEAD_PAR_MIN_ROWS
-    {
+    if T::lu_prefers_parallel_lookahead_update() && lapar_on() && rows >= LOOKAHEAD_PAR_MIN_ROWS {
         T::schur_sub_strided(rows, next_width, panel_width, a, n, b, n, c, n);
         return;
     }
@@ -191,14 +183,9 @@ pub(crate) fn schur_update_lookahead_block_parallel<T: ComplexField>(
     let rows = n - panel_end;
     debug_assert!(panel_end - panel_start == panel_width);
     debug_assert!(panel_end + next_width <= n);
-    let Some((a, b, c)) = lookahead_block_slices(
-        matrix,
-        n,
-        panel_start,
-        panel_end,
-        panel_width,
-        next_width,
-    ) else {
+    let Some((a, b, c)) =
+        lookahead_block_slices(matrix, n, panel_start, panel_end, panel_width, next_width)
+    else {
         return;
     };
     T::schur_sub_strided(rows, next_width, panel_width, a, n, b, n, c, n);

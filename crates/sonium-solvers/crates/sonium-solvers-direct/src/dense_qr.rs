@@ -1026,21 +1026,20 @@ thread_local! {
 /// Sum of buffer capacities in `ws`, in bytes (saturating).
 fn qr_workspace_bytes<T: ComplexField>(ws: &QrWorkspace<T>) -> usize {
     let elem = std::mem::size_of::<T>();
-    let elems = ws
-        .a
-        .capacity()
-        .saturating_add(ws.qmat.capacity())
-        .saturating_add(ws.pt.capacity())
-        .saturating_add(ws.panel.capacity())
-        .saturating_add(ws.vtmp.capacity())
-        .saturating_add(ws.tmat.capacity())
-        .saturating_add(ws.tmat_t.capacity())
-        .saturating_add(ws.wbuf.capacity())
-        .saturating_add(ws.w2.capacity())
-        .saturating_add(ws.all_t.capacity())
-        .saturating_add(ws.betas.capacity())
-        .saturating_add(ws.taus.capacity())
-        .saturating_add(ws.vbuf.capacity());
+    let elems =
+        ws.a.capacity()
+            .saturating_add(ws.qmat.capacity())
+            .saturating_add(ws.pt.capacity())
+            .saturating_add(ws.panel.capacity())
+            .saturating_add(ws.vtmp.capacity())
+            .saturating_add(ws.tmat.capacity())
+            .saturating_add(ws.tmat_t.capacity())
+            .saturating_add(ws.wbuf.capacity())
+            .saturating_add(ws.w2.capacity())
+            .saturating_add(ws.all_t.capacity())
+            .saturating_add(ws.betas.capacity())
+            .saturating_add(ws.taus.capacity())
+            .saturating_add(ws.vbuf.capacity());
     elems.saturating_mul(elem)
 }
 
@@ -1669,9 +1668,8 @@ fn panel_apply_trailing<T: ComplexField>(
                         // chunk split, no overlap across tasks). Lengths
                         // `rows - k` match the serial indexing (row `k`
                         // from `k`, row `c` from `k`).
-                        let v = unsafe {
-                            std::slice::from_raw_parts(base.add(k * rows + k), rows - k)
-                        };
+                        let v =
+                            unsafe { std::slice::from_raw_parts(base.add(k * rows + k), rows - k) };
                         let col = unsafe {
                             std::slice::from_raw_parts_mut(base.add(c * rows + k), rows - k)
                         };
@@ -2494,8 +2492,7 @@ mod tests {
         // at small size (the 1024-column gate keeps this shape on the
         // per-scope path in production).
         let matrix = blocked_fixture(96, 64);
-        let direct =
-            factorize_blocked_ws_direct(&matrix, &mut QrWorkspace::<f64>::new()).unwrap();
+        let direct = factorize_blocked_ws_direct(&matrix, &mut QrWorkspace::<f64>::new()).unwrap();
         let funneled = sonium_compute::cpu::blas3::run_mirror(|| {
             factorize_blocked_ws_direct(&matrix, &mut QrWorkspace::<f64>::new()).unwrap()
         });
@@ -2513,10 +2510,8 @@ mod tests {
         // gate width via an explicit install, so the arm stays meaningful
         // even under ambient `SONIUM_QR_FUNNEL=0`.
         let matrix = blocked_fixture(1024, 1024);
-        let funneled =
-            factorize_blocked_ws(&matrix, &mut QrWorkspace::<f64>::new()).unwrap();
-        let direct =
-            factorize_blocked_ws_direct(&matrix, &mut QrWorkspace::<f64>::new()).unwrap();
+        let funneled = factorize_blocked_ws(&matrix, &mut QrWorkspace::<f64>::new()).unwrap();
+        let direct = factorize_blocked_ws_direct(&matrix, &mut QrWorkspace::<f64>::new()).unwrap();
         assert_eq!(funneled.rank(), direct.rank());
         assert_eq!(funneled.q().as_slice(), direct.q().as_slice());
         assert_eq!(funneled.r().as_slice(), direct.r().as_slice());
@@ -2581,26 +2576,8 @@ mod tests {
             let mut panel_fused = vec![-1.25f64; rows * nb];
             let mut a_seq = vec![-1.25f64; n * n];
             let mut panel_seq = vec![-1.25f64; rows * nb];
-            overlay_panel_fused(
-                &mut a_fused,
-                n,
-                k0,
-                rows,
-                nb,
-                &pt,
-                &betas,
-                &mut panel_fused,
-            );
-            overlay_panel_sequential(
-                &mut a_seq,
-                n,
-                k0,
-                rows,
-                nb,
-                &pt,
-                &betas,
-                &mut panel_seq,
-            );
+            overlay_panel_fused(&mut a_fused, n, k0, rows, nb, &pt, &betas, &mut panel_fused);
+            overlay_panel_sequential(&mut a_seq, n, k0, rows, nb, &pt, &betas, &mut panel_seq);
             assert_eq!(panel_fused, panel_seq, "panel mismatch at k0={k0}");
             assert_eq!(a_fused, a_seq, "work-matrix mismatch at k0={k0}");
         }

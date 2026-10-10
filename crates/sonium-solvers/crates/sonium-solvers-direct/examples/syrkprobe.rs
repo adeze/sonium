@@ -31,7 +31,18 @@ fn main() {
         })
         .collect();
     for (n, (a, c)) in sizes.iter().zip(bufs.iter_mut()) {
-        syrk_f64(TrsmUplo::Lower, Transpose::NoTrans, *n, k, -1.0, a, k, 1.0, c, *n);
+        syrk_f64(
+            TrsmUplo::Lower,
+            Transpose::NoTrans,
+            *n,
+            k,
+            -1.0,
+            a,
+            k,
+            1.0,
+            c,
+            *n,
+        );
     }
     let mut walls = vec![Vec::with_capacity(rounds); sizes.len()];
     let total = rounds * sizes.len();
@@ -40,7 +51,18 @@ fn main() {
         let n = sizes[arm];
         let (a, c) = &mut bufs[arm];
         let t = std::time::Instant::now();
-        syrk_f64(TrsmUplo::Lower, Transpose::NoTrans, n, k, -1.0, a, k, 1.0, c, n);
+        syrk_f64(
+            TrsmUplo::Lower,
+            Transpose::NoTrans,
+            n,
+            k,
+            -1.0,
+            a,
+            k,
+            1.0,
+            c,
+            n,
+        );
         walls[arm].push(t.elapsed().as_secs_f64() * 1e6);
     }
     let mut sum = 0.0;

@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed — annular FW-H thrust scaling
+
+- `modal_loading_amplitude_pa` now returns the thrust-conserving
+  `Δp·sinc(hπσ)`: blades covering a pitch fraction `σ` carry the
+  blade-local jump `Δp/σ`, whose Fourier coefficient cancels the
+  solidity factor. The previous `Δp·σ·sinc(hπσ)` under-counted every
+  tone by `σ`.
+
 ### Added — machine-adaptive parallel gates
 
 - New `parallelism::use_pcfan_parallel` gate: the finite-difference
@@ -14,6 +22,16 @@
   thread or pool spawn); multi-experiment fan-out uses scoped threads
   over a shared experiment body with identical seeds, gated by
   `PCFAN_EXPERIMENTS_PER_THREAD`.
+
+### Added — annular FW-H tone path
+
+- New `annular_fwh` module: rotor-alone BPF tones through revolved
+  FW-H patches over the hub-to-tip annulus, with spinning order
+  `m = -h·B`, top-hat-blade modal loading
+  (`Δp·σ·sin(hπσ)/(hπσ)`), and thickness neglected (thin blades, low
+  tip Mach). Silent at zero thrust, toneless for a full disk
+  (`σ = 1`), null on the axis for `m ≠ 0`, beaming obliquely. Audits
+  the empirical tone model; the optimizer hot path is unchanged.
 
 ## 0.3.0
 

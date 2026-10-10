@@ -169,10 +169,13 @@ impl LnsSystem {
     ///
     /// Block structure:
     /// ```text
-    /// | rho_0(iwM_v + C_v) + mu K_v - (2/3)mu D_v   B        0     |
-    /// | rho_0 c_0^2 B^T                          iwM_p + C_p  0     |
+    /// | rho_0(iwM_v + C_v) + mu K_v - (2/3)mu D_v   B         0     |
+    /// | -rho_0 c_0^2 B^T                         iwM_p + C_p  0     |
     /// | 0                                  -(iwM_p + C_p)  rho_0 c_p(iwM_T + C_T) + kappa K_T |
     /// ```
+    ///
+    /// B carries the divergence-form minus sign, so (B^Tu) = -(div u, q)
+    /// exactly and the continuity block is -rho_0 c_0^2 B^T.
     pub fn assemble(&self, mean_flow: &MeanFlow, omega: f64) -> TripletMatrix<Complex64> {
         let n_total = self.total_dofs();
         let nv = self.n_velocity;
@@ -244,14 +247,14 @@ impl LnsSystem {
         }
 
         // =====================================================================
-        // Block (1,0): Pressure-velocity coupling rho_0 c_0^2 B^T
+        // Block (1,0): Pressure-velocity coupling -rho_0 c_0^2 B^T
         // =====================================================================
         let rho_c_sq = rho0 * c0 * c0;
         for k in 0..self.divergence.nnz() {
             result.push(
                 nv + self.divergence.cols[k],
                 self.divergence.rows[k],
-                Complex64::new(rho_c_sq * self.divergence.values[k], 0.0),
+                Complex64::new(-rho_c_sq * self.divergence.values[k], 0.0),
             );
         }
 

@@ -1,6 +1,6 @@
 [package]
 name = "sonium-sim-propellers"
-version = "0.1.0"
+version = "0.1.1"
 edition = { workspace = true }
 authors = { workspace = true }
 description = "Propeller aeroacoustic simulation examples for shrouded, toroidal, and serrated designs"

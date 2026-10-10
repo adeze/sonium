@@ -15,8 +15,7 @@ mod mlfmm;
 pub use cublas::{
     CudaAllocationLedger, CudaBackend, CudaBemFieldOperatorC64, CudaBemQuadratureOperatorC64,
     CudaBemRegularPairOperatorC64, CudaBuffer, CudaDenseCholF64, CudaDenseLuC32, CudaDenseLuC64,
-    CudaDenseLuF64,
-    CudaDriverResourceStatsSnapshot, CudaGraphReplay, CudaRuntimeStatsSnapshot,
+    CudaDenseLuF64, CudaDriverResourceStatsSnapshot, CudaGraphReplay, CudaRuntimeStatsSnapshot,
 };
 #[cfg(feature = "cuda")]
 pub use hmatrix::{

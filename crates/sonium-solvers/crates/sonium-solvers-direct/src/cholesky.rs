@@ -2602,10 +2602,7 @@ mod tests {
         let spawned = sonium_compute::cpu::blas3::run_on_worker(move || {
             factorize_owned(matrix, false, tolerance, true, false).unwrap()
         });
-        assert_eq!(
-            installed.factor().as_slice(),
-            spawned.factor().as_slice()
-        );
+        assert_eq!(installed.factor().as_slice(), spawned.factor().as_slice());
     }
 
     #[test]

@@ -2208,11 +2208,7 @@ mod tests {
         assert_eq!(lu_f32_block_size(n), 64);
         let a = DenseMatrix::from_fn(n, n, |i, j| {
             let off = (((i * 37 + j * 17 + 11) % 101) as f32 - 50.0) / 101.0;
-            if i == j {
-                off + n as f32
-            } else {
-                off
-            }
+            if i == j { off + n as f32 } else { off }
         });
         let x_true: Vec<f32> = (0..n).map(|i| 0.5 + 0.001 * i as f32).collect();
         let b = a.matvec(&x_true);
@@ -2358,7 +2354,10 @@ mod tests {
         let b32 = expect32[ps * n + pe..ps * n + pe + (pw - 1) * n + nw].to_vec();
         let c32 = &mut expect32[pe * n + pe..pe * n + pe + (rows - 1) * n + nw];
         f32::schur_sub_serial(rows, nw, pw, &a32, n, &b32, n, c32, n);
-        assert_eq!(got32, expect32, "f32 lookahead block must match serial bitwise");
+        assert_eq!(
+            got32, expect32,
+            "f32 lookahead block must match serial bitwise"
+        );
     }
 
     #[test]

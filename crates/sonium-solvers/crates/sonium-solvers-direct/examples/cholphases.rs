@@ -12,13 +12,14 @@ use rand::SeedableRng;
 use rand::rngs::StdRng;
 use sonium_solvers_core::dense::DenseMatrix;
 use sonium_solvers_direct::{
-    CholeskyFactorization, cholesky_factorize_in_place,
-    cholesky_factorize_in_place_unchecked,
+    CholeskyFactorization, cholesky_factorize_in_place, cholesky_factorize_in_place_unchecked,
 };
 
 /// `SONIUM_CHOLPHASES_UNCHECKED=1` runs the unchecked twin (skips entry
 /// validation + output screen) to quantify that overhead.
-fn factorize(m: DenseMatrix<f64>) -> Result<CholeskyFactorization<f64>, sonium_solvers_direct::CholeskyError> {
+fn factorize(
+    m: DenseMatrix<f64>,
+) -> Result<CholeskyFactorization<f64>, sonium_solvers_direct::CholeskyError> {
     if std::env::var("SONIUM_CHOLPHASES_UNCHECKED").is_ok() {
         cholesky_factorize_in_place_unchecked(m)
     } else {
@@ -83,7 +84,11 @@ fn main() {
         let _ = factorize(chunk).expect("chol");
         let ms = t.elapsed().as_secs_f64() * 1000.0;
         walls[arm].push(ms);
-        println!("round {:>2} nb={:<3} {ms:8.2}ms", round / nbs.len(), nbs[arm]);
+        println!(
+            "round {:>2} nb={:<3} {ms:8.2}ms",
+            round / nbs.len(),
+            nbs[arm]
+        );
     }
     for (arm, nb) in nbs.iter().enumerate() {
         let mut s = walls[arm].clone();

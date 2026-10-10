@@ -24,10 +24,12 @@
 //! ```
 //!
 //! where:
-//! - A_uu = rho_0 (i omega M_v + C_v + G_v)     velocity block
-//! - A_up = -B                                    pressure gradient (divergence form)
-//! - A_pu = -rho_0 c_0^2 B^T                     velocity divergence (gradient coupling)
-//! - A_pp = i omega M_p + C_p                     pressure block
+//! - A_uu = rho_0 (i omega M_v + C_v + G_v): velocity block
+//! - A_up = B: pressure gradient in divergence form, whose minus sign B
+//!   already carries
+//! - A_pu = -rho_0 c_0^2 B^T: velocity divergence, negated because
+//!   B^Tu = -(div u, q) exactly
+//! - A_pp = i omega M_p + C_p: pressure block
 //!
 //! The velocity field uses VectorH1 and pressure uses scalar H1.
 
@@ -130,8 +132,9 @@ impl<F: MeanFlowField> BilinearForm<f64> for MeanFlowGradientForm<F> {
 /// `g(u, q) = integral(u . grad q) dOmega`
 ///
 /// This is the coupling from velocity to pressure in the continuity
-/// equation. It is the adjoint of the divergence form:
-/// g(u, q) = -B^T where B is from DivergenceForm.
+/// equation. Integration by parts gives `g = B^T` up to natural boundary
+/// terms (B is from [`DivergenceForm`]): the weak continuity carries
+/// `-rho_0 c_0^2 g(u, q)`, i.e. `-rho_0 c_0^2 B^T` in the interior.
 pub struct GradientCouplingForm;
 
 impl BilinearForm<f64> for GradientCouplingForm {
@@ -198,13 +201,14 @@ impl LeeSystem {
     /// Assemble the full block system at angular frequency omega.
     ///
     /// ```text
-    /// | rho_0(i omega M_v + C_v + G_v)   B    | | u' |   | f_u |
-    /// | rho_0 c_0^2 B^T           i omega M_p + C_p | | p' | = | f_p |
+    /// | rho_0(i omega M_v + C_v + G_v)   B     | | u' |   | f_u |
+    /// | -rho_0 c_0^2 B^T          i omega M_p + C_p | | p' | = | f_p |
     /// ```
     ///
     /// Note: B already contains the negative sign from DivergenceForm,
-    /// so A_up = B (not -B).
-    /// The gradient coupling A_pu = rho_0 c_0^2 * B^T (sign from IBP).
+    /// so A_up = B (not -B). Transposing keeps that sign:
+    /// (B^Tu)_j = -integral(psi_j div u_h), so the weak continuity term
+    /// +rho_0 c_0^2 (div u, q) assembles as A_pu = -rho_0 c_0^2 B^T.
     pub fn assemble(&self, mean_flow: &MeanFlow, omega: f64) -> TripletMatrix<Complex64> {
         let n_total = self.total_dofs();
         let nv = self.n_velocity;
@@ -252,28 +256,16 @@ impl LeeSystem {
             );
         }
 
-        // Block (1,0): rho_0 c_0^2 B^T (gradient coupling, pressure-velocity)
+        // Block (1,0): -rho_0 c_0^2 B^T (gradient coupling, pressure-velocity).
+        // B[i,j] = -integral(psi_j div(phi_i)), so (B^Tu)_j is exactly
+        // -integral(psi_j div u_h); the weak continuity term
+        // +rho_0 c_0^2 (div u, q) is therefore -rho_0 c_0^2 B^T.
         let rho_c_sq = rho0 * c0 * c0;
         for k in 0..self.divergence.nnz() {
-            // B^T: swap row/col of B, but B has negative sign from DivergenceForm
-            // B[i,j] = -integral(phi_j div(v_i)) => B^T[j,i] = B[i,j]
-            // The weak form gives A_pu = -rho_0 c_0^2 integral(u . grad q)
-            // = -rho_0 c_0^2 (-B^T) = rho_0 c_0^2 B^T
-            // But B already has the negative sign, so:
-            // rho_0 c_0^2 * B^T gives: rho_0 c_0^2 * B[i,j] at position (j+nv, i)
-            // Wait — we need to negate because B = -div, and we want +div^T.
-            // A_pu = -rho_0 c_0^2 * GradientCoupling
-            //       = -rho_0 c_0^2 * (-B^T)
-            //       = rho_0 c_0^2 * B^T
-            // Since B values are already negative (DivergenceForm), B^T values are also negative.
-            // So rho_0 c_0^2 * B^T[j,i] = rho_0 c_0^2 * B[i,j] (which is already negative).
-            // This gives -rho_0 c_0^2 * integral(phi_j div(v_i)) which after transposition
-            // is -rho_0 c_0^2 * integral(u . grad q).
-            // The weak continuity has: -rho_0 c_0^2 integral(u . grad q), which matches!
             result.push(
                 nv + self.divergence.cols[k],
                 self.divergence.rows[k],
-                Complex64::new(rho_c_sq * self.divergence.values[k], 0.0),
+                Complex64::new(-rho_c_sq * self.divergence.values[k], 0.0),
             );
         }
 
@@ -473,5 +465,54 @@ mod tests {
         // Convert to CSR and verify non-trivial
         let csr = block.to_csr();
         assert_eq!(csr.num_rows, n_total);
+    }
+
+    #[test]
+    fn test_lee_plane_wave_residual_converges() {
+        // A downstream plane wave in uniform flow satisfies the homogeneous
+        // LEE, so the assembled operator must annihilate its interpolant
+        // with refinement. This pins the continuity-block sign: with the
+        // wrong sign the system only supports evanescent waves and the
+        // residual stalls at O(1).
+        let omega = 600.0;
+        let flow = MeanFlow::air_standard([34.3, 0.0, 0.0]);
+        let c0 = flow.speed_of_sound;
+        let u0 = flow.velocity[0];
+        let kx = omega / (c0 + u0);
+        let doppler = omega - u0 * kx;
+        let mut previous = f64::INFINITY;
+        for nx in [8, 16] {
+            let mesh = unit_square_triangles(nx);
+            let system = build_lee_system_uniform(
+                &mesh,
+                PolynomialDegree::P1,
+                PolynomialDegree::P1,
+                &flow,
+                2,
+            );
+            let nv = system.n_velocity;
+            let nn = mesh.num_nodes();
+            assert_eq!(nv, 2 * nn);
+            let mut x = vec![Complex64::new(0.0, 0.0); system.total_dofs()];
+            for (node, point) in mesh.nodes.iter().enumerate() {
+                let pressure = Complex64::from_polar(1.0, -kx * point.x);
+                // u = i.grad p / (rho.doppler); d_x p = -ikx.p cancels the i.
+                x[2 * node] = Complex64::new(kx, 0.0) * pressure / (flow.density * doppler);
+                x[2 * node + 1] = Complex64::new(0.0, 0.0);
+                x[nv + node] = pressure;
+            }
+            let matrix = system.assemble(&flow, omega);
+            let mut residual = vec![Complex64::new(0.0, 0.0); matrix.num_rows];
+            for k in 0..matrix.nnz() {
+                residual[matrix.rows[k]] += matrix.values[k] * x[matrix.cols[k]];
+            }
+            let norm = residual.iter().map(|v| v.norm_sqr()).sum::<f64>().sqrt() / nv as f64;
+            assert!(
+                norm < previous,
+                "residual must shrink with refinement: {norm} vs {previous}"
+            );
+            previous = norm;
+        }
+        assert!(previous < 0.02, "P1 residual {previous}");
     }
 }

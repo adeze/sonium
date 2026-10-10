@@ -70,16 +70,44 @@ pub fn lighthill_pressure(
     speed_of_sound: f64,
 ) -> Result<Complex64, AeroacousticsError> {
     let geometry = geometry(source, observer, angular_frequency, speed_of_sound)?;
-    let k = geometry.wavenumber;
-    let r = geometry.distance;
-    let green = Complex64::from_polar(1.0 / (4.0 * PI * r), -k * r);
+    lighthill_pressure_bare(
+        &source.stress_moment,
+        geometry.direction,
+        geometry.distance,
+        geometry.wavenumber,
+    )
+    .ok_or(AeroacousticsError::SingularObserver)
+}
+
+/// Bare Hessian contraction shared by the point and ring evaluators.
+///
+/// Contracts a Cartesian stress tensor with the aero-convention Green
+/// Hessian at one precomputed geometry. Returns `None` for a coincident
+/// pair instead of validating inputs.
+pub(crate) fn lighthill_pressure_bare(
+    stress_moment: &[[Complex64; 3]; 3],
+    direction: [f64; 3],
+    distance: f64,
+    wavenumber: f64,
+) -> Option<Complex64> {
+    if distance <= f64::EPSILON {
+        return None;
+    }
+    let green = Complex64::from_polar(1.0 / (4.0 * PI * distance), -wavenumber * distance);
 
     // Hessian of exp(-ikr)/(4*pi*r):
     // d_i d_j G = A n_i n_j + B delta_ij.
-    let radial = green * Complex64::new(-k * k + 3.0 / (r * r), 3.0 * k / r);
-    let isotropic = green * Complex64::new(-1.0 / (r * r), -k / r);
+    let radial = green
+        * Complex64::new(
+            -wavenumber * wavenumber + 3.0 / (distance * distance),
+            3.0 * wavenumber / distance,
+        );
+    let isotropic = green * Complex64::new(-1.0 / (distance * distance), -wavenumber / distance);
 
-    Ok(radial * directional_contraction(source, geometry.direction) + isotropic * trace(source))
+    Some(
+        radial * directional_contraction_raw(stress_moment, direction)
+            + isotropic * trace_raw(stress_moment),
+    )
 }
 
 /// Evaluate only the radiating `1/r` term of the compact Lighthill quadrupole.
@@ -92,7 +120,7 @@ pub fn lighthill_far_field_pressure(
     let geometry = geometry(source, observer, angular_frequency, speed_of_sound)?;
     let k = geometry.wavenumber;
     let green = Complex64::from_polar(1.0 / (4.0 * PI * geometry.distance), -k * geometry.distance);
-    Ok(-k * k * green * directional_contraction(source, geometry.direction))
+    Ok(-k * k * green * directional_contraction_raw(&source.stress_moment, geometry.direction))
 }
 
 struct SourceGeometry {
@@ -124,18 +152,21 @@ fn geometry(
     })
 }
 
-fn directional_contraction(source: &LighthillQuadrupole, direction: [f64; 3]) -> Complex64 {
+fn directional_contraction_raw(
+    stress_moment: &[[Complex64; 3]; 3],
+    direction: [f64; 3],
+) -> Complex64 {
     let mut result = Complex64::new(0.0, 0.0);
     for i in 0..3 {
         for j in 0..3 {
-            result += source.stress_moment[i][j] * direction[i] * direction[j];
+            result += stress_moment[i][j] * direction[i] * direction[j];
         }
     }
     result
 }
 
-fn trace(source: &LighthillQuadrupole) -> Complex64 {
-    source.stress_moment[0][0] + source.stress_moment[1][1] + source.stress_moment[2][2]
+fn trace_raw(stress_moment: &[[Complex64; 3]; 3]) -> Complex64 {
+    stress_moment[0][0] + stress_moment[1][1] + stress_moment[2][2]
 }
 
 fn norm(vector: [f64; 3]) -> f64 {

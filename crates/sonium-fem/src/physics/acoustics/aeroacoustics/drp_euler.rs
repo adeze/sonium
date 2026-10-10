@@ -43,6 +43,12 @@ pub const TAM_WEBB_DRP_7: DrpStencil = DrpStencil {
 };
 
 impl DrpStencil {
+    /// Neighbors reached on each side of a target node.
+    ///
+    /// Ghosted grids must pad every non-periodic face with at least this
+    /// many layers for [`Self::derivative_ghosted_line`] to stay in bounds.
+    pub const RADIUS: usize = 3;
+
     /// Modified wavenumber `k*` for physical wavenumber `k` and spacing `dx`.
     pub fn modified_wavenumber(&self, wavenumber: f64, dx: f64) -> f64 {
         let theta = wavenumber * dx;
@@ -66,6 +72,42 @@ impl DrpStencil {
                 offset * coefficient * (offset * nondimensional_wavenumber).cos()
             })
             .sum::<f64>()
+    }
+
+    /// Central derivative of one ghosted grid line.
+    ///
+    /// The line holds `interior` unknowns padded with [`Self::RADIUS`]
+    /// ghost cells on each side, strided by `stride` from `base`:
+    /// `ghosted[base + (k + RADIUS + j) * stride]` is the `j`-th neighbor
+    /// of interior node `k`, whose derivative lands in `output[k]`.
+    /// Boundary conditions enter by filling the ghosts (periodic wrap,
+    /// mirror, extrapolation) before calling this method.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either buffer is too short for the described line, which
+    /// signals a caller-side layout bug: admitted solvers size their
+    /// scratch from the same grid description.
+    pub fn derivative_ghosted_line(
+        &self,
+        ghosted: &[f64],
+        base: usize,
+        stride: usize,
+        interior: usize,
+        dx: f64,
+        output: &mut [f64],
+    ) {
+        let radius = Self::RADIUS;
+        debug_assert_eq!(radius, self.coefficients.len());
+        for (k, derivative) in output.iter_mut().enumerate().take(interior) {
+            let center = base + (k + radius) * stride;
+            let mut sum = 0.0;
+            for (offset_index, coefficient) in self.coefficients.iter().enumerate() {
+                let offset = (offset_index + 1) * stride;
+                sum += coefficient * (ghosted[center + offset] - ghosted[center - offset]);
+            }
+            *derivative = sum / dx;
+        }
     }
 
     fn derivative_periodic(&self, field: &[f64], dx: f64, output: &mut [f64]) {
@@ -498,6 +540,35 @@ mod tests {
         let mut constant_derivative = vec![0.0; n];
         TAM_WEBB_DRP_7.derivative_periodic(&vec![3.5; n], 1.0, &mut constant_derivative);
         assert!(constant_derivative.iter().all(|value| value.abs() < 1e-15));
+    }
+
+    #[test]
+    fn ghosted_line_matches_periodic_derivative_with_wrapped_ghosts() {
+        assert_eq!(DrpStencil::RADIUS, TAM_WEBB_DRP_7.coefficients.len());
+        let n = 24;
+        let radius = DrpStencil::RADIUS;
+        let mut field = vec![0.0; n];
+        for (i, value) in field.iter_mut().enumerate() {
+            *value = (2.0 * PI * i as f64 / n as f64).sin()
+                + 0.3 * (2.0 * 2.0 * PI * i as f64 / n as f64).cos();
+        }
+        let mut expected = vec![0.0; n];
+        TAM_WEBB_DRP_7.derivative_periodic(&field, 0.1, &mut expected);
+        // Interleave two identical lines to exercise base/stride handling.
+        let mut ghosted = vec![0.0; 2 * (n + 2 * radius)];
+        for line in 0..2 {
+            for k in 0..n + 2 * radius {
+                let interior = (k + n - radius) % n;
+                ghosted[line + 2 * k] = field[interior];
+            }
+        }
+        for line in 0..2 {
+            let mut actual = vec![0.0; n];
+            TAM_WEBB_DRP_7.derivative_ghosted_line(&ghosted, line, 2, n, 0.1, &mut actual);
+            for (a, e) in actual.iter().zip(&expected) {
+                assert!((a - e).abs() < 1e-13, "line {line}: {a} vs {e}");
+            }
+        }
     }
 
     #[test]

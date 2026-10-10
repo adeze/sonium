@@ -1,4 +1,4 @@
-# sonium-sim-pcfan (lib: `sonium_sim_pcfan`, version: 0.3.0)
+# sonium-sim-pcfan (lib: `sonium_sim_pcfan`, version: 0.4.0)
 
 ## Verification update — checked resolved FEM acoustic assembly bridge (2026-08-27)
 

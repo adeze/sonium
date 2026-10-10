@@ -5773,9 +5773,8 @@ impl CudaBackend {
             )));
         }
 
-        let n_i32 = i32::try_from(n).map_err(|_| {
-            OomError::Invalid(format!("dense Cholesky: n={n} exceeds i32::MAX"))
-        })?;
+        let n_i32 = i32::try_from(n)
+            .map_err(|_| OomError::Invalid(format!("dense Cholesky: n={n} exceeds i32::MAX")))?;
         let mut factors = self.raw_alloc::<f64>(values.len())?;
         self.try_copy_h2d(values, &mut factors)
             .map_err(backend_error_to_oom)?;
@@ -5822,10 +5821,9 @@ impl CudaBackend {
         check_cusolver("cusolverDnDpotrf_bufferSize", st)?;
         drop(_a_guard);
 
-        let mut workspace =
-            self.raw_alloc::<f64>(usize::try_from(lwork).map_err(|_| {
-                OomError::Invalid(format!("dense Cholesky: negative workspace size {lwork}"))
-            })?)?;
+        let mut workspace = self.raw_alloc::<f64>(usize::try_from(lwork).map_err(|_| {
+            OomError::Invalid(format!("dense Cholesky: negative workspace size {lwork}"))
+        })?)?;
         let mut info = self.raw_alloc::<i32>(1)?;
 
         let (a_ptr, _a_guard) = buf_ptr_mut(&mut factors, &self.stream)

@@ -13,6 +13,14 @@
   collect into index order before reduction, so checksummed artifacts are
   identical on both paths.
 
+### Added — FW-H audit
+
+- Cross-check test pinning the far-field-only `fwh_reference` against
+  the full-kernel `sonium-fem` stationary FW-H evaluator on identical
+  elements: thickness agrees to roundoff (identical closed form) and
+  loading/total within 2% at `kr ~ 180`, documenting the `1/R`
+  near-field scope difference.
+
 ## 0.1.0
 
 ### Added

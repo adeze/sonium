@@ -234,9 +234,7 @@ fn rowdots4_bounds_ok(
             Some(end) if end <= a_len => {}
             _ => return false,
         }
-        let o = i
-            .checked_mul(ostride)
-            .and_then(|off| o0.checked_add(off));
+        let o = i.checked_mul(ostride).and_then(|off| o0.checked_add(off));
         match o {
             Some(o) if o < out_len => {}
             _ => return false,

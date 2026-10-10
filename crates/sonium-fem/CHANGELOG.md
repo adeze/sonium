@@ -71,6 +71,48 @@
   with the Galbrun/APE absence noted and justified) and for viscothermal
   modelling (LRF vs BLI vs full LNS).
 
+### Added — aeroacoustic analogies and propagation
+
+- Lighthill radiation in 2-D, 2-D-axisymmetric, and 3-D
+  (`aeroacoustics::lighthill_2d_axi`): planar quadrupoles through the
+  Hankel kernel plus spinning ring sources of any azimuthal order
+  sharing the 3-D kernel sample by sample.
+- Distributed quadrupole sums over mesh cells (`distributed`):
+  per-cell stress moments through the point/planar evaluators, with an
+  explicit compact-depth 2-D-to-3-D extrusion documenting the `d ≪ λ`
+  approximation.
+- Stationary permeable FW-H in 2-D and axisymmetric form
+  (`fwh_2d_axi`): planar contours, spinning revolved strips of any
+  azimuthal order, and uniform-flow convected Kirchhoff surfaces
+  carrying `(p, ∇p)`.
+- Annular-duct modal layer (`duct_modes` + `sonium-wave` annular modes):
+  hard/soft-wall cut-on with flow, lined-wall roots, rotor-stator
+  cut-on screening, and Tyler–Sofrin interaction orders; propeller
+  rotor-alone/interaction directivity in `propeller_source`.
+- Axisymmetric frequency-domain LEE with azimuthal mode `m`
+  (`axisymmetric_lee`: `AxiLeeSystem`, meridional divergence,
+  axis-aware DOFs) and spinning-mode axisymmetric LPF sweeps
+  (`AxiLpfModeAssembler`, azimuthal mass form).
+- Tam–Webb DRP Euler on structured 2-D/3-D Cartesian grids
+  (`drp_structured`, characteristic outflow plus sponge) and
+  axisymmetric modal pairs (`drp_axi`, `cos mφ`/`sin mφ`), with shared
+  energy-centroid group-velocity diagnostics (`wave_diagnostics`).
+- Unstructured P1–P3 DG-LEE on triangles/tetrahedra (`dg_lee`): exact
+  upwind flux, SSPRK(3,3), outflow/slip-wall/prescribed boundaries,
+  manufactured-solution convergence at degree-plus-one, packet
+  group-velocity and wall-reflection gates, and a structured/DG
+  equivalence gate.
+- Snapshot-to-phasor coupling (`snapshot`): Hann DFT peak phasors,
+  Lighthill stress tensors, FW-H patches/contours, azimuthal-mode
+  extraction, and ring/revolved-strip assembly from spinning data.
+
+### Fixed — aeroacoustics
+
+- 3-D LEE/LNS continuity block corrected from `+ρ₀c₀²Bᵀ` to
+  `-ρ₀c₀²Bᵀ` (integration by parts against the divergence form);
+  pinned by a plane-wave regression test whose negative control fails
+  under the old sign.
+
 ## 0.5.30
 
 ### Added
