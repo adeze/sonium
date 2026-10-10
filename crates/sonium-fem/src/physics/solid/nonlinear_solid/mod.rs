@@ -18,8 +18,14 @@
 //! let result = fem_newton_solve(&form, &space, &mesh, &initial_guess, &config)?;
 //! ```
 
+mod eas;
+mod fbar;
 mod forms;
+mod hex;
 mod materials;
 
+pub use eas::*;
+pub use fbar::*;
 pub use forms::*;
+pub use hex::*;
 pub use materials::*;

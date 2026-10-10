@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for hertz_sphere
+/RUN/hertz_sphere/1
+   1.000000000000E-1
+/TFILE
+   1.000000000000E-3
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   2.500000000000E-2
+/PRINT/-1000

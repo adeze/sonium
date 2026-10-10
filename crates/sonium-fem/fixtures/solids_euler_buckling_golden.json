@@ -1,0 +1,49 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"euler_buckling",
+		"units":"SI"
+	},
+	"inputs":{
+		"youngs_modulus_pa":200000000000,
+		"second_moment_m4":1.0e-8,
+		"length_m":1
+	},
+	"values":{
+		"pcr_pinned":{
+			"values":[
+				"19739.208802178717237668981999752302270627398814482"
+			],
+			"exact":"Pi^2 E I\/L^2, K=1"
+		},
+		"pcr_clamped":{
+			"values":[
+				"78956.835208714868950675927999009209082509595257926"
+			],
+			"exact":"Pi^2 E I\/(L\/2)^2, K=1\/2"
+		},
+		"pcr_cantilever":{
+			"values":[
+				"4934.8022005446793094172454999380755676568497036204"
+			],
+			"exact":"Pi^2 E I\/(2L)^2, K=2"
+		},
+		"pcr_clamped_pinned":{
+			"values":[
+				"40284.099596283096403406085713780208715566120029554"
+			],
+			"exact":"Pi^2 E I\/(0.7L)^2, K=7\/10"
+		}
+	},
+	"tolerances":{
+		"pcr_pinned_abs":1.0e-9,
+		"pcr_pinned_rel":1.0e-12,
+		"pcr_clamped_abs":1.0e-9,
+		"pcr_clamped_rel":1.0e-12,
+		"pcr_cantilever_abs":1.0e-9,
+		"pcr_cantilever_rel":1.0e-12,
+		"pcr_clamped_pinned_abs":1.0e-9,
+		"pcr_clamped_pinned_rel":1.0e-12
+	}
+}

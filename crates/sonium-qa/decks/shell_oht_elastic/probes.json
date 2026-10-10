@@ -1,0 +1,28 @@
+{
+  "case": "shell_oht_elastic",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "pulled center DX",
+      "channel": "DX/4121",
+      "expected": 2.428842504744e-4,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.000e-1
+    },
+    {
+      "label": "hole edge F1",
+      "channel": "F1/SHEL/1939",
+      "expected": 2.511056700172e8,
+      "abs_tol": 1.000e6,
+      "rel_tol": 2.000e-1
+    },
+    {
+      "label": "hole edge THIC",
+      "channel": "THIC/SHEL/1939",
+      "expected": 1.000000000000e-3,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.000e-6
+    }
+  ]
+}

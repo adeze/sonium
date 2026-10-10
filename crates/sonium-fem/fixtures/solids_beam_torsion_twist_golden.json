@@ -1,0 +1,43 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"beam_torsion_twist",
+		"units":"SI"
+	},
+	"inputs":{
+		"torque_n_m":500,
+		"length_m":2,
+		"radius_m":2.5e-2,
+		"youngs_modulus_pa":70000000000,
+		"poisson_ratio":0.33
+	},
+	"values":{
+		"torsional_constant":{
+			"values":[
+				"6.1359231515425649188723503579677790706975964831545e-7"
+			],
+			"exact":"Pi*r^4\/2"
+		},
+		"twist":{
+			"values":[
+				"0.061930371455918313054388050003512788554848937350526"
+			],
+			"exact":"T*L\/(G*J)"
+		},
+		"max_shear_stress":{
+			"values":[
+				"2.0371832715762602978417121711681838340410834654778e7"
+			],
+			"exact":"T*r\/J"
+		}
+	},
+	"tolerances":{
+		"torsional_constant_abs":1.0e-20,
+		"torsional_constant_rel":1.0e-12,
+		"twist_abs":1.0e-15,
+		"twist_rel":1.0e-9,
+		"max_shear_stress_abs":1.0e-9,
+		"max_shear_stress_rel":1.0e-12
+	}
+}

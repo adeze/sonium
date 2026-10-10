@@ -1,0 +1,60 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"explicit_bar_wave",
+		"units":"SI"
+	},
+	"inputs":{
+		"youngs_modulus_pa":200000000000,
+		"density":7800,
+		"pulse_center_m":10,
+		"pulse_width_m":0.4,
+		"pulse_amplitude_m":1.0e-3,
+		"time_s":8.0e-4
+	},
+	"values":{
+		"wave_speed":{
+			"values":[
+				"5063.6968354183330813944771906982305297654517610467"
+			],
+			"exact":"Sqrt[E\/rho]"
+		},
+		"u_center":{
+			"values":[
+				"2.8640211121428632230115372489577070109575849701143e-48"
+			],
+			"exact":"A\/2 (Exp[-((c t)\/w)^2] + Exp[-((c t)\/w)^2])"
+		},
+		"u_right":{
+			"values":[
+				"0.0005"
+			],
+			"exact":"d'Alembert at x0 + c t"
+		},
+		"u_left":{
+			"values":[
+				"0.0005"
+			],
+			"exact":"d'Alembert at x0 - c t"
+		},
+		"pulse_strain_energy":{
+			"values":[
+				"3133.2853432887506280197066060138065662587334257624"
+			],
+			"exact":"E A A^2 Sqrt[Pi\/2]\/(2 w)"
+		}
+	},
+	"tolerances":{
+		"wave_speed_abs":1.0e-9,
+		"wave_speed_rel":1.0e-12,
+		"u_center_abs":1.0e-15,
+		"u_center_rel":1.0e-12,
+		"u_right_abs":1.0e-15,
+		"u_right_rel":1.0e-12,
+		"u_left_abs":1.0e-15,
+		"u_left_rel":1.0e-12,
+		"pulse_strain_energy_abs":1.0e-9,
+		"pulse_strain_energy_rel":1.0e-12
+	}
+}

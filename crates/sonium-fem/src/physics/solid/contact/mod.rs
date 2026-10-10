@@ -40,6 +40,7 @@
 
 pub mod augmented_lagrangian;
 pub mod detection;
+pub mod explicit;
 pub mod gap;
 
 pub use augmented_lagrangian::{ContactConfig, ContactManager, ContactResult};

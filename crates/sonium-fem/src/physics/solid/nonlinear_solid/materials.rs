@@ -196,6 +196,256 @@ impl HyperelasticMaterial for MooneyRivlin {
     }
 }
 
+/// Ogden hyperelastic material (3D only).
+///
+/// Strain energy in principal stretches (isochoric-volumetric split):
+/// ```text
+/// W = sum_i (mu_i / alpha_i) (l1b^ai + l2b^ai + l3b^ai - 3) + (K/2) (J - 1)^2
+/// ```
+/// where `lib = J^{-1/3} li` are the isochoric principal stretches.
+/// Recovers the Neo-Hookean response for one term with `alpha = 2`.
+/// Stress and tangent use numerical differentiation of `energy`, matching
+/// the Mooney-Rivlin treatment in this module.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::nonlinear_solid::{HyperelasticMaterial, OgdenMaterial};
+///
+/// let rubber = OgdenMaterial::treloar();
+/// let f = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+/// assert!(rubber.energy(&f).abs() < 1e-12);
+/// ```
+#[derive(Debug, Clone)]
+pub struct OgdenMaterial {
+    /// Ogden shear moduli `mu_i` in Pa, one per term.
+    pub mu: Vec<f64>,
+    /// Ogden exponents `alpha_i`, one per term.
+    pub alpha: Vec<f64>,
+    /// Bulk modulus in Pa.
+    pub bulk: f64,
+}
+
+impl OgdenMaterial {
+    /// Creates an Ogden material from term data and bulk modulus.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `mu` and `alpha` differ in length or are empty.
+    pub fn new(mu: Vec<f64>, alpha: Vec<f64>, bulk: f64) -> Self {
+        assert!(
+            !mu.is_empty() && mu.len() == alpha.len(),
+            "ogden terms need matching non-empty mu and alpha lists"
+        );
+        Self { mu, alpha, bulk }
+    }
+
+    /// Treloar's vulcanized rubber fit (three terms).
+    pub fn treloar() -> Self {
+        Self::new(
+            vec![0.618e6, 0.00118e6, -0.00981e6],
+            vec![1.3, 5.0, -2.0],
+            100.0e6,
+        )
+    }
+
+    /// Single-term Neo-Hookean-equivalent Ogden fit.
+    pub fn neo_hookean(mu: f64, bulk: f64) -> Self {
+        Self::new(vec![mu], vec![2.0], bulk)
+    }
+
+    /// Isochoric principal stretches of a deformation gradient.
+    ///
+    /// Returns `(J, [l1b, l2b, l3b])`: the Jacobian plus the eigenvalues
+    /// of the isochoric right stretch, via cyclic Jacobi diagonalization.
+    fn isochoric_stretches(&self, f: &[f64]) -> (f64, [f64; 3]) {
+        let j = det(f, 3).max(1e-30);
+        let scale = j.powf(-1.0 / 3.0);
+        // Isochoric right Cauchy-Green Cb = J^{-2/3} F^T F.
+        let mut cb = [0.0; 9];
+        for i in 0..3 {
+            for jj in 0..3 {
+                let mut sum = 0.0;
+                for k in 0..3 {
+                    sum += f[k * 3 + i] * f[k * 3 + jj];
+                }
+                cb[i * 3 + jj] = scale * scale * sum;
+            }
+        }
+        let (values, _) = sym_eigen_3x3(&cb);
+        (
+            j,
+            [
+                values[0].max(1e-30).sqrt(),
+                values[1].max(1e-30).sqrt(),
+                values[2].max(1e-30).sqrt(),
+            ],
+        )
+    }
+}
+
+impl HyperelasticMaterial for OgdenMaterial {
+    fn dim(&self) -> usize {
+        3
+    }
+
+    fn energy(&self, f: &[f64]) -> f64 {
+        let (j, stretches) = self.isochoric_stretches(f);
+        let mut w = 0.0;
+        for (mu, alpha) in self.mu.iter().zip(self.alpha.iter()) {
+            // expm1 form: exact at identity and cancellation-free nearby,
+            // which the numerical stress and tangent differentiate cleanly.
+            let sum: f64 = stretches
+                .iter()
+                .map(|l| (alpha * l.ln()).exp_m1())
+                .sum();
+            w += mu / alpha * sum;
+        }
+        w + 0.5 * self.bulk * (j - 1.0).powi(2)
+    }
+
+    fn stress(&self, f: &[f64]) -> Vec<f64> {
+        numerical_stress(self, f, 3)
+    }
+
+    fn tangent(&self, f: &[f64]) -> Vec<f64> {
+        numerical_tangent(self, f, 3)
+    }
+}
+
+/// Incompressible uniaxial Cauchy stress of an Ogden solid.
+///
+/// Closed form `sigma = sum_i mu_i (l^ai - l^{-ai/2})` for the axial
+/// stretch `l`, used by the C2 golden and the rubber QA leg.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::nonlinear_solid::ogden_uniaxial_cauchy;
+///
+/// let sigma = ogden_uniaxial_cauchy(&[0.618e6], &[1.3], 1.5);
+/// assert!(sigma > 0.0);
+/// ```
+pub fn ogden_uniaxial_cauchy(mu: &[f64], alpha: &[f64], stretch: f64) -> f64 {
+    mu.iter()
+        .zip(alpha.iter())
+        .map(|(m, a)| m * (stretch.powf(*a) - stretch.powf(-a / 2.0)))
+        .sum()
+}
+
+/// Yeoh hyperelastic material (3D only).
+///
+/// Strain energy in the first isochoric invariant:
+/// ```text
+/// W = c1 (I1b - 3) + c2 (I1b - 3)^2 + c3 (I1b - 3)^3 + (K/2) (J - 1)^2
+/// ```
+/// Captures the stiffening of filled rubbers at large stretch with a
+/// single invariant. Stress and tangent use numerical differentiation.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::nonlinear_solid::{HyperelasticMaterial, YeohMaterial};
+///
+/// let rubber = YeohMaterial::filled_rubber();
+/// let f = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+/// assert!(rubber.energy(&f).abs() < 1e-12);
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct YeohMaterial {
+    /// First Yeoh coefficient in Pa.
+    pub c1: f64,
+    /// Second Yeoh coefficient in Pa.
+    pub c2: f64,
+    /// Third Yeoh coefficient in Pa.
+    pub c3: f64,
+    /// Bulk modulus in Pa.
+    pub bulk: f64,
+}
+
+impl YeohMaterial {
+    /// Creates a Yeoh material from three coefficients and bulk modulus.
+    pub fn new(c1: f64, c2: f64, c3: f64, bulk: f64) -> Self {
+        Self { c1, c2, c3, bulk }
+    }
+
+    /// Carbon-black filled natural rubber fit.
+    pub fn filled_rubber() -> Self {
+        Self::new(0.40e6, -0.022e6, 0.0032e6, 100.0e6)
+    }
+}
+
+impl HyperelasticMaterial for YeohMaterial {
+    fn dim(&self) -> usize {
+        3
+    }
+
+    fn energy(&self, f: &[f64]) -> f64 {
+        let j = det(f, 3);
+        let i1 = trace_ftf(f, 3);
+        let i1_bar = j.powf(-2.0 / 3.0) * i1;
+        let d = i1_bar - 3.0;
+        self.c1 * d + self.c2 * d * d + self.c3 * d * d * d + 0.5 * self.bulk * (j - 1.0).powi(2)
+    }
+
+    fn stress(&self, f: &[f64]) -> Vec<f64> {
+        numerical_stress(self, f, 3)
+    }
+
+    fn tangent(&self, f: &[f64]) -> Vec<f64> {
+        numerical_tangent(self, f, 3)
+    }
+}
+
+/// Eigendecomposition of a symmetric 3x3 via cyclic Jacobi rotations.
+///
+/// Returns eigenvalues and the column eigenvector matrix, so that
+/// `a = V diag(values) V^T`. Shared by the Ogden principal stretches.
+fn sym_eigen_3x3(a: &[f64; 9]) -> ([f64; 3], [f64; 9]) {
+    let mut d = *a;
+    let mut v = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    for _ in 0..12 {
+        let mut off = 0.0;
+        for (p, q) in [(0, 1), (0, 2), (1, 2)] {
+            off += d[p * 3 + q] * d[p * 3 + q];
+        }
+        if off < 1e-30 {
+            break;
+        }
+        for (p, q) in [(0, 1), (0, 2), (1, 2)] {
+            let apq = d[p * 3 + q];
+            if apq * apq < 1e-32 {
+                continue;
+            }
+            let app = d[p * 3 + p];
+            let aqq = d[q * 3 + q];
+            let theta = (aqq - app) / (2.0 * apq);
+            let t = theta.signum() / (theta.abs() + (1.0 + theta * theta).sqrt());
+            let c = 1.0 / (1.0 + t * t).sqrt();
+            let s = t * c;
+            for k in 0..3 {
+                let dpk = d[p * 3 + k];
+                let dqk = d[q * 3 + k];
+                d[p * 3 + k] = c * dpk - s * dqk;
+                d[q * 3 + k] = s * dpk + c * dqk;
+            }
+            for k in 0..3 {
+                let dkp = d[k * 3 + p];
+                let dkq = d[k * 3 + q];
+                d[k * 3 + p] = c * dkp - s * dkq;
+                d[k * 3 + q] = s * dkp + c * dkq;
+            }
+            for k in 0..3 {
+                let vkp = v[k * 3 + p];
+                let vkq = v[k * 3 + q];
+                v[k * 3 + p] = c * vkp - s * vkq;
+                v[k * 3 + q] = s * vkp + c * vkq;
+            }
+        }
+    }
+    ([d[0], d[4], d[8]], v)
+}
+
 // === Helper functions ===
 
 /// Determinant of a dim x dim matrix stored row-major.
@@ -410,5 +660,75 @@ mod tests {
         for &pi in &p {
             assert!(pi.abs() < 1e-14);
         }
+    }
+
+    #[test]
+    fn test_ogden_identity_is_stress_free() {
+        let mat = OgdenMaterial::treloar();
+        let f = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(mat.energy(&f).abs() < 1e-12);
+        // Numerical differentiation of the spectral energy bottoms out at
+        // mu * eig_err / eps ~ 1e-3 Pa; the bound below is 1e-8 of mu_1.
+        for pi in mat.stress(&f) {
+            assert!(pi.abs() < 5.0e-3, "P = {pi}, expected 0");
+        }
+    }
+
+    #[test]
+    fn test_ogden_uniaxial_energy_closed_form() {
+        let mu = 0.5e6;
+        let alpha = 1.3;
+        let mat = OgdenMaterial::new(vec![mu], vec![alpha], 1.0e9);
+        let l = 1.5f64;
+        let lt = 1.0 / l.sqrt();
+        let f = [l, 0.0, 0.0, 0.0, lt, 0.0, 0.0, 0.0, lt];
+        let expected = mu / alpha * (l.powf(alpha) + 2.0 * lt.powf(alpha) - 3.0);
+        assert!((mat.energy(&f) - expected).abs() / expected < 1e-12);
+    }
+
+    #[test]
+    fn test_ogden_alpha2_matches_neo_hookean_isochoric() {
+        let mu = 0.8e6;
+        let ogden = OgdenMaterial::neo_hookean(mu, 1.0e9);
+        // Isochoric shear: J = 1, so only the (mu/2)(I1 - 3) part acts.
+        let f = [1.0, 0.3, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let i1 = trace_ftf(&f, 3);
+        let expected = 0.5 * mu * (i1 - 3.0);
+        assert!((ogden.energy(&f) - expected).abs() / expected < 1e-9);
+    }
+
+    #[test]
+    fn test_ogden_uniaxial_cauchy_closed_form() {
+        let sigma = ogden_uniaxial_cauchy(&[0.618e6], &[1.3], 1.5);
+        let expected = 0.618e6 * (1.5f64.powf(1.3) - 1.5f64.powf(-0.65));
+        assert!((sigma - expected).abs() / expected < 1e-15);
+        assert!(ogden_uniaxial_cauchy(&[0.618e6], &[1.3], 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_yeoh_uniaxial_energy_closed_form() {
+        let mat = YeohMaterial::filled_rubber();
+        let l = 2.0f64;
+        let lt = 1.0 / l.sqrt();
+        let f = [l, 0.0, 0.0, 0.0, lt, 0.0, 0.0, 0.0, lt];
+        let d = (l * l + 2.0 * lt * lt) - 3.0;
+        let expected = mat.c1 * d + mat.c2 * d * d + mat.c3 * d * d * d;
+        assert!((mat.energy(&f) - expected).abs() / expected < 1e-12);
+    }
+
+    #[test]
+    fn test_yeoh_initial_modulus_is_2c1() {
+        let mat = YeohMaterial::new(0.40e6, -0.022e6, 0.0032e6, 100.0e6);
+        let f = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+        let a = mat.tangent(&f);
+        // Isotropic tangent at identity with mu = 2 c1.
+        let mu = 2.0 * mat.c1;
+        let lambda = mat.bulk - 2.0 * mu / 3.0;
+        let expected_0000 = lambda + 2.0 * mu;
+        assert!(
+            (a[0] - expected_0000).abs() / expected_0000 < 0.01,
+            "A0000 = {}, want {expected_0000}",
+            a[0]
+        );
     }
 }

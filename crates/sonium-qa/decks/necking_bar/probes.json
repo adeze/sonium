@@ -1,0 +1,14 @@
+{
+  "case": "necking_bar",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "tip DX",
+      "channel": "DX/95",
+      "expected": 1.000000000000e-4,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 5.000e-2
+    }
+  ]
+}

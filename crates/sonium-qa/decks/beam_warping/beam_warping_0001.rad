@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for beam_warping
+/RUN/beam_warping/1
+   5.000000000000E-1
+/TFILE
+   5.000000000000E-3
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   5.000000000000E-2
+/PRINT/-1000

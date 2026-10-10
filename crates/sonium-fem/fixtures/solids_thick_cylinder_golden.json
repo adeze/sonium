@@ -1,0 +1,91 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"thick_cylinder",
+		"units":"SI"
+	},
+	"inputs":{
+		"inner_radius_m":0.1,
+		"outer_radius_m":0.2,
+		"inner_pressure_pa":10000000,
+		"youngs_modulus_pa":200000000000,
+		"poisson_ratio":0.3
+	},
+	"values":{
+		"sigma_r_bore":{
+			"values":[
+				"-1.e7"
+			],
+			"exact":"Lame: p a^2\/(b^2-a^2) (1-b^2\/a^2)"
+		},
+		"sigma_theta_bore":{
+			"values":[
+				"1.6666666666666666666666666666666666666666666666667e7"
+			],
+			"exact":"Lame: p a^2\/(b^2-a^2) (1+b^2\/a^2)"
+		},
+		"sigma_r_mid":{
+			"values":[
+				"-2.5925925925925925925925925925925925925925925925926e6"
+			],
+			"exact":"Lame at r=(a+b)\/2"
+		},
+		"sigma_theta_mid":{
+			"values":[
+				"9.2592592592592592592592592592592592592592592592593e6"
+			],
+			"exact":"Lame at r=(a+b)\/2"
+		},
+		"sigma_r_outer":{
+			"values":[
+				"0"
+			],
+			"exact":"Lame at r=b (traction-free)"
+		},
+		"sigma_theta_outer":{
+			"values":[
+				"6.6666666666666666666666666666666666666666666666667e6"
+			],
+			"exact":"Lame at r=b"
+		},
+		"axial_stress":{
+			"values":[
+				"3.3333333333333333333333333333333333333333333333333e6"
+			],
+			"exact":"p a^2\/(b^2-a^2), closed ends"
+		},
+		"displacement_bore_plane_strain":{
+			"values":[
+				"-7.8e-6"
+			],
+			"exact":"(1+nu)\/E ((1-2 nu) A a-B\/a)"
+		},
+		"displacement_bore_plane_stress":{
+			"values":[
+				"9.8333333333333333333333333333333333333333333333333e-6"
+			],
+			"exact":"a (sigma_t-nu sigma_r)\/E"
+		}
+	},
+	"tolerances":{
+		"sigma_r_bore_abs":1.0e-9,
+		"sigma_r_bore_rel":1.0e-12,
+		"sigma_theta_bore_abs":1.0e-9,
+		"sigma_theta_bore_rel":1.0e-12,
+		"sigma_r_mid_abs":1.0e-9,
+		"sigma_r_mid_rel":1.0e-12,
+		"sigma_theta_mid_abs":1.0e-9,
+		"sigma_theta_mid_rel":1.0e-12,
+		"sigma_r_outer_abs":1.0e-9,
+		"sigma_r_outer_rel":1.0e-12,
+		"sigma_theta_outer_abs":1.0e-9,
+		"sigma_theta_outer_rel":1.0e-12,
+		"axial_stress_abs":1.0e-9,
+		"axial_stress_rel":1.0e-12,
+		"displacement_bore_plane_strain_abs":1.0e-15,
+		"displacement_bore_plane_strain_rel":1.0e-12,
+		"displacement_bore_plane_stress_abs":1.0e-15,
+		"displacement_bore_plane_stress_rel":1.0e-12
+	}
+}

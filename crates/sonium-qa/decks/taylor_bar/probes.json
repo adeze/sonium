@@ -1,0 +1,21 @@
+{
+  "case": "taylor_bar",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "anvil FNZ plateau",
+      "channel": "FNZ/RWALL/1",
+      "expected": -2.323709585318e5,
+      "abs_tol": 1.000e3,
+      "rel_tol": 2.500e-1
+    },
+    {
+      "label": "impact face DZ",
+      "channel": "DZ/13",
+      "expected": 6.810000000000e-4,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 5.000e-2
+    }
+  ]
+}

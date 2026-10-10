@@ -8,10 +8,18 @@
 pub mod dkt;
 pub mod elastoplastic;
 mod element;
+pub mod layered;
+pub mod mitc4;
 pub mod nonlinear;
+pub mod revolution;
 mod section;
+pub mod thickness;
 
 pub use elastoplastic::ElastoplasticShellForm;
 pub use element::*;
+pub use layered::*;
+pub use mitc4::*;
 pub use nonlinear::CorotationalShellForm;
+pub use revolution::*;
 pub use section::*;
+pub use thickness::*;

@@ -1,0 +1,42 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"hertz_impact",
+		"units":"SI"
+	},
+	"inputs":{
+		"mass_kg":2,
+		"velocity":3,
+		"radius_m":5.0e-2,
+		"effective_modulus_pa":110000000000
+	},
+	"values":{
+		"max_approach":{
+			"values":[
+				"0.00021604610333682355284231919828078277338808172955272"
+			],
+			"exact":"(15 m V^2\/(16 E* Sqrt[R]))^(2\/5)"
+		},
+		"peak_force":{
+			"values":[
+				"104144.43793472035182259726992551551119828989669469"
+			],
+			"exact":"(4\/3) E* Sqrt[R] delta^(3\/2)"
+		},
+		"contact_time":{
+			"values":[
+				"0.00021172518127008708178547281431516711792032009496167"
+			],
+			"exact":"2.94 delta\/V (Rayleigh)"
+		}
+	},
+	"tolerances":{
+		"max_approach_abs":1.0e-15,
+		"max_approach_rel":1.0e-12,
+		"peak_force_abs":1.0e-6,
+		"peak_force_rel":1.0e-12,
+		"contact_time_abs":1.0e-15,
+		"contact_time_rel":1.0e-12
+	}
+}

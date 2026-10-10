@@ -13,8 +13,11 @@
 //! - **GMRES+Deflated+ShiftedLaplacian**: Deflated GMRES with shifted-Laplacian (best for clustered eigenvalues)
 
 mod deflation;
+pub mod explicit_dynamics;
+pub mod implicit_dynamics;
 pub mod matrix_free;
 pub mod nonlinear;
+pub mod vibration_fatigue;
 
 pub use deflation::{DeflationConfig, DeflationMethod};
 pub use matrix_free::{MatrixFreeError, MatrixFreeOperator};

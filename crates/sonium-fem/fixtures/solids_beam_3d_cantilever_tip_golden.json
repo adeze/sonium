@@ -1,0 +1,35 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"beam_3d_cantilever_tip",
+		"units":"SI"
+	},
+	"inputs":{
+		"load_n":1000,
+		"length_m":1,
+		"youngs_modulus_pa":200000000000,
+		"width_m":5.0e-2,
+		"height_m":5.0e-2
+	},
+	"values":{
+		"tip_deflection":{
+			"values":[
+				"0.0032"
+			],
+			"exact":"F*L^3\/(3*E*I)"
+		},
+		"tip_slope":{
+			"values":[
+				"0.0048"
+			],
+			"exact":"F*L^2\/(2*E*I)"
+		}
+	},
+	"tolerances":{
+		"tip_deflection_abs":1.0e-15,
+		"tip_deflection_rel":1.0e-9,
+		"tip_slope_abs":1.0e-15,
+		"tip_slope_rel":1.0e-9
+	}
+}

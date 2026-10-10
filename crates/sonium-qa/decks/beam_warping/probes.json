@@ -1,0 +1,21 @@
+{
+  "case": "beam_warping",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "midspan DZ difference",
+      "channel": "DZ/1392-DZ/1311",
+      "expected": 4.971041443981e-3,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.500e-1
+    },
+    {
+      "label": "tip DZ difference",
+      "channel": "DZ/2697-DZ/2616",
+      "expected": 1.364979088434e-2,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 2.000e-1
+    }
+  ]
+}

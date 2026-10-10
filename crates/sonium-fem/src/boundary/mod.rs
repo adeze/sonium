@@ -13,6 +13,7 @@ pub mod hexa_hanging;
 pub mod higher_order;
 pub mod locate_dofs;
 pub mod mixed_hanging;
+pub mod mpc_general;
 pub mod periodic;
 pub use generic::{
     BoundaryConditionError, FemSystem, FemSystemError, ResidualReport,
@@ -26,6 +27,7 @@ pub use hanging::*;
 pub use hexa_hanging::*;
 pub use higher_order::*;
 pub use locate_dofs::*;
+pub use mpc_general::*;
 pub use periodic::*;
 
 // Legacy Helmholtz-specific BCs (will be refactored in Phase 2)

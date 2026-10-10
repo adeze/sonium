@@ -391,3 +391,52 @@ mod tests {
         assert_eq!(axisymmetric_strain_column(&tab, 3, 0.2)[2], 0.0);
     }
 }
+
+// --- Shell-of-revolution meridional building blocks (additive) ---
+//
+// Consumed by `shell::revolution`. The meridional tangent is
+// `(cos_phi, sin_phi)` in `(r, z)`; the outward normal is
+// `(sin_phi, -cos_phi)`.
+
+/// Hoop membrane strain factors for local `(u_s, w)` displacements.
+///
+/// Returns `[cos_phi / r, sin_phi / r]` so that
+/// `eps_theta = f[0] * u_s + f[1] * w`.
+pub fn axisymmetric_shell_hoop_membrane_factors(
+    cos_phi: f64,
+    sin_phi: f64,
+    r: f64,
+) -> [f64; 2] {
+    let rr = r.abs().max(1.0e-12);
+    [cos_phi / rr, sin_phi / rr]
+}
+
+/// Hoop bending factor: `kap_theta = factor * beta` at unit shape value.
+pub fn axisymmetric_shell_hoop_bending_factor(cos_phi: f64, r: f64) -> f64 {
+    cos_phi / r.abs().max(1.0e-12)
+}
+
+/// Meridional circumference `2 * pi * r` for line-integral weighting.
+pub fn meridional_circumference(r: f64) -> f64 {
+    2.0 * PI * r.abs().max(1.0e-12)
+}
+
+#[cfg(test)]
+mod shell_meridional_tests {
+    use super::*;
+
+    #[test]
+    fn hoop_membrane_factors_match_cylinder_limit() {
+        // Cylinder meridian: tangent is +z, normal is +r.
+        let f = axisymmetric_shell_hoop_membrane_factors(0.0, 1.0, 2.0);
+        assert!((f[0]).abs() < 1.0e-15);
+        assert!((f[1] - 0.5).abs() < 1.0e-15);
+        assert!((meridional_circumference(2.0) - 4.0 * PI).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn hoop_bending_factor_vanishes_on_cylinder() {
+        assert!((axisymmetric_shell_hoop_bending_factor(0.0, 1.0)).abs() < 1.0e-15);
+        assert!((axisymmetric_shell_hoop_bending_factor(1.0, 2.0) - 0.5).abs() < 1.0e-15);
+    }
+}

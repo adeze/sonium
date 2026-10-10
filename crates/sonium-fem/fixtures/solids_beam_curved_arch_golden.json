@@ -1,0 +1,62 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"beam_curved_arch",
+		"units":"SI"
+	},
+	"inputs":{
+		"radius_m":1,
+		"crown_load_n":1000,
+		"pressure_pa":1000,
+		"youngs_modulus_pa":200000000000,
+		"poisson_ratio":0.3,
+		"width_m":5.0e-2,
+		"height_m":5.0e-2,
+		"shear_kappa":0.8333333333333334
+	},
+	"values":{
+		"thrust":{
+			"values":[
+				"318.17728468985866126010130407194185519823863357986"
+			],
+			"exact":"Castigliano zero-spread: (P\/Pi)(R^2-r^2)\/(R^2+r^2), r^2=I\/A"
+		},
+		"thrust_timoshenko":{
+			"values":[
+				"318.17737080691257912061817680092032181249400681214"
+			],
+			"exact":"Castigliano zero-spread with shear flexibility"
+		},
+		"crown_deflection":{
+			"values":[
+				"0.00018358616186002139138790568241078129573451192755048"
+			],
+			"exact":"dU\/dP with bending + axial energy over both halves"
+		},
+		"crown_deflection_timoshenko":{
+			"values":[
+				"0.00018504347745716211105442974331175277529831920223904"
+			],
+			"exact":"dU\/dP with bending + axial + shear energy over both halves"
+		},
+		"membrane_radial":{
+			"values":[
+				"-2.e-6"
+			],
+			"exact":"w = -q R^2\/(E A), pure membrane N = -q R"
+		}
+	},
+	"tolerances":{
+		"thrust_abs":1.0e-9,
+		"thrust_rel":1.0e-9,
+		"thrust_timoshenko_abs":1.0e-9,
+		"thrust_timoshenko_rel":1.0e-9,
+		"crown_deflection_abs":1.0e-15,
+		"crown_deflection_rel":1.0e-9,
+		"crown_deflection_timoshenko_abs":1.0e-15,
+		"crown_deflection_timoshenko_rel":1.0e-9,
+		"membrane_radial_abs":1.0e-15,
+		"membrane_radial_rel":1.0e-3
+	}
+}

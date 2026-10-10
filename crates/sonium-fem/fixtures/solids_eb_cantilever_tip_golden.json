@@ -1,0 +1,42 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"eb_cantilever_tip",
+		"units":"SI"
+	},
+	"inputs":{
+		"load_n":100,
+		"length_m":1,
+		"youngs_modulus_pa":200000000000,
+		"second_moment_m4":1.0e-8
+	},
+	"values":{
+		"tip_deflection":{
+			"values":[
+				"0.016666666666666666666666666666666666666666666666667"
+			],
+			"exact":"F*L^3\/(3*E*I)"
+		},
+		"tip_slope":{
+			"values":[
+				"0.025"
+			],
+			"exact":"F*L^2\/(2*E*I)"
+		},
+		"midspan_deflection":{
+			"values":[
+				"0.0052083333333333333333333333333333333333333333333333"
+			],
+			"exact":"F*(L\/2)^2*(3*L-L\/2)\/(6*E*I)"
+		}
+	},
+	"tolerances":{
+		"tip_deflection_abs":1.0e-15,
+		"tip_deflection_rel":1.0e-12,
+		"tip_slope_abs":1.0e-15,
+		"tip_slope_rel":1.0e-12,
+		"midspan_deflection_abs":1.0e-15,
+		"midspan_deflection_rel":1.0e-12
+	}
+}

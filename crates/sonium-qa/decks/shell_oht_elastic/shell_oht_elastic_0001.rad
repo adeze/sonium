@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for shell_oht_elastic
+/RUN/shell_oht_elastic/1
+   2.000000000000E-3
+/TFILE
+   2.000000000000E-5
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   2.000000000000E-4
+/PRINT/-1000

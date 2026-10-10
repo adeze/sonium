@@ -1,0 +1,14 @@
+{
+  "case": "hertz_sphere",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "top pole DZ",
+      "channel": "DZ/247",
+      "expected": -1.000000000000e-5,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.000e-1
+    }
+  ]
+}

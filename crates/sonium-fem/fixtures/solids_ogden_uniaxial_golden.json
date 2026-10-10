@@ -1,0 +1,42 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"ogden_uniaxial",
+		"units":"SI"
+	},
+	"inputs":{
+		"mu_pa":[
+			6.18e5,
+			1.18e3,
+			-9.81e3
+		],
+		"alpha":[
+			1.3,
+			5.0,
+			-2.0
+		],
+		"stretch_tension":1.5,
+		"stretch_compression":0.8
+	},
+	"values":{
+		"cauchy_tension":{
+			"values":[
+				"590971.85977468681303361885928475286198294181988115"
+			],
+			"exact":"Sum mu_i (l^a_i - l^(-a_i\/2)) at l=3\/2"
+		},
+		"cauchy_compression":{
+			"values":[
+				"-261231.40115271446930618550901940965504374849808041"
+			],
+			"exact":"Sum mu_i (l^a_i - l^(-a_i\/2)) at l=4\/5"
+		}
+	},
+	"tolerances":{
+		"cauchy_tension_abs":1.0e-6,
+		"cauchy_tension_rel":1.0e-12,
+		"cauchy_compression_abs":1.0e-6,
+		"cauchy_compression_rel":1.0e-12
+	}
+}

@@ -1,0 +1,21 @@
+{
+  "case": "rail_crush",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "crusher FNX",
+      "channel": "FNX/RWALL/2",
+      "expected": 5.000000000000e6,
+      "abs_tol": 1.000e4,
+      "rel_tol": 1.500e-1
+    },
+    {
+      "label": "loaded face DX",
+      "channel": "DX/95",
+      "expected": -2.000000000000e-3,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 5.000e-2
+    }
+  ]
+}

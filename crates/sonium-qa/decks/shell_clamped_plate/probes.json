@@ -1,0 +1,28 @@
+{
+  "case": "shell_clamped_plate",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "center DZ",
+      "channel": "DZ/1",
+      "expected": -1.066406250000e-4,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 5.000e-2
+    },
+    {
+      "label": "probe shell THIC",
+      "channel": "THIC/SHEL/1",
+      "expected": 2.000000000000e-2,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.000e-6
+    },
+    {
+      "label": "probe shell M1",
+      "channel": "M1/SHEL/1",
+      "expected": 1.926879882812e5,
+      "abs_tol": 1.000e3,
+      "rel_tol": 1.500e-1
+    }
+  ]
+}

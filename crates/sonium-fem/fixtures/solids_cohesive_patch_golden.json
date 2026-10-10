@@ -1,0 +1,57 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"cohesive_patch",
+		"units":"SI"
+	},
+	"inputs":{
+		"penalty_stiffness":1000000000000,
+		"strength_pa":30000000,
+		"fracture_energy":500
+	},
+	"values":{
+		"onset_opening":{
+			"values":[
+				"0.00003"
+			],
+			"exact":"sigma_c \/ K"
+		},
+		"failure_opening":{
+			"values":[
+				"0.000033333333333333333333333333333333333333333333333333"
+			],
+			"exact":"2 G \/ sigma_c"
+		},
+		"peak_traction":{
+			"values":[
+				"3.e7"
+			],
+			"exact":"sigma_c"
+		},
+		"dissipated_at_midpoint":{
+			"values":[
+				"250."
+			],
+			"exact":"G (dmax - branch d0)\/df at dmax=(d0+df)\/2"
+		},
+		"fracture_energy_check":{
+			"values":[
+				"500."
+			],
+			"exact":"G"
+		}
+	},
+	"tolerances":{
+		"onset_opening_abs":1.0e-18,
+		"onset_opening_rel":1.0e-12,
+		"failure_opening_abs":1.0e-18,
+		"failure_opening_rel":1.0e-12,
+		"peak_traction_abs":1.0e-6,
+		"peak_traction_rel":1.0e-12,
+		"dissipated_at_midpoint_abs":1.0e-9,
+		"dissipated_at_midpoint_rel":1.0e-9,
+		"fracture_energy_check_abs":1.0e-9,
+		"fracture_energy_check_rel":1.0e-9
+	}
+}

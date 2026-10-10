@@ -1,0 +1,32 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"beam_45_bend",
+		"units":"SI"
+	},
+	"inputs":{
+		"length_m":10,
+		"tip_rotation_rad":"Pi\/4"
+	},
+	"values":{
+		"tip_x":{
+			"values":[
+				"9.0031631615710606955519919100674058266457414995522"
+			],
+			"exact":"sin(theta)\/kappa"
+		},
+		"tip_y":{
+			"values":[
+				"3.7292322857805661659587091597337431361110301596843"
+			],
+			"exact":"(1-cos(theta))\/kappa"
+		}
+	},
+	"tolerances":{
+		"tip_x_abs":1.0e-9,
+		"tip_x_rel":5.0e-3,
+		"tip_y_abs":1.0e-9,
+		"tip_y_rel":5.0e-3
+	}
+}

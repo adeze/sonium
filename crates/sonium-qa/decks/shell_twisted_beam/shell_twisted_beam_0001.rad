@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for shell_twisted_beam
+/RUN/shell_twisted_beam/1
+   6.000000000000E-2
+/TFILE
+   1.000000000000E-4
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   6.000000000000E-3
+/PRINT/-1000

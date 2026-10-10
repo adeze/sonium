@@ -241,7 +241,7 @@ impl ShellElement {
     /// drilling rotation (theta_z) gets a small fictitious stiffness.
     pub fn stiffness_global(&self) -> Vec<f64> {
         let k_local = self.stiffness_local_combined();
-        transform_18x18(&k_local, &self.rotation)
+        transform_block_diagonal(&k_local, &self.rotation, 18)
     }
 
     /// Consistent mass matrix (18x18 global).
@@ -266,7 +266,7 @@ impl ShellElement {
             m_local[(i * 6 + 5) * 18 + (i * 6 + 5)] = rot_inertia;
         }
 
-        transform_18x18(&m_local, &self.rotation)
+        transform_block_diagonal(&m_local, &self.rotation, 18)
     }
 
     /// Global DOF indices: node i -> [6*node+0..6*node+5].
@@ -281,14 +281,15 @@ impl ShellElement {
     }
 }
 
-/// Transform 18x18 matrix from local to global: K_g = T_full^T K_l T_full.
-/// T_full is block-diagonal with six 3x3 rotation blocks.
-fn transform_18x18(k_local: &[f64], rot: &[f64; 9]) -> Vec<f64> {
-    let n = 18;
-
-    // Build 18x18 block-diagonal rotation matrix
+/// Transform an n×n block-diagonal-rotated matrix local -> global.
+///
+/// K_g = T K_l T^T with T block-diagonal 3x3 rotation blocks; shared by the
+/// triangle (n = 18) and quad (n = 24) shell elements.
+pub(crate) fn transform_block_diagonal(k_local: &[f64], rot: &[f64; 9], n: usize) -> Vec<f64> {
+    // Build n×n block-diagonal rotation matrix
+    assert_eq!(n % 3, 0, "block-diagonal transform needs 3-DOF blocks");
     let mut t = vec![0.0; n * n];
-    for block in 0..6 {
+    for block in 0..n / 3 {
         let offset = block * 3;
         for i in 0..3 {
             for j in 0..3 {
@@ -407,6 +408,11 @@ pub fn assemble_shell_load(
 
 /// Add a concentrated shell point load at a node.
 pub fn add_shell_point_load(rhs: &mut [f64], node: usize, load: [f64; 6]) {
+    add_shell_point_load_generic(rhs, node, load);
+}
+
+/// Shared 6-DOF nodal load helper for triangle and quad shells.
+pub(crate) fn add_shell_point_load_generic(rhs: &mut [f64], node: usize, load: [f64; 6]) {
     for dof in 0..6 {
         rhs[node * 6 + dof] += load[dof];
     }

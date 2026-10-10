@@ -9,30 +9,15 @@ generation, iterative/direct solvers, WASM deployment).
 Edition 2024, stable toolchain. Status: **pre-production** — clean forward
 changes are preferred over backward-compatible shims (see `gotchas.md`).
 
-License: BUSL-1.1, as declared in `Cargo.toml`.
+License: GPL V3, as declared in `Cargo.toml`.
 Repository: <https://github.com/pierreaubert/sonium>
 
 ## This repo vs the full checkout
 
 This repository is the **open-source core**. It is developed inside a larger
 local checkout (`all_of_sonium`) that also holds closed-source / local-only
-companions which are **not** part of this repo:
-
-- `apps/` — native demos (`sim-demo`, `speaker-demo`) and `speaker-studio`
-- `sonium-py` — Python bindings (maturin/PyO3)
-- `sonium-surrogates` — POD-MLP surrogate runtime and snapshot tools
-- `docs/`, `reviews/`, `startup/`, `website/` — docs, audits, web front-end
-
-In the full checkout this repo is wired as a git submodule at `sonium/`, and
-the parent `Justfile` carries the recipes for the local parts
-(`python-*`, `studio*`, `demo-native`, `website-*`). Everything documented
-below runs from this repo standalone.
-
-## Workspace crates
-
-35 member packages (`cargo metadata` count). Default members are everything
-native except `sonium-demo-workers` and the WASM-only `sonium-wasm`
-(`dev`/`check`/`test` use the default set; `*-all` recipes cover `--workspace`).
+companions which are **not** part of this repo: apps and for now all the ML
+parts with PINN, surrogate etc.
 
 ### Math, transforms, backends
 

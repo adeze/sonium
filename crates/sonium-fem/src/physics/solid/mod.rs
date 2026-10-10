@@ -14,6 +14,7 @@ pub mod eigenmodes;
 pub mod elasticity;
 pub mod fracture;
 pub mod mindlin_plate;
+pub mod joints;
 pub mod mixed_up;
 pub mod nonlinear_solid;
 pub mod plasticity;

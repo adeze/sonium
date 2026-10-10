@@ -2,9 +2,16 @@
 //!
 //! Provides exact closed-form solutions for classical benchmark problems
 //! across multiple physics domains. All functions are f64-only.
+//!
+//! The [`rad`] submodule (Radioss comparison harness) is declared here so
+//! the crate root stays untouched; the crate-level glob re-export surfaces
+//! it as `sonium_qa::rad`.
 
 use num_complex::Complex64;
 use std::f64::consts::PI;
+
+#[path = "rad.rs"]
+pub mod rad;
 
 pub const EPSILON_0: f64 = 8.854_187_817e-12;
 
@@ -616,7 +623,11 @@ pub fn contact_winkler_layer_pressure(displacement: f64, modulus: f64, thickness
 
 /// Penalty contact pressure for a prescribed gap.
 pub fn contact_penalty_pressure(gap: f64, penalty: f64) -> f64 {
-    if gap < 0.0 { -penalty * gap } else { 0.0 }
+    if gap < 0.0 {
+        -penalty * gap
+    } else {
+        0.0
+    }
 }
 
 // =====================================================================
@@ -897,6 +908,172 @@ pub fn piezoelectric_permittivity_stress(eps_s: f64, e: f64, c: f64) -> f64 {
     eps_s + e * e / c
 }
 
+// =====================================================================
+// Solids Phase A: beams, torsion, buckling, plates, contact
+// =====================================================================
+
+/// Tip deflection of a Timoshenko cantilever under a tip load.
+/// w = F*L³/(3EI) + F*L/(kappa*G*A).
+pub fn beam_timoshenko_cantilever_tip(
+    load: f64,
+    l: f64,
+    e: f64,
+    i: f64,
+    g: f64,
+    a: f64,
+    kappa: f64,
+) -> f64 {
+    load * l.powi(3) / (3.0 * e * i) + load * l / (kappa * g * a)
+}
+
+/// Tip slope of an Euler-Bernoulli cantilever under a tip load.
+/// theta = F*L²/(2EI).
+pub fn beam_euler_cantilever_tip_slope(l: f64, e: f64, i: f64, f: f64) -> f64 {
+    f * l * l / (2.0 * e * i)
+}
+
+/// Prop reaction of a propped cantilever (clamped x=0, pinned x=L) with a
+/// point load P at station a: R = P*a²*(3L-a)/(2L³).
+pub fn beam_euler_propped_point_reaction(p: f64, a: f64, l: f64) -> f64 {
+    p * a * a * (3.0 * l - a) / (2.0 * l.powi(3))
+}
+
+/// Deflection of a propped cantilever with a point load P at station a.
+///
+/// Superposes the released-cantilever response with the redundant prop
+/// reaction acting at x = L.
+pub fn beam_euler_propped_point(x: f64, p: f64, a: f64, l: f64, e: f64, i: f64) -> f64 {
+    let released = if x <= a {
+        p * x * x * (3.0 * a - x)
+    } else {
+        p * a * a * (3.0 * x - a)
+    } / (6.0 * e * i);
+    released - beam_euler_cantilever_point(x, l, e, i, beam_euler_propped_point_reaction(p, a, l))
+}
+
+/// Twist of a circular shaft under pure torsion: phi = T*L/(G*J).
+pub fn torsion_shaft_twist(torque: f64, l: f64, g: f64, j: f64) -> f64 {
+    torque * l / (g * j)
+}
+
+/// Torsional constant of a solid circular shaft: J = pi*r⁴/2.
+pub fn torsion_shaft_polar_moment(radius: f64) -> f64 {
+    PI * radius.powi(4) / 2.0
+}
+
+/// Peak shear stress in a circular shaft: tau = T*r/J.
+pub fn torsion_shaft_max_shear(torque: f64, radius: f64, j: f64) -> f64 {
+    torque * radius / j
+}
+
+/// Euler buckling load: P_cr = pi²*E*I/(K*L)².
+pub fn column_euler_critical_load(e: f64, i: f64, l: f64, k_factor: f64) -> f64 {
+    let effective = k_factor * l;
+    PI.powi(2) * e * i / effective.powi(2)
+}
+
+/// Complete elliptic integral of the first kind K(k) via the AGM.
+///
+/// Converges quadratically; the loop exits at machine precision for all
+/// `|k| < 1`. Returns NaN for `|k| >= 1` (fail-closed in QA gates).
+pub fn elliptic_k_first_kind(k: f64) -> f64 {
+    if !k.is_finite() || k.abs() >= 1.0 {
+        return f64::NAN;
+    }
+    let mut a = 1.0;
+    let mut b = (1.0 - k * k).sqrt();
+    for _ in 0..32 {
+        let next_a = 0.5 * (a + b);
+        let next_b = (a * b).sqrt();
+        a = next_a;
+        b = next_b;
+        if (a - b).abs() < 1e-16 * a {
+            break;
+        }
+    }
+    PI / (2.0 * a)
+}
+
+/// Exact pinned-column elastica post-buckling point at modulus k.
+///
+/// Returns `(P/P_cr, delta/L)` with `P/P_cr = (2K/pi)²` and
+/// `delta/L = k/K`, where `K = K(k)` (Timoshenko, Elastic Stability).
+pub fn column_elastica_postbuckling(k: f64) -> (f64, f64) {
+    let big_k = elliptic_k_first_kind(k);
+    (4.0 * big_k * big_k / PI.powi(2), k / big_k)
+}
+
+/// Von Mises (two-bar) truss apex load for a downward apex drop w.
+///
+/// Symmetric bars with horizontal half-span `b`, initial apex height `h`,
+/// axial stiffness `E*A`: `P = 2*E*A*(L-l)/L*h'/l` with current height
+/// `h' = h - w` and current bar length `l = sqrt(b² + h'²)`. Positive `P`
+/// pushes the apex down; compressed bars push it back up.
+pub fn truss_von_mises_load(w: f64, b: f64, h: f64, e: f64, a: f64) -> f64 {
+    let l0 = (b * b + h * h).sqrt();
+    let h_now = h - w;
+    let l_now = (b * b + h_now * h_now).sqrt();
+    2.0 * e * a * (l0 - l_now) / l0 * h_now / l_now
+}
+
+/// Clamped circular plate under uniform pressure: full field.
+/// w(r) = q*(a²-r²)²/(64D).
+pub fn plate_clamped_circular_deflection(r: f64, q: f64, radius: f64, d: f64) -> f64 {
+    q * (radius * radius - r * r).powi(2) / (64.0 * d)
+}
+
+/// Simply supported circular plate under uniform pressure: center.
+/// w(0) = q*a⁴*(5+nu)/(64*(1+nu)*D).
+pub fn plate_ss_circular_center_uniform(q: f64, radius: f64, d: f64, nu: f64) -> f64 {
+    q * radius.powi(4) * (5.0 + nu) / (64.0 * (1.0 + nu) * d)
+}
+
+/// Simply supported circular plate under a center point load: center.
+/// w(0) = P*a²*(3+nu)/(16*pi*(1+nu)*D).
+pub fn plate_ss_circular_center_point(load: f64, radius: f64, d: f64, nu: f64) -> f64 {
+    load * radius.powi(2) * (3.0 + nu) / (16.0 * PI * (1.0 + nu) * d)
+}
+
+/// Thick-walled cylinder under external pressure only.
+/// Returns (sigma_r, sigma_theta) at radius r.
+pub fn elasticity_thick_cylinder_external(r: f64, a: f64, b: f64, p: f64) -> (f64, f64) {
+    let a2 = a * a;
+    let b2 = b * b;
+    let r2 = r * r;
+    let scale = p * b2 / (b2 - a2);
+    (-scale * (1.0 - a2 / r2), -scale * (1.0 + a2 / r2))
+}
+
+/// Axial stress of a capped thick cylinder.
+/// sigma_z = (p_i*a² - p_o*b²)/(b²-a²).
+pub fn elasticity_thick_cylinder_axial(a: f64, b: f64, pi: f64, po: f64) -> f64 {
+    (pi * a * a - po * b * b) / (b * b - a * a)
+}
+
+/// Hertz effective modulus: 1/E* = (1-nu1²)/E1 + (1-nu2²)/E2.
+pub fn contact_hertz_effective_modulus(e1: f64, nu1: f64, e2: f64, nu2: f64) -> f64 {
+    1.0 / ((1.0 - nu1 * nu1) / e1 + (1.0 - nu2 * nu2) / e2)
+}
+
+/// Hertz sphere peak pressure: p0 = 3F/(2*pi*a²).
+pub fn contact_hertz_sphere_peak_pressure(force: f64, a: f64) -> f64 {
+    3.0 * force / (2.0 * PI * a * a)
+}
+
+/// Hertz sphere pressure profile: p(r) = p0*sqrt(1-(r/a)²), zero outside.
+pub fn contact_hertz_sphere_pressure(r: f64, p0: f64, a: f64) -> f64 {
+    if r.abs() >= a {
+        return 0.0;
+    }
+    let ratio = r / a;
+    p0 * (1.0 - ratio * ratio).sqrt()
+}
+
+/// Hertz sphere normal approach: delta = a²/R.
+pub fn contact_hertz_sphere_approach(a: f64, radius: f64) -> f64 {
+    a * a / radius
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1015,5 +1192,121 @@ mod tests {
         // No-slip at both walls for differential rotation.
         assert!((stokes_taylor_couette(1.0, 1.0, 2.0, 1.0, 0.5) - 1.0).abs() < 1e-12);
         assert!((stokes_taylor_couette(2.0, 1.0, 2.0, 1.0, 0.5) - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn timoshenko_cantilever_adds_shear_to_euler_bernoulli() {
+        let (f, l, e, i) = (100.0, 1.0, 200e9, 1e-8);
+        let euler = beam_euler_cantilever_point(l, l, e, i, f);
+        let timoshenko = beam_timoshenko_cantilever_tip(f, l, e, i, 79e9, 1e-4, 5.0 / 6.0);
+        let shear = f * l / ((5.0 / 6.0) * 79e9 * 1e-4);
+        assert!((timoshenko - euler - shear).abs() < 1e-15);
+        assert!(
+            (beam_euler_cantilever_tip_slope(l, e, i, f) - f * l * l / (2.0 * e * i)).abs() < 1e-18
+        );
+    }
+
+    #[test]
+    fn propped_point_load_satisfies_pin_and_clamp() {
+        let (p, a, l, e, i) = (800.0, 0.9, 1.5, 200e9, 1e-8);
+        let reaction = beam_euler_propped_point_reaction(p, a, l);
+        assert!((reaction - p * a * a * (3.0 * l - a) / (2.0 * l.powi(3))).abs() < 1e-9);
+        assert!(beam_euler_propped_point(0.0, p, a, l, e, i).abs() < 1e-15);
+        assert!(beam_euler_propped_point(l, p, a, l, e, i).abs() < 1e-12);
+        // Continuity of deflection and slope at the load station.
+        let h = 1e-7;
+        let left = beam_euler_propped_point(a - h, p, a, l, e, i);
+        let right = beam_euler_propped_point(a + h, p, a, l, e, i);
+        assert!((left - right).abs() < 1e-9);
+    }
+
+    #[test]
+    fn torsion_and_buckling_match_textbook_values() {
+        let j = torsion_shaft_polar_moment(0.02);
+        assert!((j - PI * 0.02f64.powi(4) / 2.0).abs() < 1e-18);
+        assert!(
+            (torsion_shaft_twist(500.0, 1.2, 79e9, j) - 500.0 * 1.2 / (79e9 * j)).abs() < 1e-15
+        );
+        assert!((torsion_shaft_max_shear(500.0, 0.02, j) - 500.0 * 0.02 / j).abs() < 1e-9);
+        let pcr = column_euler_critical_load(200e9, 1e-8, 1.0, 1.0);
+        assert!((pcr - PI.powi(2) * 200e9 * 1e-8).abs() < 1e-6);
+        assert!((column_euler_critical_load(200e9, 1e-8, 1.0, 2.0) - pcr / 4.0).abs() < 1e-6);
+        assert!((column_euler_critical_load(200e9, 1e-8, 1.0, 0.5) - 4.0 * pcr).abs() < 1e-6);
+    }
+
+    #[test]
+    fn elastica_recovers_euler_load_at_zero_deflection() {
+        // K(0) = pi/2 exactly; small-k series P/Pcr = 1 + k²/2.
+        assert!((elliptic_k_first_kind(0.0) - PI / 2.0).abs() < 1e-15);
+        assert!((elliptic_k_first_kind(0.5) - 1.685750354812596).abs() < 1e-12);
+        assert!(elliptic_k_first_kind(1.0).is_nan());
+        let (ratio, delta) = column_elastica_postbuckling(1e-4);
+        assert!((ratio - 1.0).abs() < 1e-7);
+        assert!(delta.abs() < 1e-3);
+        // Timoshenko Table 2-1 style: k = 0.5 gives P/Pcr = 1.1522...
+        let (ratio, delta) = column_elastica_postbuckling(0.5);
+        assert!((ratio - 4.0 * 1.685750354812596f64.powi(2) / PI.powi(2)).abs() < 1e-12);
+        assert!((delta - 0.5 / 1.685750354812596).abs() < 1e-12);
+        assert!(ratio > 1.0);
+    }
+
+    #[test]
+    fn von_mises_truss_shows_limit_point_and_unloads() {
+        // Shallow truss: b = 1, h = 0.1, EA = 1. Symmetric path P(0) = 0,
+        // P(2h) = 0 (mirror position), with a limit point in between.
+        let (b, h, e, a) = (1.0, 0.1, 1.0, 1.0);
+        assert!(truss_von_mises_load(0.0, b, h, e, a).abs() < 1e-15);
+        assert!(truss_von_mises_load(2.0 * h, b, h, e, a).abs() < 1e-12);
+        let mut peak = 0.0;
+        let mut peak_w = 0.0;
+        let mut w = 0.0;
+        while w <= 2.0 * h {
+            let p = truss_von_mises_load(w, b, h, e, a);
+            if p > peak {
+                peak = p;
+                peak_w = w;
+            }
+            w += 0.0005;
+        }
+        assert!(peak > 0.0, "must carry load before snap-through");
+        assert!(
+            peak_w > 0.0 && peak_w < h,
+            "limit point precedes the flat position"
+        );
+        // Past the flat position the truss pulls down (negative load).
+        assert!(truss_von_mises_load(1.5 * h, b, h, e, a) < 0.0);
+    }
+
+    #[test]
+    fn circular_plates_and_vessels_match_textbook_values() {
+        let d = plate_bending_stiffness(200e9, 0.3, 0.01);
+        let clamped = plate_clamped_circular_deflection(0.0, 1e5, 0.5, d);
+        assert!((clamped - 1e5 * 0.5f64.powi(4) / (64.0 * d)).abs() < 1e-15);
+        assert!(plate_clamped_circular_deflection(0.5, 1e5, 0.5, d).abs() < 1e-15);
+        let ss = plate_ss_circular_center_uniform(1e5, 0.5, d, 0.3);
+        assert!((ss / clamped - (5.0 + 0.3) / (1.0 + 0.3)).abs() < 1e-12);
+        let ss_p = plate_ss_circular_center_point(1000.0, 0.5, d, 0.3);
+        let clamped_p = biharmonic_ss_circular_point_center(1000.0, 0.5, d);
+        assert!(ss_p > clamped_p, "SS plate must deflect more than clamped");
+        assert!((ss_p / clamped_p - (3.0 + 0.3) / (1.0 + 0.3)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn thick_cylinder_external_and_hertz_match_textbook_values() {
+        let (sr, _) = elasticity_thick_cylinder_external(0.2, 0.1, 0.2, 5e6);
+        assert!((sr + 5e6).abs() < 1e-6);
+        let (_, st) = elasticity_thick_cylinder_external(0.1, 0.1, 0.2, 5e6);
+        assert!((st + 2.0 * 5e6 * 0.2f64.powi(2) / (0.2f64.powi(2) - 0.1f64.powi(2))).abs() < 1e-6);
+        assert!(
+            (elasticity_thick_cylinder_axial(0.1, 0.2, 10e6, 0.0) - 10e6 * 0.01 / 0.03).abs()
+                < 1e-6
+        );
+        let estar = contact_hertz_effective_modulus(200e9, 0.3, 200e9, 0.3);
+        assert!((estar - 200e9 / (2.0 * 0.91)).abs() < 1e3);
+        let a = contact_hertz_sphere_radius(1000.0, 0.05, estar);
+        let p0 = contact_hertz_sphere_peak_pressure(1000.0, a);
+        assert!((contact_hertz_sphere_pressure(0.0, p0, a) - p0).abs() < 1e-9);
+        assert!(contact_hertz_sphere_pressure(a, p0, a).abs() < 1e-15);
+        assert!((contact_hertz_sphere_approach(a, 0.05) - a * a / 0.05).abs() < 1e-15);
     }
 }

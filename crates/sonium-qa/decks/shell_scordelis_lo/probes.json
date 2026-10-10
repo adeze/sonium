@@ -1,0 +1,21 @@
+{
+  "case": "shell_scordelis_lo",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "free edge mid DY",
+      "channel": "DY/561",
+      "expected": -2.574000000000e-1,
+      "abs_tol": 5.000e-3,
+      "rel_tol": 2.000e-2
+    },
+    {
+      "label": "apex shell THIC",
+      "channel": "THIC/SHEL/496",
+      "expected": 2.500000000000e-1,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.000e-6
+    }
+  ]
+}

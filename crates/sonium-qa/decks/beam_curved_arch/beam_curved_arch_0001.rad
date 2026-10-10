@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for beam_curved_arch
+/RUN/beam_curved_arch/1
+    1.000000000000E0
+/TFILE
+   1.000000000000E-2
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   1.000000000000E-1
+/PRINT/-1000

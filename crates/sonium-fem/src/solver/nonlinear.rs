@@ -5,19 +5,30 @@
 //!
 //! The FEM-specific work (looping over elements, tabulating basis functions,
 //! assembling residual/tangent) lives here. The actual Newton iteration
-//! loop lives in `sonium-solvers`.
+//! loop lives in `sonium-solvers`. Arc-length continuation lives in the
+//! [`arc_length`] submodule, declared here so the solver registry stays
+//! untouched.
+
+#[path = "arc_length.rs"]
+pub mod arc_length;
+
+#[doc(inline)]
+pub use arc_length::{
+    fem_riks_solve_with_bcs_and_load, riks_continuation, ArcLengthConfig, ArcLengthPath,
+    ArcLengthPoint, ArcLengthStop,
+};
 
 use crate::assembly::TripletMatrix;
 use crate::forms::{LocalMatrix, LocalVector, NonlinearElementForm, NonlinearForm};
 use crate::mesh::Mesh;
-use crate::parallelism::{ELEMENTS_PER_THREAD, collect_indexed, merge_element_triplets};
+use crate::parallelism::{collect_indexed, merge_element_triplets, ELEMENTS_PER_THREAD};
 use crate::physics::solid::contact::augmented_lagrangian::{ContactManager, ContactResult};
 use crate::quadrature::QuadratureRule;
 use crate::spaces::FunctionSpace;
 use sonium_solvers::traits::{AccuracyStatus, SolverStatus};
-use sonium_solvers::{LinearSolveConfig, LinearSolverType, solve_real};
+use sonium_solvers::{solve_real, LineSearch, LinearSolveConfig, LinearSolverType};
 
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Per-element nonlinear assembly output: (residual_contribs, tangent_triplets).
 type ElementNonlinearContrib = (Vec<(usize, f64)>, Vec<(usize, usize, f64)>);
@@ -57,7 +68,37 @@ impl FemNewtonConfig {
                 "inner linear solver tolerance must be finite and positive".into(),
             ));
         }
+        if let LineSearch::Backtracking { c1, max_halvings } = self.newton.line_search {
+            if !c1.is_finite() || c1 <= 0.0 || c1 >= 1.0 {
+                return Err(sonium_solvers::NewtonError::InvalidConfig(
+                    "backtracking c1 must be finite and inside (0, 1)".into(),
+                ));
+            }
+            if max_halvings == 0 {
+                return Err(sonium_solvers::NewtonError::InvalidConfig(
+                    "backtracking max_halvings must be non-zero".into(),
+                ));
+            }
+        }
         Ok(())
+    }
+
+    /// Enable a line search on the inner Newton loop.
+    ///
+    /// Backtracking globalizes Newton for strongly nonlinear problems
+    /// (hyperelasticity, post-buckling) where full steps overshoot.
+    pub fn with_line_search(mut self, line_search: LineSearch) -> Self {
+        self.newton.line_search = line_search;
+        self
+    }
+
+    /// Enable Armijo backtracking with explicit parameters.
+    ///
+    /// `c1` is the sufficient-decrease constant (typically 1e-4) and
+    /// `max_halvings` caps the step halvings per Newton iteration.
+    pub fn with_backtracking(mut self, c1: f64, max_halvings: usize) -> Self {
+        self.newton.line_search = LineSearch::Backtracking { c1, max_halvings };
+        self
     }
 }
 
@@ -1048,5 +1089,148 @@ mod tests {
             sonium_solvers::NewtonError::InvalidConfig(message)
                 if message.contains("function space") || message.contains("panicked")
         ));
+    }
+
+    #[test]
+    fn backtracking_settings_are_validated() {
+        assert!(FemNewtonConfig::default()
+            .with_backtracking(1e-4, 10)
+            .validate()
+            .is_ok());
+        for (c1, halvings) in [(0.0, 10), (1.0, 10), (f64::NAN, 10), (1e-4, 0)] {
+            assert!(
+                matches!(
+                    FemNewtonConfig::default()
+                        .with_backtracking(c1, halvings)
+                        .validate(),
+                    Err(sonium_solvers::NewtonError::InvalidConfig(_))
+                ),
+                "c1={c1}, halvings={halvings} must be rejected"
+            );
+        }
+    }
+
+    fn stretched_square_fixture() -> (
+        crate::physics::solid::nonlinear_solid::HyperelasticForm<
+            crate::physics::solid::nonlinear_solid::NeoHookean,
+        >,
+        crate::spaces::VectorH1Space,
+        Mesh,
+        Vec<(usize, f64)>,
+        Vec<f64>,
+    ) {
+        use crate::physics::solid::nonlinear_solid::{HyperelasticForm, NeoHookean};
+        use crate::spaces::VectorH1Space;
+
+        let mesh = unit_square_triangles(2);
+        let space = VectorH1Space::new(PolynomialDegree::P1, 2);
+        let form = HyperelasticForm::new(NeoHookean::from_young(1000.0, 0.3, 2));
+        let n_dofs = space.num_global_dofs(&mesh);
+        // Clamp the left edge; pull every free x-DOF (body-force style).
+        let mut dirichlet = Vec::new();
+        for (node, point) in mesh.nodes.iter().enumerate() {
+            if point.x.abs() < 1e-12 {
+                dirichlet.push((2 * node, 0.0));
+                dirichlet.push((2 * node + 1, 0.0));
+            }
+        }
+        let mut load = vec![0.0; n_dofs];
+        for (index, entry) in load.iter_mut().enumerate() {
+            if index % 2 == 0 {
+                *entry = 20.0;
+            }
+        }
+        (form, space, mesh, dirichlet, load)
+    }
+
+    #[test]
+    fn backtracking_newton_matches_plain_newton() {
+        let (form, space, mesh, dirichlet, load) = stretched_square_fixture();
+        let n_dofs = space.num_global_dofs(&mesh);
+        let plain = fem_newton_solve_with_bcs_and_load(
+            &form,
+            &space,
+            &mesh,
+            &dirichlet,
+            &vec![0.0; n_dofs],
+            &load,
+            &FemNewtonConfig::default(),
+        )
+        .expect("plain Newton must converge on the fixture");
+        let robust = fem_newton_solve_with_bcs_and_load(
+            &form,
+            &space,
+            &mesh,
+            &dirichlet,
+            &vec![0.0; n_dofs],
+            &load,
+            &FemNewtonConfig::default().with_backtracking(1e-4, 10),
+        )
+        .expect("backtracking Newton must converge on the fixture");
+        assert!(plain.converged && robust.converged);
+        let diff: f64 = plain
+            .x
+            .iter()
+            .zip(&robust.x)
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(diff < 1e-8, "line search changed the answer by {diff:.2e}");
+    }
+
+    #[test]
+    fn riks_fem_trace_matches_load_controlled_newton() {
+        use crate::solver::nonlinear::arc_length::{
+            fem_riks_solve_with_bcs_and_load, ArcLengthConfig,
+        };
+
+        let (form, space, mesh, dirichlet, load) = stretched_square_fixture();
+        let n_dofs = space.num_global_dofs(&mesh);
+        let arc = ArcLengthConfig {
+            initial_step: 0.05,
+            max_step: 0.1,
+            max_steps: 4,
+            psi: 1.0,
+            ..Default::default()
+        };
+        let path = fem_riks_solve_with_bcs_and_load(
+            &form,
+            &space,
+            &mesh,
+            &dirichlet,
+            &load,
+            &vec![0.0; n_dofs],
+            &FemNewtonConfig::default(),
+            &arc,
+        )
+        .expect("riks trace must advance on the fixture");
+        assert_eq!(path.steps_accepted, 4);
+        for window in path.points.windows(2) {
+            assert!(
+                window[1].lambda > window[0].lambda,
+                "trace must load forward initially"
+            );
+        }
+        // The traced tip must equal a direct Newton solve at the same load.
+        let tip = path.points.last().unwrap();
+        let scaled: Vec<f64> = load.iter().map(|value| value * tip.lambda).collect();
+        let direct = fem_newton_solve_with_bcs_and_load(
+            &form,
+            &space,
+            &mesh,
+            &dirichlet,
+            &tip.u,
+            &scaled,
+            &FemNewtonConfig::default(),
+        )
+        .expect("direct Newton must converge from the traced tip");
+        let diff: f64 = tip
+            .u
+            .iter()
+            .zip(&direct.x)
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        assert!(diff < 1e-7, "riks tip differs from Newton by {diff:.2e}");
     }
 }

@@ -1,0 +1,14 @@
+{
+  "case": "beam_curved_arch",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "tip DX",
+      "channel": "DX/185",
+      "expected": -3.421037902173e-3,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 1.000e-1
+    }
+  ]
+}

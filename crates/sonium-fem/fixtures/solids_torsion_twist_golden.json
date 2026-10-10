@@ -1,0 +1,42 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"torsion_twist",
+		"units":"SI"
+	},
+	"inputs":{
+		"torque_n_m":500,
+		"length_m":1.2,
+		"radius_m":2.0e-2,
+		"shear_modulus_pa":79000000000
+	},
+	"values":{
+		"torsional_constant":{
+			"values":[
+				"2.5132741228718345907701147066236023073577355195001e-7"
+			],
+			"exact":"Pi*r^4\/2"
+		},
+		"twist":{
+			"values":[
+				"0.03021929299213202577890198038718627127236575552034"
+			],
+			"exact":"T*L\/(G*J)"
+		},
+		"max_shear_stress":{
+			"values":[
+				"3.9788735772973833942220940843128590508614911435114e7"
+			],
+			"exact":"T*r\/J"
+		}
+	},
+	"tolerances":{
+		"torsional_constant_abs":1.0e-20,
+		"torsional_constant_rel":1.0e-12,
+		"twist_abs":1.0e-15,
+		"twist_rel":1.0e-12,
+		"max_shear_stress_abs":1.0e-9,
+		"max_shear_stress_rel":1.0e-12
+	}
+}

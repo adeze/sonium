@@ -78,7 +78,7 @@ default-members = [
 [workspace.package]
 edition = "2024"
 authors = ["Pierre <pierre@sonium.io>"]
-license = "BUSL-1.1"
+license = "GPL-3.0-or-later"
 repository = "https://github.com/pierreaubert/sonium"
 
 [workspace.dependencies]

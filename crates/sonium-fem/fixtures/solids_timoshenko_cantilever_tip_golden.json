@@ -1,0 +1,53 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"timoshenko_cantilever_tip",
+		"units":"SI"
+	},
+	"inputs":{
+		"load_n":100,
+		"length_m":1,
+		"youngs_modulus_pa":200000000000,
+		"second_moment_m4":1.0e-8,
+		"shear_modulus_pa":7.6923076923076923e10,
+		"area_m2":1.0e-4,
+		"shear_factor":0.8333333333333334
+	},
+	"values":{
+		"tip_deflection":{
+			"values":[
+				"0.016682266666666666666666666666666666666666666666667"
+			],
+			"exact":"F*L^3\/(3*E*I) + F*L\/(kappa*G*A)"
+		},
+		"bending_part":{
+			"values":[
+				"0.016666666666666666666666666666666666666666666666667"
+			],
+			"exact":"F*L^3\/(3*E*I)"
+		},
+		"shear_part":{
+			"values":[
+				"0.0000156"
+			],
+			"exact":"F*L\/(kappa*G*A)"
+		},
+		"tip_rotation":{
+			"values":[
+				"0.025"
+			],
+			"exact":"F*L^2\/(2*E*I)"
+		}
+	},
+	"tolerances":{
+		"tip_deflection_abs":1.0e-15,
+		"tip_deflection_rel":1.0e-12,
+		"bending_part_abs":1.0e-15,
+		"bending_part_rel":1.0e-12,
+		"shear_part_abs":1.0e-17,
+		"shear_part_rel":1.0e-12,
+		"tip_rotation_abs":1.0e-15,
+		"tip_rotation_rel":1.0e-12
+	}
+}

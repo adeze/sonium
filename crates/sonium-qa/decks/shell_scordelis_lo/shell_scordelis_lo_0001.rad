@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for shell_scordelis_lo
+/RUN/shell_scordelis_lo/1
+    8.000000000000E0
+/TFILE
+   2.000000000000E-2
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   8.000000000000E-1
+/PRINT/-1000

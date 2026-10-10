@@ -1,0 +1,35 @@
+{
+  "case": "plasticity_thick_cylinder",
+  "engine": "OpenRadioss linux64_gf 2026-10-07 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "bore radial DX at 50 MPa",
+      "channel": "DX/1",
+      "expected": 2.458333333333e-5,
+      "abs_tol": 1.000e-12,
+      "rel_tol": 5.000e-2
+    },
+    {
+      "label": "outer radial DX at 50 MPa",
+      "channel": "DX/577",
+      "expected": 1.666666666667e-5,
+      "abs_tol": 1.000e-12,
+      "rel_tol": 5.000e-2
+    },
+    {
+      "label": "bore hoop residual SY",
+      "channel": "SY/BRIC/1",
+      "expected": -8.286053893058e7,
+      "abs_tol": 1.000e6,
+      "rel_tol": 5.000e-2
+    },
+    {
+      "label": "outer hoop residual SY",
+      "channel": "SY/BRIC/265",
+      "expected": 9.827419263138e6,
+      "abs_tol": 1.000e6,
+      "rel_tol": 5.000e-2
+    }
+  ]
+}

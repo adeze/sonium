@@ -1,0 +1,48 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"beam_warping_cantilever",
+		"units":"SI"
+	},
+	"inputs":{
+		"length_m":2,
+		"tip_torque_n_m":1000,
+		"youngs_modulus_pa":200000000000,
+		"poisson_ratio":0.3,
+		"flange_width_m":0.1,
+		"web_height_m":0.2,
+		"thickness_m":1.0e-2,
+		"torsion_constant_m4":"1.3333333333333333333333333333333333333333333333333e-7",
+		"warping_constant_m6":"1.855875e-8",
+		"mu_per_m":"1.6622958993950566713628819173081083760067965462748"
+	},
+	"values":{
+		"tip_twist":{
+			"values":[
+				"0.13649790884335789583271540940782751750663477969918"
+			],
+			"exact":"DSolve Vlasov ODE: (T\/GJ)(L - Tanh(mu L)\/mu)"
+		},
+		"midspan_twist":{
+			"values":[
+				"0.049710414439814418855615728989427116048388316440354"
+			],
+			"exact":"DSolve Vlasov ODE evaluated at L\/2"
+		},
+		"root_bimoment":{
+			"values":[
+				"-600.02144776043183761317528812484597429092533641868"
+			],
+			"exact":"B = -E Iw th''(0) = -(T\/mu) Tanh(mu L)"
+		}
+	},
+	"tolerances":{
+		"tip_twist_abs":1.0e-15,
+		"tip_twist_rel":1.0e-6,
+		"midspan_twist_abs":1.0e-15,
+		"midspan_twist_rel":1.0e-6,
+		"root_bimoment_abs":1.0e-9,
+		"root_bimoment_rel":1.0e-2
+	}
+}
