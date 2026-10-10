@@ -249,6 +249,23 @@ pub fn suggested_sphere_terms(ka: f64) -> usize {
     }
 }
 
+/// Suggested Mie truncation accounting for observer distance.
+///
+/// The partial-wave series needs `n_max` beyond `k·r` of the farthest
+/// evaluation point (terms with `n > kr` are evanescent there), so
+/// [`suggested_sphere_terms`] alone undercounts for far observers:
+/// `max(suggested(ka), ceil(kr_max) + 20)`. Callers pushing `n` past
+/// ~120 at small `ka` should watch for upward-recurrence overflow in
+/// `y_n(ka)` (non-finite sums); `try_` constructors reject such grids.
+pub fn suggested_sphere_terms_for_grid(ka: f64, kr_max: f64) -> usize {
+    let distance_terms = if kr_max.is_finite() && kr_max > 0.0 {
+        (kr_max.ceil() as usize).saturating_add(20)
+    } else {
+        0
+    };
+    suggested_sphere_terms(ka).max(distance_terms)
+}
+
 /// For a **rigid sphere** (Neumann BC: ∂p/∂r = 0 on surface):
 /// ```text
 /// aₙ = jₙ'(ka) / hₙ⁽¹⁾'(ka)
@@ -1727,6 +1744,19 @@ pub fn point_source_3d(wave_number: f64, source: Point, points: Vec<Point>) -> A
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
+
+    #[test]
+    fn grid_aware_term_rule_covers_far_observers() {
+        // Near observers keep the ka rule; far observers (kr >> ka)
+        // need n_max past k*r of the evaluation grid.
+        assert_eq!(suggested_sphere_terms_for_grid(5.0, 10.0), 36);
+        assert_eq!(suggested_sphere_terms_for_grid(5.0, 40.0), 60);
+        assert_eq!(suggested_sphere_terms_for_grid(10.0, 80.0), 100);
+        assert_eq!(
+            suggested_sphere_terms_for_grid(1.0, f64::NAN),
+            suggested_sphere_terms(1.0)
+        );
+    }
 
     #[test]
     fn spherical_bessel_j1_keeps_precision_at_small_argument() {

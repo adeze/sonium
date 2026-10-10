@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed — annular FW-H thrust scaling
+
+- `modal_loading_amplitude_pa` now returns the thrust-conserving
+  `Δp·sinc(hπσ)`: blades covering a pitch fraction `σ` carry the
+  blade-local jump `Δp/σ`, whose Fourier coefficient cancels the
+  solidity factor. The previous `Δp·σ·sinc(hπσ)` under-counted every
+  tone by `σ`.
+
 ### Added — machine-adaptive parallel gates
 
 - New `parallelism::use_pcfan_parallel` gate: the finite-difference

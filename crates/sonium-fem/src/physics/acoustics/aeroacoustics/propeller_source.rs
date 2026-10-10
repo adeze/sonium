@@ -188,6 +188,12 @@ impl PropellerSource {
     /// Scales the disc-plane [`PropellerSource::harmonic_amplitudes_at_distance`]
     /// level by [`PropellerSource::harmonic_directivity`]. Returns zero for
     /// the zeroth harmonic.
+    ///
+    /// The lumped loading force follows the rotating in-plane (torque)
+    /// Bessel pattern; a pure-thrust axial dipole additionally carries a
+    /// `cosθ` obliquity that stays caller-side, consistent with the
+    /// reference-magnitude contract of
+    /// [`PropellerSource::harmonic_amplitudes_at_distance`].
     pub fn harmonic_amplitude_at_direction(
         &self,
         harmonic: usize,

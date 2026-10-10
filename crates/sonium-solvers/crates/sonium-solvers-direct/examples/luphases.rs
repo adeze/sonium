@@ -64,7 +64,11 @@ fn main() {
         let _ = lu_factorize_in_place(chunk, &mut ws).expect("lu");
         let ms = t.elapsed().as_secs_f64() * 1000.0;
         walls[arm].push(ms);
-        println!("round {:>2} nb={:<3} {ms:8.2}ms", round / nbs.len(), nbs[arm]);
+        println!(
+            "round {:>2} nb={:<3} {ms:8.2}ms",
+            round / nbs.len(),
+            nbs[arm]
+        );
     }
     for (arm, nb) in nbs.iter().enumerate() {
         let mut s = walls[arm].clone();

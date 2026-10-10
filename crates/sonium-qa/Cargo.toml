@@ -2308,6 +2308,24 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-fem-fwh-mie-scattering"
+path = "bin/fem_fwh_mie_scattering.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-annular-fwh-empirical"
+path = "bin/fem_annular_fwh_empirical.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-aeroacoustics-port-contour"
+path = "bin/fem_aeroacoustics_port_contour.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-fem-aeroacoustics-analogies-drp"
 path = "bin/fem_aeroacoustics_analogies_drp.rs"
 test = false

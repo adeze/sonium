@@ -143,9 +143,8 @@ pub use cuda::{
 pub use cuda::{
     CudaBemFieldOperatorC64, CudaBemQuadratureOperatorC64, CudaBemRegularPairOperatorC64,
     CudaDenseBlockC64Input, CudaDenseCholF64, CudaDenseLuC32, CudaDenseLuC64, CudaDenseLuF64,
-    CudaDriverResourceStatsSnapshot,
-    CudaGraphReplay, CudaHMatrixC64, CudaHMatrixWavenumberUpdateC64, CudaLowRankBlockC64Input,
-    CudaRuntimeStatsSnapshot,
+    CudaDriverResourceStatsSnapshot, CudaGraphReplay, CudaHMatrixC64,
+    CudaHMatrixWavenumberUpdateC64, CudaLowRankBlockC64Input, CudaRuntimeStatsSnapshot,
 };
 
 #[cfg(feature = "metal")]

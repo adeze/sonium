@@ -13,8 +13,7 @@
 //! way; symmetric input needs no device transpose.
 
 use sonium_compute::{
-    Backend, Buffer, CudaBackend, CudaDenseCholF64, CudaDenseLuF64, MemoryPool, OomError,
-    Transpose,
+    Backend, Buffer, CudaBackend, CudaDenseCholF64, CudaDenseLuF64, MemoryPool, OomError, Transpose,
 };
 use sonium_solvers_core::dense::DenseMatrix;
 use thiserror::Error;
@@ -567,8 +566,7 @@ mod tests {
 
         let chol =
             cholesky_factorize_gpu(pool.backend(), &a).expect("GPU factorization should succeed");
-        let x_gpu =
-            cholesky_solve_many_gpu(&pool, &chol, &b, nrhs).expect("GPU multi-RHS solve");
+        let x_gpu = cholesky_solve_many_gpu(&pool, &chol, &b, nrhs).expect("GPU multi-RHS solve");
         let host = crate::cholesky_factorize(&a).expect("host factorization should succeed");
         let mut x_host = vec![0.0; n * nrhs];
         host.solve_many_into(&b, &mut x_host, nrhs)

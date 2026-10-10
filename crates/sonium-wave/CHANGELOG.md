@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- `suggested_sphere_terms_for_grid`: grid-aware Mie-series truncation
+  that accounts for the observer radius (`n > kr` at the observer),
+  for cases where `suggested_sphere_terms(ka)` under-counts at small
+  `ka` with far observers.
+
 ### Fixed
 
 - `run_richardson` reuses one scratch buffer across iterations instead of

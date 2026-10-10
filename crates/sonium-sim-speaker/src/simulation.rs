@@ -1058,7 +1058,8 @@ impl SimulationControl {
 
     fn complete_frequency(&self, frequency_hz: f64) {
         self.completed.fetch_add(1, Ordering::AcqRel);
-        self.current_frequency_bits.store(frequency_hz.to_bits(), Ordering::Release);
+        self.current_frequency_bits
+            .store(frequency_hz.to_bits(), Ordering::Release);
     }
 
     fn check(&self) -> Result<(), SimulationError> {
@@ -4239,7 +4240,8 @@ where
         // The f64 residual is deliberately reconstructed on the CPU from the
         // original assembled matrix and RHS.  A device f64 copy of the same
         // promoted vector is not an independent acceptance gate.
-        let mut relative_residual = relative_residual(&system.matrix, &surface_pressure, &final_rhs64);
+        let mut relative_residual =
+            relative_residual(&system.matrix, &surface_pressure, &final_rhs64);
         residual_gate_ms += residual_start.elapsed().as_millis() as u64;
         if !relative_residual.is_finite() || relative_residual > solver_config.tolerance {
             return Err(SimulationError::new(format!(
@@ -4421,7 +4423,9 @@ where
             validation.max_uncorrected_physical_error = validation
                 .max_uncorrected_physical_error
                 .max(physical_error);
-            if physical_error > gate_policy.physical_tolerance && solver_config.gpu_reference_correction {
+            if physical_error > gate_policy.physical_tolerance
+                && solver_config.gpu_reference_correction
+            {
                 if backend_kind != SimulationBackend::Cuda
                     || has_typed_driver
                     || solver_config.gpu_wavenumber_derivative
@@ -4446,7 +4450,9 @@ where
                 preconditioner
                     .try_update_diagonal(&backend, &diagonal)
                     .map_err(|e| {
-                        SimulationError::new(format!("CUDA reference preconditioner update failed: {e}"))
+                        SimulationError::new(format!(
+                            "CUDA reference preconditioner update failed: {e}"
+                        ))
                     })?;
                 preconditioner_updates += 1;
                 let (corrected, _) = solve_gpu_coupled_rhs(

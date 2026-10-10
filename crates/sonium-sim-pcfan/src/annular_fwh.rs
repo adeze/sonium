@@ -7,11 +7,12 @@
 //! strip radiates as a dipole layer with the modal loading amplitude;
 //! thickness noise is neglected (thin blades at low tip Mach).
 //!
-//! The loading model is deliberately minimal: a uniform disk pressure
-//! jump `Δp = thrust / disk area` with `B` top-hat blades covering a
-//! pitch fraction `σ` (solidity), whose Fourier coefficient at order
-//! `hB` is `Δp·σ·sin(hπσ)/(hπσ)`. A full disk (`σ = 1`) is steady and
-//! axisymmetric, so all `h ≥ 1` tones vanish, as they must.
+//! The loading model is deliberately minimal: blade-local pressure jump
+//! `Δp/σ` (thrust-conserving over the `B` top-hat blades covering a
+//! pitch fraction `σ`, with `Δp = thrust / disk area`), whose Fourier
+//! coefficient at order `hB` is `Δp·sin(hπσ)/(hπσ)`. A full disk
+//! (`σ = 1`) is steady and axisymmetric, so all `h ≥ 1` tones vanish,
+//! as they must.
 //!
 //! This path validates and audits the empirical tone model in
 //! [`crate::evaluation`]; it does not replace the optimizer hot path.
@@ -99,8 +100,10 @@ pub fn blade_passing_frequency_hz(blade_count: usize, rpm: f64) -> f64 {
 /// Modal pressure-jump amplitude [Pa] of one BPF harmonic.
 ///
 /// Fourier coefficient of the `B`-blade top-hat train at spinning
-/// order `-h·B`: `Δp·σ·sin(hπσ)/(hπσ)`, real-positive for blades
-/// centered on `φ = 0`.
+/// order `-h·B`, real-positive for blades centered on `φ = 0`. Blades
+/// covering a pitch fraction `σ` carry the blade-local jump `Δp/σ`
+/// (thrust-conserving), whose train coefficient is
+/// `(Δp/σ)·σ·sin(hπσ)/(hπσ) = Δp·sinc(hπσ)`.
 pub fn modal_loading_amplitude_pa(
     thrust_n: f64,
     disk_area_m2: f64,
@@ -109,7 +112,7 @@ pub fn modal_loading_amplitude_pa(
 ) -> f64 {
     let pressure_jump = thrust_n / disk_area_m2;
     let argument = harmonic as f64 * std::f64::consts::PI * solidity;
-    pressure_jump * solidity * argument.sin() / argument
+    pressure_jump * argument.sin() / argument
 }
 
 fn require_positive(field: &'static str, value: f64) -> Result<(), AnnularFwhError> {
