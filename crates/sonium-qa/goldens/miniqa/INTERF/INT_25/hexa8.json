@@ -1,0 +1,56 @@
+{
+  "schema": "opencourant-golden-v1",
+  "case": "INTERF/INT_25/hexa8",
+  "meta": {
+    "engine": "OpenRadioss linux64_gf CommitID 33e68517",
+    "engine_commit": "33e685176cccf0c539a3ce07aa2096985a284e2a",
+    "starter_exe": "starter_linux64_gf",
+    "engine_exe": "engine_linux64_gf",
+    "deck_sha256": {
+      "starter": "6acdc0be3b1c0f033952b6d29b47102ad43a617bf86b6f420b2387ca3a158335",
+      "engine": "9611033b0902b8bbc678a2ee21c119681260d2c2aa57a72fd274de807edc99b2"
+    },
+    "starter_deck": "model_00_0000.rad",
+    "engine_decks": [
+      "model_00_0001.rad"
+    ],
+    "starter_options": "-i model_00_0000.rad -np 1",
+    "engine_options": "-i model_00_0001.rad",
+    "mpi": "smp",
+    "np": 1,
+    "threads": 1,
+    "precision": "dp",
+    "harvest_date": "2026-10-10T20:07:17Z",
+    "deck_units": [
+      "kg",
+      "mm",
+      "ms"
+    ],
+    "rootname": "model_00",
+    "normal_termination": true,
+    "th_tool": "th_to_csv_linux64_gf",
+    "exe_sha256": {
+      "starter": "122c09311ecf6155fb998cd980d4c478c01734fdd1d4287e6f7a817b62e39db8",
+      "engine": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+      "th_to_csv": "704d647331ae4befd329d18b991d644f2af930abd117c5d204c23925f75fc8db"
+    },
+    "decimation": null,
+    "th_note": "th_to_csv failed on model_00T01 (radioss harness parse failure: binary T01 needs th_to_csv conversion: th_to_csv_linux64_gf killed by signal); cycle scalars only"
+  },
+  "time": [],
+  "channels": {},
+  "cycle": {
+    "ADDEDMASS": 0.0,
+    "CYCLE": 8000.0,
+    "ELTID": 394.0,
+    "ERROR": -25.5,
+    "EXTWORK": 399.1,
+    "IENERGY": 291.3,
+    "KENERGYR": 0.0,
+    "KENERGYT": 5.996,
+    "MASERR": 0.0,
+    "TIME": 4.753,
+    "TOTALMASS": 0.1004,
+    "TSTEP": 0.0005759
+  }
+}

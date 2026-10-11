@@ -1,0 +1,912 @@
+{
+  "schema": "opencourant-golden-v1",
+  "case": "INTERF/INT_7/igsti/small_boule_igsti/dtmin_02",
+  "meta": {
+    "engine": "OpenRadioss linux64_gf CommitID 33e68517",
+    "engine_commit": "33e685176cccf0c539a3ce07aa2096985a284e2a",
+    "starter_exe": "starter_linux64_gf",
+    "engine_exe": "engine_linux64_gf",
+    "deck_sha256": {
+      "starter": "fc0c7bfcaa911c523e5d50f6c4f60e9afb9575cc6fc8b01eb74cc2de7ee927a4",
+      "engine": "3c21f14a7cfd0223b9b5d229fb460d3dea3db7276d8aad0dd8d68e1f1fbbaa5a"
+    },
+    "starter_deck": "BOULE1V5_0000.rad",
+    "engine_decks": [
+      "BOULE1V5_0001.rad"
+    ],
+    "starter_options": "-i BOULE1V5_0000.rad -np 1",
+    "engine_options": "-i BOULE1V5_0001.rad",
+    "mpi": "smp",
+    "np": 1,
+    "threads": 1,
+    "precision": "dp",
+    "harvest_date": "2026-10-10T20:07:10Z",
+    "deck_units": [
+      "kg",
+      "mm",
+      "ms"
+    ],
+    "rootname": "BOULE1V5",
+    "normal_termination": true,
+    "th_tool": "th_to_csv_linux64_gf",
+    "exe_sha256": {
+      "starter": "122c09311ecf6155fb998cd980d4c478c01734fdd1d4287e6f7a817b62e39db8",
+      "engine": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+      "th_to_csv": "704d647331ae4befd329d18b991d644f2af930abd117c5d204c23925f75fc8db"
+    },
+    "decimation": null
+  },
+  "time": [
+    0.0,
+    0.001012834,
+    0.002025667
+  ],
+  "channels": {
+    "ADDED MASS": {
+      "values": [
+        -5.551115e-17,
+        -5.551115e-17,
+        -5.551115e-17
+      ],
+      "final": -5.551115e-17,
+      "min": -5.551115e-17,
+      "max": -5.551115e-17,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE ERODED": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE HE": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE HEAT": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE IE": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE KE": {
+      "values": [
+        41313.05,
+        41313.05,
+        41313.05
+      ],
+      "final": 41313.05,
+      "min": 41313.05,
+      "max": 41313.05,
+      "abs_tol": 4.1313050000000003e-8,
+      "rel_tol": 0.00066
+    },
+    "BOULE MASS": {
+      "values": [
+        0.0826261,
+        0.0826261,
+        0.0826261
+      ],
+      "final": 0.0826261,
+      "min": 0.0826261,
+      "max": 0.0826261,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE XMOM": {
+      "values": [
+        82.62611,
+        82.62611,
+        82.62611
+      ],
+      "final": 82.62611,
+      "min": 82.62611,
+      "max": 82.62611,
+      "abs_tol": 8.262611e-11,
+      "rel_tol": 0.00066
+    },
+    "BOULE YMOM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE ZMOM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1000 ~1": {
+      "values": [
+        0.0,
+        1.012834,
+        2.025667
+      ],
+      "final": 2.025667,
+      "min": 0.0,
+      "max": 2.025667,
+      "abs_tol": 2.0256669999999997e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1000 ~2": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1000 ~3": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1000 ~4": {
+      "values": [
+        1000.0,
+        1000.0,
+        1000.0
+      ],
+      "final": 1000.0,
+      "min": 1000.0,
+      "max": 1000.0,
+      "abs_tol": 1e-9,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1000 ~5": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1000 ~6": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1141 ~1": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1141 ~2": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1141 ~3": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1141 ~4": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1141 ~5": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1141 ~6": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1147 ~1": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1147 ~2": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1147 ~3": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1147 ~4": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1147 ~5": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1147 ~6": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1148 ~1": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1148 ~2": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1148 ~3": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1148 ~4": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1148 ~5": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "BOULE1V3D00_th_nodes 1148 ~6": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "CONTACT ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE ERODED": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE HE": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE HEAT": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE IE": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE KE": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE MASS": {
+      "values": [
+        0.4058962,
+        0.4058962,
+        0.4058962
+      ],
+      "final": 0.4058962,
+      "min": 0.4058962,
+      "max": 0.4058962,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE XMOM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE YMOM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "COQUE ARRIERE ZMOM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "DAMPING CONTACT ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "ELASTIC CONTACT ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "EXTERNAL WORK": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "FRICTIONAL CONTACT ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "HOURGLASS ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "INLET ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "INLET MASS": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "INTERNAL ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "KINETIC ENERGY": {
+      "values": [
+        41313.05,
+        41313.05,
+        41313.05
+      ],
+      "final": 41313.05,
+      "min": 41313.05,
+      "max": 41313.05,
+      "abs_tol": 4.1313050000000003e-8,
+      "rel_tol": 0.00066
+    },
+    "MASS": {
+      "values": [
+        0.4885224,
+        0.4885224,
+        0.4885224
+      ],
+      "final": 0.4885224,
+      "min": 0.4885224,
+      "max": 0.4885224,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "NO NAME": {
+      "values": [
+        41313.05,
+        41313.05,
+        41313.05
+      ],
+      "final": 41313.05,
+      "min": 41313.05,
+      "max": 41313.05,
+      "abs_tol": 4.1313050000000003e-8,
+      "rel_tol": 0.00066
+    },
+    "OUTLET ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "OUTLET MASS": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "PERCENTAGE ADDED MASS": {
+      "values": [
+        -1.136307e-14,
+        -1.136307e-14,
+        -1.136307e-14
+      ],
+      "final": -1.136307e-14,
+      "min": -1.136307e-14,
+      "max": -1.136307e-14,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "PLASTIC WORK": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "ROTATION ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Rigid walls 1148 BOULED00_rigid_wall_1 ~1": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Rigid walls 1148 BOULED00_rigid_wall_1 ~2": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Rigid walls 1148 BOULED00_rigid_wall_1 ~3": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Rigid walls 1148 BOULED00_rigid_wall_1 ~4": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Rigid walls 1148 BOULED00_rigid_wall_1 ~5": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Rigid walls 1148 BOULED00_rigid_wall_1 ~6": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "SPRING ENERGY": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "TIME STEP": {
+      "values": [
+        0.0000633021,
+        0.0000633021,
+        0.0000633021
+      ],
+      "final": 0.0000633021,
+      "min": 0.0000633021,
+      "max": 0.0000633021,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "X-MOMENTUM": {
+      "values": [
+        82.62611,
+        82.62611,
+        82.62611
+      ],
+      "final": 82.62611,
+      "min": 82.62611,
+      "max": 82.62611,
+      "abs_tol": 8.262611e-11,
+      "rel_tol": 0.00066
+    },
+    "Y-MOMENTUM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Z-MOMENTUM": {
+      "values": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    }
+  },
+  "cycle": {
+    "ADDEDMASS": 0.0,
+    "CYCLE": 39.0,
+    "ELTID": 1.0,
+    "ERROR": -1.7,
+    "EXTWORK": 0.0,
+    "IENERGY": 289.2,
+    "KENERGYR": 82.81,
+    "KENERGYT": 40230.0,
+    "MASERR": 0.0,
+    "TIME": 0.002462,
+    "TOTALMASS": 0.4885,
+    "TSTEP": 0.00006
+  }
+}

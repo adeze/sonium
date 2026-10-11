@@ -32,6 +32,13 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+/// OpenCourant miniqa golden harvest + offline replay (Lane 0B).
+///
+/// Declared here so the crate root stays untouched; reachable as
+/// `sonium_qa::rad::oc_golden`.
+#[path = "oc_golden.rs"]
+pub mod oc_golden;
+
 /// Failure of a Radioss harness operation.
 #[derive(Debug)]
 pub enum RadError {
@@ -898,7 +905,7 @@ fn candidate_rank(file_name: &str) -> u32 {
 }
 
 /// Best `prefix*` executable entry of `dir` by [`candidate_rank`].
-fn best_sibling(dir: &Path, prefix: &str) -> Option<PathBuf> {
+pub(crate) fn best_sibling(dir: &Path, prefix: &str) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     let mut best: Option<(u32, String, PathBuf)> = None;
     for entry in entries.flatten() {
@@ -1066,7 +1073,7 @@ fn is_probably_csv(path: &Path) -> Result<bool, RadError> {
     Ok(!head.contains(&0) && head.contains(&b','))
 }
 
-fn convert_with_th_to_csv(exe: &Path, t01: &Path, dir: &Path) -> Result<(), RadError> {
+pub(crate) fn convert_with_th_to_csv(exe: &Path, t01: &Path, dir: &Path) -> Result<(), RadError> {
     // `exe` may be the exec directory itself or one engine binary; the
     // converter ships as `th_to_csv*` beside the engine binaries.
     let search_dir = if exe.is_dir() {
@@ -1084,23 +1091,36 @@ fn convert_with_th_to_csv(exe: &Path, t01: &Path, dir: &Path) -> Result<(), RadE
         }
     }
     candidates.push(PathBuf::from("th_to_csv"));
-    let mut last_error = None;
+    let mut spawn_error = None;
+    let mut exec_error = None;
     for tool in candidates {
         match Command::new(&tool).arg(t01).current_dir(dir).output() {
             Ok(output) if output.status.success() => return Ok(()),
             Ok(output) => {
-                last_error = Some(format!(
-                    "{} exited {}",
-                    tool.display(),
-                    output.status.code().unwrap_or(-1)
+                // The tool ran but failed; this beats path misses
+                // below. File name only: this text can land in
+                // checked-in golden notes, which must not embed
+                // host-specific absolute paths. No exit code means a
+                // signal death (Unix reports `None` there).
+                let outcome = output
+                    .status
+                    .code()
+                    .map_or("killed by signal".to_string(), |code| {
+                        format!("exited {code}")
+                    });
+                exec_error = Some(format!(
+                    "{} {outcome}",
+                    tool.file_name().unwrap_or_default().to_string_lossy()
                 ));
             }
-            Err(error) => last_error = Some(error.to_string()),
+            Err(error) => spawn_error = Some(error.to_string()),
         }
     }
     Err(RadError::Parse(format!(
         "binary T01 needs th_to_csv conversion: {}",
-        last_error.unwrap_or_else(|| "converter missing".to_string())
+        exec_error
+            .or(spawn_error)
+            .unwrap_or_else(|| "converter missing".to_string())
     )))
 }
 
@@ -1381,6 +1401,30 @@ pub fn assert_probe_close(
             rel,
         })
     }
+}
+
+/// Compare two `probes.json` texts ignoring the `engine` stamp.
+///
+/// Prove-out stamps the producing engine into the checked-in file, so
+/// the drift check compares the probe payload, not the bytes.
+///
+/// # Panics
+///
+/// Panics with `context` when either side is not valid JSON or the
+/// payloads differ.
+pub fn assert_probes_payload_eq(checked: &str, expected: &str, context: &str) {
+    let mut checked_json: serde_json::Value =
+        serde_json::from_str(checked).unwrap_or_else(|error| {
+            panic!("{context}: checked probes.json is not valid JSON: {error}")
+        });
+    let mut expected_json: serde_json::Value = serde_json::from_str(expected)
+        .unwrap_or_else(|error| panic!("{context}: writer probes.json is not valid JSON: {error}"));
+    for value in [&mut checked_json, &mut expected_json] {
+        if let Some(object) = value.as_object_mut() {
+            object.remove("engine");
+        }
+    }
+    assert_eq!(checked_json, expected_json, "{context}");
 }
 
 /// Render the checked-in `probes.json` artifact of a case.
@@ -3263,5 +3307,25 @@ mod tests {
             engine_flavor(Path::new("/opt/radioss/exec/engine_linux64_gf")),
             "Radioss"
         );
+    }
+
+    #[test]
+    fn probes_payload_check_ignores_engine_stamp() {
+        let stamped = probes_json(
+            &cantilever_case(),
+            "OpenRadioss linux64_gf CommitID 33e68517",
+        );
+        let plain = probes_json(&cantilever_case(), "none (prove-out deferred)");
+        assert_probes_payload_eq(&stamped, &plain, "test");
+    }
+
+    #[test]
+    #[should_panic(expected = "drifted")]
+    fn probes_payload_check_catches_value_drift() {
+        let mut case = cantilever_case();
+        let stamped = probes_json(&case, "OpenRadioss linux64_gf CommitID 33e68517");
+        case.probes[0].expected += 1.0;
+        let drifted = probes_json(&case, "none (prove-out deferred)");
+        assert_probes_payload_eq(&stamped, &drifted, "drifted");
     }
 }

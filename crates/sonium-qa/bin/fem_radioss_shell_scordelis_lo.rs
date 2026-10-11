@@ -11,8 +11,8 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    assert_probe_close, engine_exe, extended_probes_json, run_extended_case,
-    shell_scordelis_lo_case, write_extended_engine, write_extended_starter,
+    assert_probe_close, assert_probes_payload_eq, engine_exe, extended_probes_json,
+    run_extended_case, shell_scordelis_lo_case, write_extended_engine, write_extended_starter,
 };
 use std::path::PathBuf;
 
@@ -63,10 +63,10 @@ fn main() {
         checked_engine, engine,
         "decks/shell_scordelis_lo/shell_scordelis_lo_0001.rad drifted from the rad writer"
     );
-    assert_eq!(
-        checked_probes,
-        extended_probes_json(&case, "none (prove-out deferred)"),
-        "decks/shell_scordelis_lo/probes.json drifted from the rad writer"
+    assert_probes_payload_eq(
+        &checked_probes,
+        &extended_probes_json(&case, "none (prove-out deferred)"),
+        "decks/shell_scordelis_lo/probes.json drifted from the rad writer",
     );
 
     let Some(exe) = engine_exe() else {

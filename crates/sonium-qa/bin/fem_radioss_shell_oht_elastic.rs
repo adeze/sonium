@@ -40,8 +40,8 @@
 use sonium_qa::rad::{
     RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
     RadFunction, RadMesh, RadNodeSet, RadProbe, RadShellMesh, RadShellProperty, RadThRequest,
-    assert_probe_close, engine_exe, extended_probes_json, run_extended_case, shel_channel,
-    write_extended_engine, write_extended_starter,
+    assert_probe_close, assert_probes_payload_eq, engine_exe, extended_probes_json,
+    run_extended_case, shel_channel, write_extended_engine, write_extended_starter,
 };
 use std::path::PathBuf;
 
@@ -100,7 +100,7 @@ struct OhtMesh {
 /// runs N1 -> N2 along +x, so the shell F1 channel is the pull-direction
 /// membrane stress and normals point +z.
 fn oht_mesh(n_x: usize, n_y: usize) -> OhtMesh {
-    assert!(n_y % 2 == 0, "centers need an even across count");
+    assert!(n_y.is_multiple_of(2), "centers need an even across count");
     let xs = graded_coords(n_x, LENGTH_M, 0.4, 0.25);
     let ys: Vec<f64> = graded_coords(n_y, WIDTH_M, 0.5, 0.25)
         .iter()
@@ -324,10 +324,10 @@ fn main() {
         checked_engine, engine,
         "decks/shell_oht_elastic/shell_oht_elastic_0001.rad drifted from the rad writer"
     );
-    assert_eq!(
-        checked_probes,
-        extended_probes_json(&case, "none (prove-out deferred)"),
-        "decks/shell_oht_elastic/probes.json drifted from the rad writer"
+    assert_probes_payload_eq(
+        &checked_probes,
+        &extended_probes_json(&case, "none (prove-out deferred)"),
+        "decks/shell_oht_elastic/probes.json drifted from the rad writer",
     );
 
     let Some(exe) = engine_exe() else {

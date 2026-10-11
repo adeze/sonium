@@ -18,8 +18,9 @@
 use sonium_qa::rad::{
     RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
     RadFunction, RadMaterial, RadMesh, RadNodeSet, RadProbe, RadThRequest, assert_probe_close,
-    bric_channel, engine_exe, extended_probes_json, perfectly_plastic_steel_law36,
-    run_extended_case, write_extended_engine, write_extended_starter,
+    assert_probes_payload_eq, bric_channel, engine_exe, extended_probes_json,
+    perfectly_plastic_steel_law36, run_extended_case, write_extended_engine,
+    write_extended_starter,
 };
 use std::path::PathBuf;
 
@@ -423,10 +424,10 @@ fn main() {
         checked_engine, engine,
         "plasticity_thick_cylinder_0001.rad drifted from the rad writer"
     );
-    assert_eq!(
-        checked_probes,
-        extended_probes_json(&case, "none (prove-out deferred)"),
-        "probes.json drifted from the rad writer"
+    assert_probes_payload_eq(
+        &checked_probes,
+        &extended_probes_json(&case, "none (prove-out deferred)"),
+        "probes.json drifted from the rad writer",
     );
     println!(
         "case {}: {} nodes, {} bricks, {} cloads, {} probes",

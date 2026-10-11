@@ -5861,3 +5861,15 @@ name = "qa-fem-radioss-shell-oht-elastic"
 path = "bin/fem_radioss_shell_oht_elastic.rs"
 test = false
 required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-oc-harvest"
+path = "bin/oc_harvest.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-oc-replay"
+path = "bin/oc_replay.rs"
+test = false
+required-features = ["qa-binaries"]

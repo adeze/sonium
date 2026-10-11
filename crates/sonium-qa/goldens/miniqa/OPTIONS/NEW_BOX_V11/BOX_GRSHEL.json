@@ -1,0 +1,464 @@
+{
+  "schema": "opencourant-golden-v1",
+  "case": "OPTIONS/NEW_BOX_V11/BOX_GRSHEL",
+  "meta": {
+    "engine": "OpenRadioss linux64_gf CommitID 33e68517",
+    "engine_commit": "33e685176cccf0c539a3ce07aa2096985a284e2a",
+    "starter_exe": "starter_linux64_gf",
+    "engine_exe": "engine_linux64_gf",
+    "deck_sha256": {
+      "starter": "052c5ecad76173d1ce97b5e052b01b29aad04dea436c338bb83508f1d26e5e80",
+      "engine": "034d372dba3a2ebf709ef1b4d9070cb097bda0ee2998466a4e4927dfcf05a6fe"
+    },
+    "starter_deck": "FOAM_GRSHEL_0000.rad",
+    "engine_decks": [
+      "FOAM_GRSHEL_0001.rad"
+    ],
+    "starter_options": "-i FOAM_GRSHEL_0000.rad -np 1",
+    "engine_options": "-i FOAM_GRSHEL_0001.rad",
+    "mpi": "smp",
+    "np": 1,
+    "threads": 1,
+    "precision": "dp",
+    "harvest_date": "2026-10-10T20:07:11Z",
+    "deck_units": null,
+    "rootname": "FOAM_GRSHEL",
+    "normal_termination": true,
+    "th_tool": "th_to_csv_linux64_gf",
+    "exe_sha256": {
+      "starter": "122c09311ecf6155fb998cd980d4c478c01734fdd1d4287e6f7a817b62e39db8",
+      "engine": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+      "th_to_csv": "704d647331ae4befd329d18b991d644f2af930abd117c5d204c23925f75fc8db"
+    },
+    "decimation": null
+  },
+  "time": [
+    0.0
+  ],
+  "channels": {
+    "ADDED MASS": {
+      "values": [
+        -2.664535e-15
+      ],
+      "final": -2.664535e-15,
+      "min": -2.664535e-15,
+      "max": -2.664535e-15,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "CONTACT ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "DAMPING CONTACT ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "ELASTIC CONTACT ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "EXTERNAL WORK": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "FRICTIONAL CONTACT ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "HOURGLASS ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "INLET ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "INLET MASS": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "INTERNAL ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "KINETIC ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "MASS": {
+      "values": [
+        7.163987
+      ],
+      "final": 7.163987,
+      "min": 7.163987,
+      "max": 7.163987,
+      "abs_tol": 7.1639869999999995e-12,
+      "rel_tol": 0.00066
+    },
+    "NO NAME": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "OUTLET ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "OUTLET MASS": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "PERCENTAGE ADDED MASS": {
+      "values": [
+        -3.719347e-14
+      ],
+      "final": -3.719347e-14,
+      "min": -3.719347e-14,
+      "max": -3.719347e-14,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "PLASTIC WORK": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "ROTATION ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "SPRING ENERGY": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "TIME STEP": {
+      "values": [
+        0.01006231
+      ],
+      "final": 0.01006231,
+      "min": 0.01006231,
+      "max": 0.01006231,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "X-MOMENTUM": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Y-MOMENTUM": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "Z-MOMENTUM": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 5 sphere - foam ~1": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 5 sphere - foam ~2": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 5 sphere - foam ~3": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 5 sphere - foam ~4": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 5 sphere - foam ~5": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 5 sphere - foam ~6": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 6 sphere - foam ~1": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 6 sphere - foam ~2": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 6 sphere - foam ~3": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 6 sphere - foam ~4": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 6 sphere - foam ~5": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 6 sphere - foam ~6": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 7 wall ~1": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 7 wall ~2": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 7 wall ~3": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 7 wall ~4": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 7 wall ~5": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    },
+    "solid 7 wall ~6": {
+      "values": [
+        0.0
+      ],
+      "final": 0.0,
+      "min": 0.0,
+      "max": 0.0,
+      "abs_tol": 1e-12,
+      "rel_tol": 0.00066
+    }
+  },
+  "cycle": {
+    "ADDEDMASS": 0.0,
+    "CYCLE": 0.0,
+    "ELTID": 2748.0,
+    "ERROR": 0.0,
+    "EXTWORK": 0.0,
+    "IENERGY": 0.0,
+    "KENERGYR": 0.0,
+    "KENERGYT": 0.0,
+    "MASERR": 0.0,
+    "TIME": 0.0,
+    "TOTALMASS": 7.164,
+    "TSTEP": 0.01006
+  }
+}

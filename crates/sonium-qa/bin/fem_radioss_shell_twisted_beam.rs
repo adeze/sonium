@@ -23,8 +23,8 @@
 use sonium_qa::rad::{
     RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
     RadFunction, RadMesh, RadNodeSet, RadProbe, RadShellMesh, RadShellProperty, RadThRequest,
-    assert_probe_close, engine_exe, extended_probes_json, run_extended_case, shel_channel,
-    write_extended_engine, write_extended_starter,
+    assert_probe_close, assert_probes_payload_eq, engine_exe, extended_probes_json,
+    run_extended_case, shel_channel, write_extended_engine, write_extended_starter,
 };
 use std::path::PathBuf;
 
@@ -50,7 +50,7 @@ struct TwistedMesh {
 }
 
 fn twisted_beam_mesh(n_x: usize, n_y: usize) -> TwistedMesh {
-    assert!(n_y % 2 == 0, "tip center needs an even across count");
+    assert!(n_y.is_multiple_of(2), "tip center needs an even across count");
     let total = std::f64::consts::FRAC_PI_2;
     let mut nodes = Vec::with_capacity((n_x + 1) * (n_y + 1));
     for ix in 0..=n_x {
@@ -212,10 +212,10 @@ fn main() {
         checked_engine, engine,
         "decks/shell_twisted_beam/shell_twisted_beam_0001.rad drifted from the rad writer"
     );
-    assert_eq!(
-        checked_probes,
-        extended_probes_json(&case, "none (prove-out deferred)"),
-        "decks/shell_twisted_beam/probes.json drifted from the rad writer"
+    assert_probes_payload_eq(
+        &checked_probes,
+        &extended_probes_json(&case, "none (prove-out deferred)"),
+        "decks/shell_twisted_beam/probes.json drifted from the rad writer",
     );
 
     let Some(exe) = engine_exe() else {
