@@ -22,10 +22,14 @@ mod eas;
 mod fbar;
 mod forms;
 mod hex;
+mod hex_explicit;
 mod materials;
+mod tet_penta;
 
 pub use eas::*;
 pub use fbar::*;
 pub use forms::*;
 pub use hex::*;
+pub use hex_explicit::*;
 pub use materials::*;
+pub use tet_penta::*;

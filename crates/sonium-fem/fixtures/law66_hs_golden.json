@@ -1,0 +1,73 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law66_hs",
+		"units":"SI"
+	},
+	"inputs":{
+		"pc_pa":500000000,
+		"pt_pa":600000000,
+		"ep":1.0e-2,
+		"curve_knots":[
+			0.0,
+			8.0e-2
+		],
+		"curve_mpa":[
+			90,
+			170
+		]
+	},
+	"values":{
+		"blend_neg":{
+			"values":[
+				"0.54545454545454545454545454545454545454545454545455"
+			],
+			"exact":"(500+100)\/1100 = 6\/11"
+		},
+		"blend_zero":{
+			"values":[
+				"0.45454545454545454545454545454545454545454545454545"
+			],
+			"exact":"500\/1100 = 5\/11"
+		},
+		"blend_pos":{
+			"values":[
+				"0.36363636363636363636363636363636363636363636363636"
+			],
+			"exact":"(500-100)\/1100 = 4\/11"
+		},
+		"blend_out_neg":{
+			"values":[
+				"1."
+			],
+			"exact":"1 outside the tension limit"
+		},
+		"blend_out_pos":{
+			"values":[
+				"0"
+			],
+			"exact":"0 outside the compression limit"
+		},
+		"static_0_01":{
+			"values":[
+				"1.e8"
+			],
+			"exact":"90 + (0.01\/0.08) 80 MPa = 100 MPa"
+		}
+	},
+	"tolerances":{
+		"blend_neg_abs":1.0e-15,
+		"blend_neg_rel":1.0e-12,
+		"blend_zero_abs":1.0e-15,
+		"blend_zero_rel":1.0e-12,
+		"blend_pos_abs":1.0e-15,
+		"blend_pos_rel":1.0e-12,
+		"blend_out_neg_abs":1.0e-15,
+		"blend_out_neg_rel":1.0e-12,
+		"blend_out_pos_abs":1.0e-15,
+		"blend_out_pos_rel":1.0e-12,
+		"static_0_01_abs":1.0e-6,
+		"static_0_01_rel":1.0e-12
+	}
+}

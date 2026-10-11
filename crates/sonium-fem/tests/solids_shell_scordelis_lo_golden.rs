@@ -42,17 +42,16 @@ fn solve_quarter(n_theta: usize, n_z: usize) -> f64 {
     let ymod = doc["inputs"]["youngs_modulus_pa"].as_f64().unwrap();
     let nu = doc["inputs"]["poisson_ratio"].as_f64().unwrap();
     let load = doc["inputs"]["pressure_load_pa"].as_f64().unwrap();
-    let half_angle = doc["inputs"]["half_angle_deg"].as_f64().unwrap().to_radians();
+    let half_angle = doc["inputs"]["half_angle_deg"]
+        .as_f64()
+        .unwrap()
+        .to_radians();
     let mut points = Vec::with_capacity((n_theta + 1) * (n_z + 1));
     for iz in 0..=n_z {
         let z = length / 2.0 * iz as f64 / n_z as f64;
         for it in 0..=n_theta {
             let theta = half_angle * it as f64 / n_theta as f64;
-            points.push(Point::new_3d(
-                radius * theta.sin(),
-                radius * theta.cos(),
-                z,
-            ));
+            points.push(Point::new_3d(radius * theta.sin(), radius * theta.cos(), z));
         }
     }
     let node = |iz: usize, it: usize| -> usize { iz * (n_theta + 1) + it };
@@ -72,7 +71,12 @@ fn solve_quarter(n_theta: usize, n_z: usize) -> f64 {
         .iter()
         .map(|q| {
             QuadShellElement::from_points_with_section(
-                *q, &points[q[0]], &points[q[1]], &points[q[2]], &points[q[3]], section,
+                *q,
+                &points[q[0]],
+                &points[q[1]],
+                &points[q[2]],
+                &points[q[3]],
+                section,
             )
         })
         .collect();

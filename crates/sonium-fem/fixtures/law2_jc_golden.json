@@ -1,0 +1,65 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law2_jc",
+		"units":"SI"
+	},
+	"inputs":{
+		"a_pa":792000000,
+		"b_pa":510000000,
+		"n":0.26,
+		"c":1.4e-2,
+		"m":1.03,
+		"ep":1.0e-2,
+		"ref_rate":1,
+		"fast_rate":1000,
+		"hot_temperature_k":900,
+		"t_room_k":298,
+		"t_melt_k":1793
+	},
+	"values":{
+		"flow_quasistatic":{
+			"values":[
+				"9.4601753774050282613018840410741653277081756912687e8"
+			],
+			"exact":"(A+B ep^n)(1+C ln 1)(1-0^m)"
+		},
+		"flow_fast":{
+			"values":[
+				"1.0375055447052158066721439941408212127905916743132e9"
+			],
+			"exact":"(A+B ep^n)(1+C ln 1000)(1-0^m)"
+		},
+		"flow_hot":{
+			"values":[
+				"5.7533413144704865630270363534597338237871923516659e8"
+			],
+			"exact":"(A+B ep^n)(1-T*^m), T*=(900-298)\/(1793-298)"
+		},
+		"thermal_hot":{
+			"values":[
+				"0.60816433997745355094595731551438674696357616827076"
+			],
+			"exact":"1-T*^m, T*=(900-298)\/(1793-298)"
+		},
+		"homologous_hot":{
+			"values":[
+				"0.40267558528428093645484949832775919732441471571906"
+			],
+			"exact":"(900-298)\/(1793-298)"
+		}
+	},
+	"tolerances":{
+		"flow_quasistatic_abs":1.0e-6,
+		"flow_quasistatic_rel":1.0e-12,
+		"flow_fast_abs":1.0e-6,
+		"flow_fast_rel":1.0e-12,
+		"flow_hot_abs":1.0e-6,
+		"flow_hot_rel":1.0e-12,
+		"thermal_hot_abs":1.0e-15,
+		"thermal_hot_rel":1.0e-12,
+		"homologous_hot_abs":1.0e-15,
+		"homologous_hot_rel":1.0e-12
+	}
+}

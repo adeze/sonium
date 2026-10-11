@@ -29,7 +29,7 @@ use crate::physics::solid::fracture::ductile::JohnsonCookDamage;
 /// exact rather than linearized. Solves the scalar consistency equation by
 /// bisection and returns `(stress, tangent, dep, yielding)` with the
 /// Simo-Hughes consistent tangent in C1 order.
-fn j2_return_c1(
+pub(crate) fn j2_return_c1(
     e: f64,
     nu: f64,
     stress: &[f64; 6],
@@ -109,7 +109,7 @@ fn j2_return_c1(
 }
 
 /// Isotropic elastic tangent in C1 Voigt order, row-major 6x6.
-fn elastic_tangent_c1(k: f64, g: f64) -> [f64; 36] {
+pub(crate) fn elastic_tangent_c1(k: f64, g: f64) -> [f64; 36] {
     let lambda = k - 2.0 * g / 3.0;
     let mut c = [0.0; 36];
     for i in 0..3 {
@@ -130,7 +130,7 @@ fn elastic_tangent_c1(k: f64, g: f64) -> [f64; 36] {
 /// and the flow-direction correction uses `theta_bar` with the isotropic
 /// slope. Structurally identical to the legacy internal-ordering version
 /// because both key on normal (index < 3) versus shear entries.
-fn consistent_tangent_j2_c1(
+pub(crate) fn consistent_tangent_j2_c1(
     k: f64,
     g: f64,
     q_trial: f64,
@@ -221,7 +221,10 @@ impl JohnsonCookMaterial {
     /// Thermal capacity defaults to zero, which disables adiabatic heating;
     /// set `density`, `specific_heat`, and `taylor_quinney` for coupled runs.
     /// Damage stays `None` until assigned.
-    #[expect(clippy::too_many_arguments, reason = "material cards take flat parameter lists")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "material cards take flat parameter lists"
+    )]
     pub fn new(
         e: f64,
         nu: f64,
@@ -266,6 +269,53 @@ impl JohnsonCookMaterial {
         )
     }
 
+    /// AISI 4340 steel with adiabatic heating enabled.
+    ///
+    /// Same flow parameters as [`c4340_steel`](Self::c4340_steel) plus
+    /// handbook mass data, so `commit` accumulates the adiabatic
+    /// temperature rise of the plastic work.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::plasticity::crash::JohnsonCookMaterial;
+    ///
+    /// let steel = JohnsonCookMaterial::c4340_steel_thermal();
+    /// assert!(steel.density * steel.specific_heat > 0.0);
+    /// ```
+    pub fn c4340_steel_thermal() -> Self {
+        // Handbook mass data for low-alloy steel: density 7830 kg/m^3,
+        // specific heat 475 J/(kg K). Raising either slows the adiabatic
+        // temperature rise proportionally; both feed only the commit-side
+        // heating term, never the flow stress directly.
+        let mut material = Self::c4340_steel();
+        material.density = 7830.0;
+        material.specific_heat = 475.0;
+        material
+    }
+
+    /// OFHC copper with adiabatic heating enabled.
+    ///
+    /// Same flow parameters as [`ofhc_copper`](Self::ofhc_copper) plus
+    /// handbook mass data for the commit-side temperature rise.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::plasticity::crash::JohnsonCookMaterial;
+    ///
+    /// let copper = JohnsonCookMaterial::ofhc_copper_thermal();
+    /// assert!(copper.density * copper.specific_heat > 0.0);
+    /// ```
+    pub fn ofhc_copper_thermal() -> Self {
+        // Handbook mass data for OFHC copper: density 8960 kg/m^3,
+        // specific heat 383 J/(kg K). Same heating-only role as above.
+        let mut material = Self::ofhc_copper();
+        material.specific_heat = 383.0;
+        material.density = 8960.0;
+        material
+    }
+
     /// Homologous temperature in `[0, 1]`.
     pub fn homologous_temperature(&self, temperature: f64) -> f64 {
         let span = (self.melt_temperature - self.room_temperature).max(1e-9);
@@ -300,7 +350,9 @@ impl JohnsonCookMaterial {
     /// feeds the tangent.
     pub fn hardening_slope(&self, ep: f64, strain_rate: f64, temperature: f64) -> f64 {
         let ep_safe = ep.max(1e-12);
-        self.b * self.n * ep_safe.powf(self.n - 1.0)
+        self.b
+            * self.n
+            * ep_safe.powf(self.n - 1.0)
             * self.rate_factor(strain_rate)
             * self.thermal_factor(temperature)
     }
@@ -506,7 +558,12 @@ impl CowperSymondsJ2 {
     }
 
     /// Trial update at an explicit strain rate estimate.
-    fn update_at_rate(&self, state: &PlasticState, d_eps: &[f64; 6], strain_rate: f64) -> StressUpdate {
+    fn update_at_rate(
+        &self,
+        state: &PlasticState,
+        d_eps: &[f64; 6],
+        strain_rate: f64,
+    ) -> StressUpdate {
         let internal: [f64; 6] = state.stress.as_slice().try_into().unwrap_or_else(|_| {
             panic!("CowperSymondsJ2 needs a 3D PlasticState with 6 components");
         });
@@ -824,8 +881,7 @@ impl CrushableFoamMaterial {
         let aq = three_g * dir_q;
         let ap = k * dir_p;
         let a_quad = aq * aq + self.alpha * self.alpha * ap * ap;
-        let stiffness = (three_g * q_trial * q_trial
-            + k * self.alpha.powi(4) * p_trial * p_trial)
+        let stiffness = (three_g * q_trial * q_trial + k * self.alpha.powi(4) * p_trial * p_trial)
             / denom.max(1e-30)
             + self.hardening_modulus * compaction_rate.abs();
         let lam_smin = if a_quad > 0.0 {
@@ -870,7 +926,11 @@ impl CrushableFoamMaterial {
         };
         let p_new = p_trial - k * lambda * dir_p;
         let q_new = (q_trial - three_g * lambda * dir_q).max(0.0);
-        let ratio = if q_trial > 1e-30 { q_new / q_trial } else { 0.0 };
+        let ratio = if q_trial > 1e-30 {
+            q_new / q_trial
+        } else {
+            0.0
+        };
         let new_stress = [
             ratio * s_trial[0] + p_new,
             ratio * s_trial[1] + p_new,
@@ -929,8 +989,7 @@ impl StressUpdateModel for CrushableFoamMaterial {
                 plus[j] += eps;
                 minus[j] -= eps;
                 let (s_plus, _, _) = self.solve_stress(&state.stress, state.compaction, &plus);
-                let (s_minus, _, _) =
-                    self.solve_stress(&state.stress, state.compaction, &minus);
+                let (s_minus, _, _) = self.solve_stress(&state.stress, state.compaction, &minus);
                 for i in 0..6 {
                     tangent[i * 6 + j] = (s_plus[i] - s_minus[i]) / (2.0 * eps);
                 }
@@ -1117,7 +1176,10 @@ mod tests {
         let rate = super::super::update::voigt_equivalent_increment_c1(&d_eps) / 1.0e-5;
         let factor = material.rate_factor(rate);
         let got = von_mises_c1(&fast.stress) / von_mises_c1(&slow.stress);
-        assert!((got - factor).abs() / factor < 0.02, "got {got}, want {factor}");
+        assert!(
+            (got - factor).abs() / factor < 0.02,
+            "got {got}, want {factor}"
+        );
         material.commit(&mut slow_state, &slow);
     }
 
@@ -1149,7 +1211,11 @@ mod tests {
                 break;
             }
         }
-        assert!((state.damage - 1.0).abs() < 1e-12, "damage {}", state.damage);
+        assert!(
+            (state.damage - 1.0).abs() < 1e-12,
+            "damage {}",
+            state.damage
+        );
         assert!(
             (1.0..8.0).contains(&state.equiv_plastic_strain),
             "fracture strain {} outside 4340 bounds",
@@ -1193,7 +1259,8 @@ mod tests {
         let mut slow_state = PlasticState::new_3d();
         let mut fast_state = PlasticState::new_3d();
         let slow_curve = drive_uniaxial_stress(&scaled, &mut slow_state, 0.02, 40);
-        let fast_curve = drive_uniaxial_stress_rate(&scaled, &mut fast_state, 0.02, 40, Some(2.0e-5));
+        let fast_curve =
+            drive_uniaxial_stress_rate(&scaled, &mut fast_state, 0.02, 40, Some(2.0e-5));
         let slow_last = slow_curve.last().unwrap();
         let fast_last = fast_curve.last().unwrap();
         assert!(fast_last.stress_xx > 1.05 * slow_last.stress_xx);
@@ -1252,6 +1319,33 @@ mod tests {
         }
         let elastic = elastic_tangent_c1(foam.bulk_modulus(), foam.shear_modulus());
         assert!(update.tangent[0] < elastic[0]);
+    }
+
+    #[test]
+    fn thermal_seeds_heat_but_keep_flow() {
+        for material in [
+            JohnsonCookMaterial::c4340_steel_thermal(),
+            JohnsonCookMaterial::ofhc_copper_thermal(),
+        ] {
+            // Thermal seeds share the dry flow response exactly.
+            let dry = if material.a > 500.0e6 {
+                JohnsonCookMaterial::c4340_steel()
+            } else {
+                JohnsonCookMaterial::ofhc_copper()
+            };
+            let got = material.flow_stress(0.01, 1.0, 293.0);
+            let want = dry.flow_stress(0.01, 1.0, 293.0);
+            assert!(
+                (got - want).abs() <= 1e-9 * want,
+                "flow differs: {got} vs {want}"
+            );
+            // One plastic step warms the coupled state.
+            let mut state = JohnsonCookState::new(293.0);
+            let update = material.update(&state, &[0.01, -0.003, -0.003, 0.0, 0.0, 0.0]);
+            assert!(update.yielding);
+            material.commit(&mut state, &update);
+            assert!(state.temperature > 293.0);
+        }
     }
 
     #[test]

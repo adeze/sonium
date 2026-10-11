@@ -180,15 +180,12 @@ impl ExponentialCohesiveLaw {
     pub fn traction(&self, opening: f64, state: &mut CohesiveState) -> f64 {
         if opening <= 0.0 {
             // Contact stiffness matches the initial envelope slope.
-            let k0 = std::f64::consts::E * self.strength
-                / self.characteristic_opening().max(1e-30);
+            let k0 = std::f64::consts::E * self.strength / self.characteristic_opening().max(1e-30);
             return k0 * opening;
         }
         let dc = self.characteristic_opening().max(1e-30);
         state.max_opening = state.max_opening.max(opening);
-        let envelope = |d: f64| {
-            std::f64::consts::E * self.strength * (d / dc) * (-d / dc).exp()
-        };
+        let envelope = |d: f64| std::f64::consts::E * self.strength * (d / dc) * (-d / dc).exp();
         let traction = if opening >= state.max_opening {
             envelope(opening)
         } else {
@@ -232,11 +229,7 @@ pub struct MixedModeCohesiveLaw {
 
 impl MixedModeCohesiveLaw {
     /// Creates a mixed-mode law from normal, shear, and BK exponent.
-    pub fn new(
-        normal: BilinearCohesiveLaw,
-        shear: BilinearCohesiveLaw,
-        bk_eta: f64,
-    ) -> Self {
+    pub fn new(normal: BilinearCohesiveLaw, shear: BilinearCohesiveLaw, bk_eta: f64) -> Self {
         Self {
             normal,
             shear,
@@ -287,9 +280,8 @@ impl MixedModeCohesiveLaw {
         let kn = self.normal.penalty_stiffness;
         let ks = self.shear.penalty_stiffness;
         let keq = (kn * tension * tension + ks * shear * shear) / (dm * dm);
-        let t0 = ((self.normal.strength * tension).powi(2)
-            + (self.shear.strength * shear).powi(2))
-        .sqrt()
+        let t0 = ((self.normal.strength * tension).powi(2) + (self.shear.strength * shear).powi(2))
+            .sqrt()
             / dm;
         let d0 = t0 / keq.max(1e-30);
         let df = (2.0 * mixed_g / t0.max(1e-30)).max(d0 * (1.0 + 1e-12));
@@ -459,8 +451,8 @@ mod tests {
             let dm = failure * i as f64 / steps as f64;
             let d = dm / 2.0_f64.sqrt();
             let t = law.traction_3d([d, d, 0.0], &mut state);
-            dissipated += 0.5
-                * ((prev.1[0] + t[0]) * (d - prev.0) + (prev.1[1] + t[1]) * (d - prev.0));
+            dissipated +=
+                0.5 * ((prev.1[0] + t[0]) * (d - prev.0) + (prev.1[1] + t[1]) * (d - prev.0));
             prev = (d, t);
         }
         assert!(

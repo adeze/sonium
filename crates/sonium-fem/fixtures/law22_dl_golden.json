@@ -1,0 +1,58 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law22_dl",
+		"units":"SI"
+	},
+	"inputs":{
+		"strength_pa":100000000,
+		"damage_strain":0.1,
+		"softening_slope_pa":-2000000000,
+		"youngs_pa":70000000000
+	},
+	"values":{
+		"damage_0_05":{
+			"values":[
+				"0"
+			],
+			"exact":"clamp(175\/9 (0.05-0.1)) = 0"
+		},
+		"damage_0_11":{
+			"values":[
+				"0.19444444444444444444444444444444444444444444444444"
+			],
+			"exact":"175\/9 (0.11-0.1) = 7\/36"
+		},
+		"damage_0_12":{
+			"values":[
+				"0.38888888888888888888888888888888888888888888888889"
+			],
+			"exact":"175\/9 (0.12-0.1) = 7\/18"
+		},
+		"damage_0_15":{
+			"values":[
+				"0.97222222222222222222222222222222222222222222222222"
+			],
+			"exact":"175\/9 (0.15-0.1) = 35\/36"
+		},
+		"damage_0_20":{
+			"values":[
+				"1."
+			],
+			"exact":"clamp(175\/9 (0.20-0.1)) = 1"
+		}
+	},
+	"tolerances":{
+		"damage_0_05_abs":1.0e-15,
+		"damage_0_05_rel":1.0e-12,
+		"damage_0_11_abs":1.0e-15,
+		"damage_0_11_rel":1.0e-12,
+		"damage_0_12_abs":1.0e-15,
+		"damage_0_12_rel":1.0e-12,
+		"damage_0_15_abs":1.0e-15,
+		"damage_0_15_rel":1.0e-12,
+		"damage_0_20_abs":1.0e-15,
+		"damage_0_20_rel":1.0e-12
+	}
+}

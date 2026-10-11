@@ -93,7 +93,10 @@ fn test_step_load() {
         let exact = (1.0 - (omega * t).cos()) / (omega * omega);
         // Normalize by the static scale: the full-period exact value is 0.
         let error = (trace[index] - exact).abs() * omega * omega;
-        println!("step load t={t:.4e}: FEM={:.6e} exact={exact:.6e}", trace[index]);
+        println!(
+            "step load t={t:.4e}: FEM={:.6e} exact={exact:.6e}",
+            trace[index]
+        );
         assert!(error < 0.02, "step error {error:.3e} at t={t}");
     }
 }
@@ -147,7 +150,14 @@ fn test_resonant_steady_state() {
     let force: Vec<f64> = (0..=steps)
         .map(|i| (omega_n * i as f64 * dt).sin())
         .collect();
-    let trace = integrate(system, ImplicitDynamicsConfig::default(), dt, 0.0, 0.0, &force);
+    let trace = integrate(
+        system,
+        ImplicitDynamicsConfig::default(),
+        dt,
+        0.0,
+        0.0,
+        &force,
+    );
     // Measure the last-period amplitude; resonance gives F0/(c omega_n).
     let tail = &trace[steps - 100..steps - 1];
     let measured = tail.iter().map(|u| u.abs()).fold(0.0, f64::max);

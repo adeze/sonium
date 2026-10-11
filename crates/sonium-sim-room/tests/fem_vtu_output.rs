@@ -19,10 +19,7 @@ fn fem_vtu_output_path_writes_parseable_mesh_and_source_collection() {
 
     let simulation = RoomSimulation::with_frequencies(
         RoomGeometry::Rectangular(RectangularRoom::new(1.0, 1.0, 1.0)),
-        vec![Source::omnidirectional(
-            Point3D::new(0.25, 0.25, 0.25),
-            1.0,
-        )],
+        vec![Source::omnidirectional(Point3D::new(0.25, 0.25, 0.25), 1.0)],
         vec![Point3D::new(0.75, 0.75, 0.75)],
         100.0,
         100.0,

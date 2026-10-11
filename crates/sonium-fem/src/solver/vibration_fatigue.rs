@@ -490,8 +490,8 @@ mod tests {
         // Resonant peak is purely imaginary with magnitude 1/(2 z w^2).
         assert!(h[1].re.abs() < 1e-15);
         assert!((h[1].im + 1.0 / (2.0 * zeta * omega_n.powi(2))).abs() < 1e-15);
-        let expected =
-            Complex64::new(1.0, 0.0) / Complex64::new(-3.0 * omega_n.powi(2), 4.0 * zeta * omega_n.powi(2));
+        let expected = Complex64::new(1.0, 0.0)
+            / Complex64::new(-3.0 * omega_n.powi(2), 4.0 * zeta * omega_n.powi(2));
         assert!((h[2] - expected).norm() < 1e-15);
     }
 
@@ -505,8 +505,7 @@ mod tests {
             .iter()
             .map(|&f| {
                 let r = f / freq_n;
-                Complex64::new(1.0, 2.0 * zeta * r)
-                    / Complex64::new(1.0 - r * r, 2.0 * zeta * r)
+                Complex64::new(1.0, 2.0 * zeta * r) / Complex64::new(1.0 - r * r, 2.0 * zeta * r)
             })
             .collect();
         let psd = vec![1.0; n];
@@ -568,15 +567,26 @@ mod tests {
         };
         curve.validate().unwrap();
         let cycles = vec![
-            RainflowCycle { range: 600.0, mean: 0.0, count: 100.0 },
-            RainflowCycle { range: 300.0, mean: 0.0, count: 1000.0 },
+            RainflowCycle {
+                range: 600.0,
+                mean: 0.0,
+                count: 100.0,
+            },
+            RainflowCycle {
+                range: 300.0,
+                mean: 0.0,
+                count: 1000.0,
+            },
         ];
         let expected = 100.0 / curve.cycles_to_failure(300.0, 0.0)
             + 1000.0 / curve.cycles_to_failure(150.0, 0.0);
         assert!((miner_damage(&cycles, &curve) - expected).abs() < 1e-15);
         // Endurance cutoff zeroes sub-limit damage (both amplitudes
         // 300 and 150 sit below the 400 limit).
-        let limited = BasquinCurve { endurance_limit: Some(400.0), ..curve };
+        let limited = BasquinCurve {
+            endurance_limit: Some(400.0),
+            ..curve
+        };
         assert_eq!(miner_damage(&cycles, &limited), 0.0);
     }
 
@@ -597,11 +607,15 @@ mod tests {
 
     #[test]
     fn spotweld_constant_amplitude_is_exact() {
-        let curve = ForceLifeCurve { force_intercept: 1000.0, exponent: -0.2 };
+        let curve = ForceLifeCurve {
+            force_intercept: 1000.0,
+            exponent: -0.2,
+        };
         curve.validate().unwrap();
         // Ten reversals 0/500: four full range-500 cycles plus halves.
-        let history: Vec<f64> =
-            (0..10).map(|i| if i % 2 == 0 { 0.0 } else { 500.0 }).collect();
+        let history: Vec<f64> = (0..10)
+            .map(|i| if i % 2 == 0 { 0.0 } else { 500.0 })
+            .collect();
         let cycles = rainflow_counts(&history);
         let expected: f64 = cycles
             .iter()

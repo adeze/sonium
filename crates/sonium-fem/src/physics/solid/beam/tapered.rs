@@ -178,11 +178,7 @@ impl TaperedBeamElement3D {
             [1.0, 1.0, 1.0, 1.0]
         };
         let mid = self.section_at(0.5);
-        let phi_mid = if about_y {
-            mid.phi_y(l)
-        } else {
-            mid.phi_z(l)
-        };
+        let phi_mid = if about_y { mid.phi_y(l) } else { mid.phi_z(l) };
         // Cubic coefficients [a, b, c, d] in x per unit nodal value.
         let shapes = if phi_mid > 0.0 {
             timoshenko_shapes(l, phi_mid)
@@ -319,8 +315,22 @@ fn timoshenko_shapes(l: f64, phi: f64) -> [[f64; 4]; 4] {
     let shear = phi * l2 / 2.0;
     // Nodal conditions [w(0), t(0), w(L), t(L)] on [a, b, c, d].
     let a = [
-        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, shear, 1.0, l, l2, l3, 0.0, 1.0,
-        2.0 * l, 3.0 * l2 + shear,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        shear,
+        1.0,
+        l,
+        l2,
+        l3,
+        0.0,
+        1.0,
+        2.0 * l,
+        3.0 * l2 + shear,
     ];
     let mut shapes = [[0.0; 4]; 4];
     for (j, shape) in shapes.iter_mut().enumerate() {
@@ -421,8 +431,7 @@ mod tests {
     #[test]
     fn prismatic_taper_matches_straight_element() {
         for timoshenko in [false, true] {
-            let section =
-                Section3D::rectangular(200.0e9, 0.3, 0.05, 0.05, 7800.0, timoshenko);
+            let section = Section3D::rectangular(200.0e9, 0.3, 0.05, 0.05, 7800.0, timoshenko);
             let tapered = TaperedBeamElement3D::new(
                 [0, 1],
                 [0.0, 0.0, 0.0],
@@ -552,7 +561,8 @@ mod tests {
         let i2 = tip_section().iz;
         let e = 200.0e9;
         // Junction moment M = P l2 bends and rotates the root span too.
-        let expected = p * l2.powi(3) / (3.0 * e * i2) + p * l1.powi(3) / (3.0 * e * i1)
+        let expected = p * l2.powi(3) / (3.0 * e * i2)
+            + p * l1.powi(3) / (3.0 * e * i1)
             + p * l1 * l1 * l2 / (e * i1)
             + p * l1 * l2 * l2 / (e * i1);
         let error = (tip[6 + 1] - expected).abs() / expected;

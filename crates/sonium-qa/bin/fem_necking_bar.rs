@@ -12,7 +12,9 @@ use sonium_fem::physics::solid::fracture::ductile::{bridgman_correction, hollomo
 
 fn main() {
     println!("necking-bar: no closed form exists for the full post-necking response;");
-    println!("necking-bar: legs are (1) considere/bridgman, (2) wolfram incremental reference, (3) radioss deck.");
+    println!(
+        "necking-bar: legs are (1) considere/bridgman, (2) wolfram incremental reference, (3) radioss deck."
+    );
     // Leg 1a: Consider uniform strain equals the Hollomon exponent.
     for n in [0.1, 0.2, 0.3] {
         let uniform = hollomon_necking_strain(n);

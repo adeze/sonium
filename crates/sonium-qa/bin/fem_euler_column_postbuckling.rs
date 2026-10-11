@@ -29,10 +29,10 @@ use sonium_fem::mesh::{Mesh, rectangular_mesh_quads};
 use sonium_fem::physics::solid::joints::RigidBody;
 use sonium_fem::physics::solid::nonlinear_solid::{HyperelasticForm, NeoHookean};
 use sonium_fem::quadrature::QuadratureRule;
-use sonium_fem::solver::nonlinear::arc_length::{
-    fem_riks_solve_with_bcs_and_load, ArcLengthConfig,
-};
 use sonium_fem::solver::nonlinear::FemNewtonConfig;
+use sonium_fem::solver::nonlinear::arc_length::{
+    ArcLengthConfig, fem_riks_solve_with_bcs_and_load,
+};
 use sonium_fem::spaces::{FunctionSpace, VectorH1Space};
 use sonium_qa::column_euler_critical_load;
 use sonium_solvers::{CsrMatrix, LinearSolveConfig, TripletMatrix, solve_real};
@@ -376,7 +376,10 @@ fn check_rigid_face_oracle(face: &[(usize, f64)], center_y: f64, face_x: f64) {
             (full[6 * i] - expected_ux).abs() < 1e-12,
             "oracle slave {i} ux mismatch"
         );
-        assert!(full[6 * i + 1].abs() < 1e-12, "oracle slave {i} uy mismatch");
+        assert!(
+            full[6 * i + 1].abs() < 1e-12,
+            "oracle slave {i} uy mismatch"
+        );
     }
     println!(
         "rigid-face oracle: {} slaves match rigid kinematics",
@@ -518,12 +521,13 @@ fn run_pinned_pinned_k1() {
     let pick = |face: &[(usize, f64)]| {
         let center = *face
             .iter()
-            .min_by(|a, b| (a.1 - height / 2.0).abs().total_cmp(&(b.1 - height / 2.0).abs()))
+            .min_by(|a, b| {
+                (a.1 - height / 2.0)
+                    .abs()
+                    .total_cmp(&(b.1 - height / 2.0).abs())
+            })
             .unwrap();
-        let top = *face
-            .iter()
-            .max_by(|a, b| a.1.total_cmp(&b.1))
-            .unwrap();
+        let top = *face.iter().max_by(|a, b| a.1.total_cmp(&b.1)).unwrap();
         (center, top)
     };
     let ((bc, bcy), (bt, bty)) = pick(&bottom);
@@ -654,7 +658,10 @@ fn run_pinned_pinned_k1() {
                 points.push((lambda, solution.clone()));
                 step = (step * 1.25).min(0.004);
                 if points.len() % 10 == 0 {
-                    println!("pinned step {}: delta={target:.4} lambda={lambda:.6}", points.len());
+                    println!(
+                        "pinned step {}: delta={target:.4} lambda={lambda:.6}",
+                        points.len()
+                    );
                 }
             }
             None => {
@@ -686,7 +693,10 @@ fn run_pinned_pinned_k1() {
         + last_lambda * pcr_plane_strain * length / (young * height);
     println!(
         "pinned top ux_c={:.6e} ux_t={:.6e} bottom ux_t={:.6e} inextensible={:.6e}",
-        last[2 * tc], last[2 * tt], last[2 * bt], -inextensible
+        last[2 * tc],
+        last[2 * tt],
+        last[2 * bt],
+        -inextensible
     );
     let (final_res, _) = assemble_hyperelastic(&form, &space, &mesh, last, 2);
     // Global equilibrium: pin reactions balance the applied resultants.
@@ -718,7 +728,10 @@ fn run_pinned_pinned_k1() {
     for (x, uy) in row.iter().step_by(16) {
         println!("{x:.4} {uy:.6e}");
     }
-    assert!(mid_delta > 0.030, "pinned trace never reached post-buckling");
+    assert!(
+        mid_delta > 0.030,
+        "pinned trace never reached post-buckling"
+    );
 
     // Koiter fit against the pinned elastica pi^2/8 in (mid/L)^2.
     let rows: Vec<(f64, f64)> = points

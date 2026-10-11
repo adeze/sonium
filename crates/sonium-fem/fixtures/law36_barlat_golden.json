@@ -1,0 +1,62 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law36_barlat",
+		"units":"SI"
+	},
+	"inputs":{
+		"knot_0":0.0,
+		"yield_0_pa":90000000,
+		"seg_lo":3.6e-2,
+		"seg_hi":4.5e-2,
+		"yield_lo_pa":156000000,
+		"yield_hi_pa":162000000,
+		"xmax":7.5e-2,
+		"yield_max_pa":170000000
+	},
+	"values":{
+		"yield_0":{
+			"values":[
+				"9.e7"
+			],
+			"exact":"first knot 90 MPa"
+		},
+		"yield_0_04":{
+			"values":[
+				"1.5866666666666666666666666666666666666666666666667e8"
+			],
+			"exact":"156 + (0.004\/0.009) 6 MPa"
+		},
+		"slope_0_04":{
+			"values":[
+				"6.6666666666666666666666666666666666666666666666667e8"
+			],
+			"exact":"6 MPa \/ 0.009"
+		},
+		"yield_0_075":{
+			"values":[
+				"1.7e8"
+			],
+			"exact":"last knot 170 MPa"
+		},
+		"yield_0_10":{
+			"values":[
+				"1.7e8"
+			],
+			"exact":"170 MPa + 0.025 * 0 end slope"
+		}
+	},
+	"tolerances":{
+		"yield_0_abs":1.0e-6,
+		"yield_0_rel":1.0e-12,
+		"yield_0_04_abs":1.0e-6,
+		"yield_0_04_rel":1.0e-12,
+		"slope_0_04_abs":1.0e-6,
+		"slope_0_04_rel":1.0e-12,
+		"yield_0_075_abs":1.0e-6,
+		"yield_0_075_rel":1.0e-12,
+		"yield_0_10_abs":1.0e-6,
+		"yield_0_10_rel":1.0e-12
+	}
+}

@@ -225,7 +225,11 @@ fn main() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(&starter_path, &starter).unwrap();
         std::fs::write(&engine_path, &engine).unwrap();
-        std::fs::write(&probes_path, probes_json(&case, "none (prove-out deferred)")).unwrap();
+        std::fs::write(
+            &probes_path,
+            probes_json(&case, "none (prove-out deferred)"),
+        )
+        .unwrap();
         println!("wrote decks/taylor_bar artifacts");
         return;
     }
@@ -240,7 +244,10 @@ fn main() {
         checked_engine, engine,
         "decks/taylor_bar/taylor_bar_0001.rad drifted from the rad writer"
     );
-    assert!(probes_path.exists(), "decks/taylor_bar/probes.json must be checked in");
+    assert!(
+        probes_path.exists(),
+        "decks/taylor_bar/probes.json must be checked in"
+    );
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
@@ -264,10 +271,17 @@ fn main() {
     for probe in &case.probes {
         match output.history.final_value(&probe.channel) {
             Ok(value) => {
-                println!("probe {}: actual {value:.6e}, expected {:.6e}", probe.label, probe.expected);
-                if let Err(error) =
-                    assert_probe_close(value, probe.expected, probe.abs_tol, probe.rel_tol, &probe.label)
-                {
+                println!(
+                    "probe {}: actual {value:.6e}, expected {:.6e}",
+                    probe.label, probe.expected
+                );
+                if let Err(error) = assert_probe_close(
+                    value,
+                    probe.expected,
+                    probe.abs_tol,
+                    probe.rel_tol,
+                    &probe.label,
+                ) {
                     eprintln!("FAIL: {error}");
                     failed = true;
                 }

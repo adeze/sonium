@@ -121,8 +121,7 @@ impl WarpingBeamElement3D {
             let weight = 0.5 * w * l;
             for i in 0..4 {
                 for j in 0..4 {
-                    k[i * 4 + j] +=
-                        weight * (gj * hp[i] * hp[j] + eg * hpp[i] * hpp[j]);
+                    k[i * 4 + j] += weight * (gj * hp[i] * hp[j] + eg * hpp[i] * hpp[j]);
                 }
             }
         }
@@ -473,8 +472,7 @@ mod tests {
         let u = dense_solve(&matrix, &rhs, m);
         let mu = section.gj() / section.warping_stiffness();
         let mu = mu.sqrt();
-        let expected =
-            1000.0 / section.gj() * (length - (mu * length).tanh() / mu);
+        let expected = 1000.0 / section.gj() * (length - (mu * length).tanh() / mu);
         let error = (u[m - 4] - expected).abs() / expected;
         assert!(error < 1.0e-3, "tip twist error {error:.3e}");
     }

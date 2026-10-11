@@ -1,0 +1,99 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"mass_scaling_shift",
+		"units":"SI"
+	},
+	"inputs":{
+		"mass_kg":1,
+		"stiffness_n_m":1000,
+		"scales":[
+			1.0,
+			2.0,
+			1.0e1
+		],
+		"rigid_velocity_m_s":[
+			1.0,
+			1.0
+		]
+	},
+	"values":{
+		"omega_rigid":{
+			"values":[
+				"0.0"
+			],
+			"exact":"0 (rigid mode unaffected by uniform scaling)"
+		},
+		"omega_elastic_unscaled":{
+			"values":[
+				"44.721359549995793928183473374625524708812367192231"
+			],
+			"exact":"Sqrt[2*k\/m]"
+		},
+		"omega_elastic_scaled":{
+			"values":[
+				"44.721359549995793928183473374625524708812367192231",
+				"22.360679774997896964091736687312762354406183596115",
+				"4.4721359549995793928183473374625524708812367192231"
+			],
+			"exact":"Sqrt[2*k\/m]\/s per scale"
+		},
+		"dt_crit_scaled":{
+			"values":[
+				"0.044721359549995793928183473374625524708812367192231",
+				"0.089442719099991587856366946749251049417624734384461",
+				"0.44721359549995793928183473374625524708812367192231"
+			],
+			"exact":"2*s\/Sqrt[2*k\/m] per scale"
+		},
+		"added_mass_per_node":{
+			"values":[
+				"0.0",
+				"3.",
+				"99."
+			],
+			"exact":"(s^2-1)*m per scale"
+		},
+		"ke_rigid_unscaled":{
+			"values":[
+				"1."
+			],
+			"exact":"m*(v1^2+v2^2)\/2"
+		},
+		"ke_rigid_scaled":{
+			"values":[
+				"1.",
+				"4.",
+				"100."
+			],
+			"exact":"s^2*m*(v1^2+v2^2)\/2 per scale"
+		},
+		"ke_scaling_error":{
+			"values":[
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"KE_scaled - s^2*KE_unscaled = 0 per scale"
+		}
+	},
+	"tolerances":{
+		"omega_rigid_abs":1.0e-15,
+		"omega_rigid_rel":1.0e-12,
+		"omega_elastic_unscaled_abs":1.0e-15,
+		"omega_elastic_unscaled_rel":1.0e-12,
+		"omega_elastic_scaled_abs":1.0e-15,
+		"omega_elastic_scaled_rel":1.0e-12,
+		"dt_crit_scaled_abs":1.0e-15,
+		"dt_crit_scaled_rel":1.0e-12,
+		"added_mass_per_node_abs":1.0e-15,
+		"added_mass_per_node_rel":1.0e-12,
+		"ke_rigid_unscaled_abs":1.0e-15,
+		"ke_rigid_unscaled_rel":1.0e-12,
+		"ke_rigid_scaled_abs":1.0e-15,
+		"ke_rigid_scaled_rel":1.0e-12,
+		"ke_scaling_error_abs":1.0e-15,
+		"ke_scaling_error_rel":1.0e-12
+	}
+}

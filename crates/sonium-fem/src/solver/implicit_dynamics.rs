@@ -129,7 +129,7 @@ impl ImplicitDynamicsConfig {
                 "gamma below 1/2 loses unconditional stability".to_string(),
             ));
         }
-        if !( -1.0 / 3.0..=0.0).contains(&self.alpha) {
+        if !(-1.0 / 3.0..=0.0).contains(&self.alpha) {
             return Err(ImplicitDynamicsError::InvalidConfig(
                 "HHT alpha must lie in [-1/3, 0]".to_string(),
             ));
@@ -363,8 +363,8 @@ pub fn spectral_radius_3x3(matrix: [[f64; 3]; 3]) -> f64 {
         let angle = cos_arg.acos() / 3.0;
         let mut max = 0.0_f64;
         for k in 0..3 {
-            let root = radius * (angle - 2.0 * std::f64::consts::PI * f64::from(k) / 3.0).cos()
-                + shift;
+            let root =
+                radius * (angle - 2.0 * std::f64::consts::PI * f64::from(k) / 3.0).cos() + shift;
             max = max.max(root.abs());
         }
         max
@@ -565,7 +565,10 @@ impl ImplicitDynamicsIntegrator {
     ///
     /// Returns [`ImplicitDynamicsError`] before initialization, for a
     /// wrongly sized or non-finite load, or when the backsolve fails.
-    pub fn step(&mut self, force_next: &[f64]) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
+    pub fn step(
+        &mut self,
+        force_next: &[f64],
+    ) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
         if !self.initialized {
             return Err(ImplicitDynamicsError::NotInitialized);
         }
@@ -597,8 +600,11 @@ impl ImplicitDynamicsIntegrator {
             .collect();
         let mass_part = self.mass.apply(&history_m);
         let damp_part = self.apply_damping(&history_c);
-        let stiff_history: Vec<f64> =
-            state.displacement.iter().map(|u| self.config.alpha * u).collect();
+        let stiff_history: Vec<f64> = state
+            .displacement
+            .iter()
+            .map(|u| self.config.alpha * u)
+            .collect();
         let stiff_part = self.stiffness.apply(&stiff_history);
         let rhs: Vec<f64> = force_next
             .iter()
@@ -799,8 +805,7 @@ mod tests {
         let mut config = ImplicitDynamicsConfig::default();
         config.rayleigh_mass = 2.0 * zeta * omega;
         let system = sdof_system(1.0, 0.0, omega * omega);
-        let mut integrator =
-            ImplicitDynamicsIntegrator::new(system, config, 0.005).unwrap();
+        let mut integrator = ImplicitDynamicsIntegrator::new(system, config, 0.005).unwrap();
         integrator.initialize(&[1.0], &[0.0], &[0.0]).unwrap();
         for _ in 0..200 {
             integrator.step(&[0.0]).unwrap();
@@ -827,24 +832,19 @@ mod tests {
         let diag = spectral_radius_3x3([[0.5, 0.0, 0.0], [0.0, -0.8, 0.0], [0.0, 0.0, 0.3]]);
         assert!((diag - 0.8).abs() < 1e-15);
         // Planar rotation through 90 degrees has unit modulus.
-        let rotation =
-            spectral_radius_3x3([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.5]]);
+        let rotation = spectral_radius_3x3([[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 0.5]]);
         assert!((rotation - 1.0).abs() < 1e-12);
         // Nilpotent Jordan block has zero radius.
-        let nilpotent =
-            spectral_radius_3x3([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]);
+        let nilpotent = spectral_radius_3x3([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0], [0.0, 0.0, 0.0]]);
         assert!(nilpotent < 1e-12);
     }
 
     #[test]
     fn integrator_rejects_bad_inputs() {
         let system = sdof_system(1.0, 0.0, 4.0);
-        let mut integrator = ImplicitDynamicsIntegrator::new(
-            system,
-            ImplicitDynamicsConfig::default(),
-            0.01,
-        )
-        .unwrap();
+        let mut integrator =
+            ImplicitDynamicsIntegrator::new(system, ImplicitDynamicsConfig::default(), 0.01)
+                .unwrap();
         assert!(integrator.step(&[0.0]).is_err());
         assert!(integrator.initialize(&[1.0, 2.0], &[0.0], &[0.0]).is_err());
         integrator.initialize(&[1.0], &[0.0], &[0.0]).unwrap();

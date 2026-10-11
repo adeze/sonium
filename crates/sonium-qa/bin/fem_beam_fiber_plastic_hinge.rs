@@ -242,7 +242,10 @@ fn test_elastic_limit() {
     let eiz = 200.0e9 * h * b.powi(3) / 12.0;
     let expected = 0.1 * my / l * l.powi(3) / (3.0 * eiz);
     let error = (u[tip_dof] - expected).abs() / expected;
-    println!("elastic: FEM={:.12e} exact={expected:.12e} rel={error:.2e}", u[tip_dof]);
+    println!(
+        "elastic: FEM={:.12e} exact={expected:.12e} rel={error:.2e}",
+        u[tip_dof]
+    );
     assert!(error < 0.02, "elastic error {error:.3e}");
 }
 

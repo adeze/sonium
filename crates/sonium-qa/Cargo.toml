@@ -108,6 +108,36 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-fem-crash-shells"
+path = "bin/fem_crash_shells.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-crash-laws"
+path = "bin/fem_crash_laws.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-foam-laws"
+path = "bin/fem_foam_laws.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-rupture"
+path = "bin/fem_rupture.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-axisym"
+path = "bin/fem_axisym.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-bem-fmm-block-rows"
 path = "bin/bem_fmm_block_rows.rs"
 test = false

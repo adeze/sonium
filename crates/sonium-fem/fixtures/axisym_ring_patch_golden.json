@@ -1,0 +1,150 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"axisym_ring_patch",
+		"units":"SI"
+	},
+	"inputs":{
+		"square":"r in [1,2], z in [0,1]",
+		"density":7800,
+		"sound_speed":4500,
+		"youngs":2.0e11,
+		"poisson":0.3,
+		"ezz":1.0e-3,
+		"grz":1.0e-3
+	},
+	"values":{
+		"b_r_row":{
+			"values":[
+				"-0.5",
+				"0.5",
+				"0.5",
+				"-0.5"
+			],
+			"exact":"dN\/dr row, exact halves"
+		},
+		"b_z_row":{
+			"values":[
+				"-0.5",
+				"-0.5",
+				"0.5",
+				"0.5"
+			],
+			"exact":"dN\/dz row, exact halves"
+		},
+		"gamma":{
+			"values":[
+				"1.",
+				"-1.",
+				"1.",
+				"-1."
+			],
+			"exact":"h - (h.r)br - (h.z)bz = {1,-1,1,-1}"
+		},
+		"area":{
+			"values":[
+				"1."
+			],
+			"exact":"1"
+		},
+		"radius_bar":{
+			"values":[
+				"1.5"
+			],
+			"exact":"3\/2"
+		},
+		"volume":{
+			"values":[
+				"9.4247779607693797153879301498385086525915081981253"
+			],
+			"exact":"2 Pi rbar A = 3 Pi"
+		},
+		"nodal_mass":{
+			"values":[
+				"18378.317023500290445006463792185091872553440986344"
+			],
+			"exact":"rho V \/ 4 = 5850 Pi"
+		},
+		"char_length":{
+			"values":[
+				"0.70710678118654752440084436210484903928483593768847"
+			],
+			"exact":"A \/ dmax = 1\/Sqrt[2]"
+		},
+		"critical_step":{
+			"values":[
+				"0.00015713484026367722764463208046774423095218576393077"
+			],
+			"exact":"L \/ c = 1\/(4500 Sqrt[2])"
+		},
+		"elastic_szz":{
+			"values":[
+				"2.6923076923076923076923076923076923076923076923077e8"
+			],
+			"exact":"(lambda + 2 mu) ezz"
+		},
+		"elastic_srr":{
+			"values":[
+				"1.1538461538461538461538461538461538461538461538462e8"
+			],
+			"exact":"lambda ezz"
+		},
+		"elastic_sth":{
+			"values":[
+				"1.1538461538461538461538461538461538461538461538462e8"
+			],
+			"exact":"lambda ezz"
+		},
+		"radial_sum":{
+			"values":[
+				"7.2498292005918305502984078075680835789165447677887e8"
+			],
+			"exact":"sth W \/ rbar = 2 Pi sth"
+		},
+		"shear_srz":{
+			"values":[
+				"7.6923076923076923076923076923076923076923076923077e7"
+			],
+			"exact":"mu grz"
+		},
+		"bulk_q":{
+			"values":[
+				"0"
+			],
+			"exact":"0 in expansion"
+		}
+	},
+	"tolerances":{
+		"b_r_row_abs":1.0e-15,
+		"b_r_row_rel":1.0e-12,
+		"b_z_row_abs":1.0e-15,
+		"b_z_row_rel":1.0e-12,
+		"gamma_abs":1.0e-15,
+		"gamma_rel":1.0e-12,
+		"area_abs":1.0e-15,
+		"area_rel":1.0e-12,
+		"radius_bar_abs":1.0e-15,
+		"radius_bar_rel":1.0e-12,
+		"volume_abs":1.0e-12,
+		"volume_rel":1.0e-12,
+		"nodal_mass_abs":1.0e-9,
+		"nodal_mass_rel":1.0e-12,
+		"char_length_abs":1.0e-15,
+		"char_length_rel":1.0e-12,
+		"critical_step_abs":1.0e-18,
+		"critical_step_rel":1.0e-12,
+		"elastic_szz_abs":1.0e-3,
+		"elastic_szz_rel":1.0e-9,
+		"elastic_srr_abs":1.0e-3,
+		"elastic_srr_rel":1.0e-9,
+		"elastic_sth_abs":1.0e-3,
+		"elastic_sth_rel":1.0e-9,
+		"radial_sum_abs":1.0e-6,
+		"radial_sum_rel":1.0e-9,
+		"shear_srz_abs":1.0e-3,
+		"shear_srz_rel":1.0e-9,
+		"bulk_q_abs":1.0e-15,
+		"bulk_q_rel":1.0e-12
+	}
+}

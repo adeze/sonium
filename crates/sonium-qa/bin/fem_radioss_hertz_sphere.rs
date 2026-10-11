@@ -110,9 +110,7 @@ fn main() {
             let scale = bottom.abs().max(top.abs());
             println!("probe wall-force balance: bottom {bottom:.6e}, top {top:.6e}");
             if (bottom + top).abs() > 0.01 * scale {
-                eprintln!(
-                    "FAIL: wall forces do not balance: {bottom:.6e} + {top:.6e}"
-                );
+                eprintln!("FAIL: wall forces do not balance: {bottom:.6e} + {top:.6e}");
                 failed = true;
             }
             // Contact alive and mesh-plausible: single-node stiffness of a

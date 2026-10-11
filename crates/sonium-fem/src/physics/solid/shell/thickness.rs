@@ -51,11 +51,7 @@ pub fn apply_transverse_strain(thickness: f64, eps_zz: f64) -> f64 {
 }
 
 /// One-step thickness update from membrane strains.
-pub fn update_thickness(
-    thickness: f64,
-    eps_membrane: &[f64; 3],
-    rule: ThicknessRule,
-) -> f64 {
+pub fn update_thickness(thickness: f64, eps_membrane: &[f64; 3], rule: ThicknessRule) -> f64 {
     apply_transverse_strain(thickness, rule.transverse_strain(eps_membrane))
 }
 
@@ -87,7 +83,11 @@ impl ThicknessField {
 
     /// Create with per-element rules.
     pub fn with_rules(reference: Vec<f64>, rules: Vec<ThicknessRule>) -> Self {
-        assert_eq!(reference.len(), rules.len(), "thickness/rule length mismatch");
+        assert_eq!(
+            reference.len(),
+            rules.len(),
+            "thickness/rule length mismatch"
+        );
         assert!(
             reference.iter().all(|&t| t > 0.0),
             "reference thicknesses must be positive"

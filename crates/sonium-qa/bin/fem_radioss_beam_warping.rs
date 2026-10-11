@@ -15,9 +15,9 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
-    RadMesh, RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case,
-    write_engine, write_starter,
+    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
+    RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case, write_engine,
+    write_starter,
 };
 use std::path::PathBuf;
 
@@ -323,8 +323,7 @@ fn main() {
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
-    let work =
-        std::env::temp_dir().join(format!("sonium_rad_beam_warping_{}", std::process::id()));
+    let work = std::env::temp_dir().join(format!("sonium_rad_beam_warping_{}", std::process::id()));
     std::fs::create_dir_all(&work).unwrap();
     std::fs::write(work.join("beam_warping_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("beam_warping_0001.rad"), &engine).unwrap();
@@ -341,9 +340,13 @@ fn main() {
                     "probe {}: actual {actual:.6e}, expected {:.6e}",
                     probe.label, probe.expected
                 );
-                if let Err(error) =
-                    assert_probe_close(actual, probe.expected, probe.abs_tol, probe.rel_tol, &probe.label)
-                {
+                if let Err(error) = assert_probe_close(
+                    actual,
+                    probe.expected,
+                    probe.abs_tol,
+                    probe.rel_tol,
+                    &probe.label,
+                ) {
                     eprintln!("FAIL: {error}");
                     failed = true;
                 }

@@ -44,11 +44,7 @@ fn nvh_closed_forms_match_wolfram() {
     );
     check(&doc, "white_variance", white_var);
     check(&doc, "white_rms", white_var.sqrt());
-    let miles_var = miles_rms(
-        input("miles_s0"),
-        input("miles_zeta"),
-        input("miles_fn_hz"),
-    );
+    let miles_var = miles_rms(input("miles_s0"), input("miles_zeta"), input("miles_fn_hz"));
     check(&doc, "miles_rms", miles_var);
     check(&doc, "miles_variance", miles_var * miles_var);
     let wn = input("receptance_omega_n");

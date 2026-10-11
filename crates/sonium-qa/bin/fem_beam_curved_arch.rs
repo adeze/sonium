@@ -10,9 +10,7 @@
 
 // Rust guideline compliant 2026-02-21
 
-use sonium_fem::physics::solid::beam::{
-    BeamElement3D, CurvedBeamElement3D, Section3D,
-};
+use sonium_fem::physics::solid::beam::{BeamElement3D, CurvedBeamElement3D, Section3D};
 
 /// Solve a dense system in place with partial pivoting.
 fn dense_solve(matrix: &mut [f64], rhs: &mut [f64], n: usize) {
@@ -80,8 +78,8 @@ fn test_quarter_cantilever() {
         let mut rhs = [0.0; 6];
         rhs[0] = -p;
         dense_solve(&mut matrix, &mut rhs, 6);
-        let mut expected =
-            p * r.powi(3) / section.eiz() * (3.0 * pi / 4.0 - 2.0) + p * r * pi / (4.0 * section.ea());
+        let mut expected = p * r.powi(3) / section.eiz() * (3.0 * pi / 4.0 - 2.0)
+            + p * r * pi / (4.0 * section.ea());
         if timoshenko {
             expected += p * r * pi / (4.0 * section.shear_stiffness_y());
         }
@@ -181,7 +179,10 @@ fn test_pinned_arch_crown() {
     let (uy32, h32) = solve_pinned_crown(32, false);
     assert!((uy32 - uy).abs() / uy.abs() < 1.0e-6);
     assert!((h32 - h).abs() / h.abs() < 1.0e-6);
-    println!("GOLDEN beam_curved_arch_crown fem={:.17e} hand={expected_d:.17e}", uy.abs());
+    println!(
+        "GOLDEN beam_curved_arch_crown fem={:.17e} hand={expected_d:.17e}",
+        uy.abs()
+    );
 }
 
 fn test_membrane_ring() {
@@ -317,7 +318,10 @@ fn test_faceted_cross_check() {
     let faceted = rhs[free.iter().position(|&d| d == crown * 6 + 1).unwrap()].abs();
     let (curved, _) = solve_pinned_crown(8, false);
     let error = (faceted - curved.abs()).abs() / curved.abs();
-    println!("faceted cross-check: faceted={faceted:.12e} curved={:.12e} rel={error:.2e}", curved.abs());
+    println!(
+        "faceted cross-check: faceted={faceted:.12e} curved={:.12e} rel={error:.2e}",
+        curved.abs()
+    );
     assert!(error < 5.0e-3, "faceted error {error:.3e}");
 }
 

@@ -71,7 +71,10 @@ impl RevolutionShellElement {
     /// Meridional tangent (cos_phi, sin_phi) in (r, z).
     pub fn tangent(&self) -> (f64, f64) {
         let length = self.slant_length();
-        ((self.r[1] - self.r[0]) / length, (self.z[1] - self.z[0]) / length)
+        (
+            (self.r[1] - self.r[0]) / length,
+            (self.z[1] - self.z[0]) / length,
+        )
     }
 
     /// Radius at natural coordinate xi.
@@ -226,8 +229,8 @@ impl RevolutionShellElement {
 fn add_2x6_block(k: &mut [f64; 36], b: &[f64; 12], d: f64, dnu: f64, weight: f64) {
     for i in 0..6 {
         for j in 0..6 {
-            let val = d * (b[i] * b[j] + b[6 + i] * b[6 + j])
-                + dnu * (b[i] * b[6 + j] + b[6 + i] * b[j]);
+            let val =
+                d * (b[i] * b[j] + b[6 + i] * b[6 + j]) + dnu * (b[i] * b[6 + j] + b[6 + i] * b[j]);
             k[i * 6 + j] += weight * val;
         }
     }

@@ -1,0 +1,56 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"tied_contact_patch",
+		"units":"SI"
+	},
+	"inputs":{
+		"block_size_m":[
+			2,
+			1,
+			1
+		],
+		"youngs_bottom_pa":200000000000,
+		"youngs_top_pa":70000000000,
+		"poisson_ratio":0.3,
+		"pressure_pa":1.0e6,
+		"probe_points_m":[
+			[
+				0.5,
+				0.5,
+				0.5
+			],
+			[
+				1.5,
+				0.5,
+				0.5
+			],
+			[
+				1.0,
+				0.5,
+				1.5
+			],
+			[
+				0.25,
+				0.75,
+				0.25
+			]
+		]
+	},
+	"values":{
+		"sigma_zz":{
+			"values":[
+				"-1.e6",
+				"-1.e6",
+				"-1.e6",
+				"-1.e6"
+			],
+			"exact":"-p (uniform axial stress through the tie)"
+		}
+	},
+	"tolerances":{
+		"sigma_zz_abs":1.0e-6,
+		"sigma_zz_rel":1.0e-12
+	}
+}

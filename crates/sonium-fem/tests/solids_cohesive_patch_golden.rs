@@ -57,5 +57,9 @@ fn cohesive_patch_matches_wolfram() {
     let full = cohesive_patch_response(2000, law.failure_opening(), |d| {
         law.traction(d, &mut full_state)
     });
-    check(&doc, "fracture_energy_check", patch_dissipated_energy(&full));
+    check(
+        &doc,
+        "fracture_energy_check",
+        patch_dissipated_energy(&full),
+    );
 }

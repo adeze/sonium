@@ -20,7 +20,7 @@
 
 use super::candidates::PenaltyPair;
 use super::detection::ContactSurface;
-use super::gap::{project_point_to_triangle, ProjectionResult};
+use super::gap::{ProjectionResult, project_point_to_triangle};
 use crate::physics::solid::fracture::cohesive::{CohesiveState, MixedModeCohesiveLaw};
 
 /// Suggested nodal penalty stiffness in N/m.

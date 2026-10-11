@@ -1,0 +1,126 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"shell_q4_patch",
+		"units":"SI"
+	},
+	"inputs":{
+		"square":"unit [0,1]^2",
+		"thickness_m":2.0e-3,
+		"density":7800,
+		"sound_speed":4500,
+		"youngs":2.0e11,
+		"poisson":0.3,
+		"exx":1.0e-3
+	},
+	"values":{
+		"membrane_b_row0":{
+			"values":[
+				"-0.5",
+				"0",
+				"0.5",
+				"0",
+				"0.5",
+				"0",
+				"-0.5",
+				"0"
+			],
+			"exact":"dN\/dx row over [u1,v1..u4,v4], exact halves"
+		},
+		"membrane_b_row1":{
+			"values":[
+				"0",
+				"-0.5",
+				"0",
+				"-0.5",
+				"0",
+				"0.5",
+				"0",
+				"0.5"
+			],
+			"exact":"dN\/dy row over [u1,v1..u4,v4], exact halves"
+		},
+		"gamma":{
+			"values":[
+				"1.",
+				"-1.",
+				"1.",
+				"-1."
+			],
+			"exact":"h - (h.x)bx - (h.y)by = {1,-1,1,-1}"
+		},
+		"area":{
+			"values":[
+				"1."
+			],
+			"exact":"1"
+		},
+		"nodal_mass":{
+			"values":[
+				"3.9"
+			],
+			"exact":"rho A t \/ 4"
+		},
+		"critical_step":{
+			"values":[
+				"0.00022222222222222222222222222222222222222222222222222"
+			],
+			"exact":"L \/ c = 1\/4500"
+		},
+		"plane_sxx":{
+			"values":[
+				"2.1978021978021978021978021978021978021978021978022e8"
+			],
+			"exact":"E exx \/ (1 - nu^2)"
+		},
+		"plane_syy":{
+			"values":[
+				"6.5934065934065934065934065934065934065934065934066e7"
+			],
+			"exact":"nu E exx \/ (1 - nu^2)"
+		},
+		"plane_dezz":{
+			"values":[
+				"-0.00042857142857142857142857142857142857142857142857143"
+			],
+			"exact":"-nu exx \/ (1 - nu)"
+		},
+		"resultant_nxx":{
+			"values":[
+				"439560.43956043956043956043956043956043956043956044"
+			],
+			"exact":"t sxx"
+		},
+		"thickness_z1":{
+			"values":[
+				"-0.00090617984593866399279762687829939296512565191076253"
+			],
+			"exact":"first LegendreP[5] root times t\/2"
+		}
+	},
+	"tolerances":{
+		"membrane_b_row0_abs":1.0e-15,
+		"membrane_b_row0_rel":1.0e-12,
+		"membrane_b_row1_abs":1.0e-15,
+		"membrane_b_row1_rel":1.0e-12,
+		"gamma_abs":1.0e-15,
+		"gamma_rel":1.0e-12,
+		"area_abs":1.0e-15,
+		"area_rel":1.0e-12,
+		"nodal_mass_abs":1.0e-12,
+		"nodal_mass_rel":1.0e-12,
+		"critical_step_abs":1.0e-18,
+		"critical_step_rel":1.0e-12,
+		"plane_sxx_abs":1.0e-3,
+		"plane_sxx_rel":1.0e-9,
+		"plane_syy_abs":1.0e-3,
+		"plane_syy_rel":1.0e-9,
+		"plane_dezz_abs":1.0e-15,
+		"plane_dezz_rel":1.0e-9,
+		"resultant_nxx_abs":1.0e-6,
+		"resultant_nxx_rel":1.0e-9,
+		"thickness_z1_abs":1.0e-15,
+		"thickness_z1_rel":1.0e-12
+	}
+}

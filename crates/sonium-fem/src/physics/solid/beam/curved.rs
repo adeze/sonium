@@ -87,16 +87,8 @@ impl CurvedBeamElement3D {
         center: [f64; 3],
         section: Section3D,
     ) -> Self {
-        let r1 = [
-            p1[0] - center[0],
-            p1[1] - center[1],
-            p1[2] - center[2],
-        ];
-        let r2 = [
-            p2[0] - center[0],
-            p2[1] - center[1],
-            p2[2] - center[2],
-        ];
+        let r1 = [p1[0] - center[0], p1[1] - center[1], p1[2] - center[2]];
+        let r2 = [p2[0] - center[0], p2[1] - center[1], p2[2] - center[2]];
         let norm1 = (r1[0] * r1[0] + r1[1] * r1[1] + r1[2] * r1[2]).sqrt();
         let norm2 = (r2[0] * r2[0] + r2[1] * r2[1] + r2[2] * r2[2]).sqrt();
         assert!(norm1 > 0.0, "arch node 1 coincides with the center");
@@ -174,10 +166,7 @@ impl CurvedBeamElement3D {
     /// The origin sits at the midspan arc point, so the center is at
     /// `(0, -R)` and the point is `(R sin beta, R (cos beta - 1))`.
     fn local_point(&self, beta: f64) -> [f64; 2] {
-        [
-            self.radius * beta.sin(),
-            self.radius * (beta.cos() - 1.0),
-        ]
+        [self.radius * beta.sin(), self.radius * (beta.cos() - 1.0)]
     }
 
     /// In-plane 3x3 flexibility at node 2 with node 1 fixed.
@@ -212,8 +201,8 @@ impl CurvedBeamElement3D {
             let weight = w * half * self.radius;
             for j in 0..3 {
                 for k in 0..3 {
-                    flex[j * 3 + k] += weight
-                        * (moment[j] * moment[k] / ei + axial[j] * axial[k] / ea);
+                    flex[j * 3 + k] +=
+                        weight * (moment[j] * moment[k] / ei + axial[j] * axial[k] / ea);
                     if ga > 0.0 {
                         flex[j * 3 + k] += weight * shear[j] * shear[k] / ga;
                     }
@@ -259,8 +248,8 @@ impl CurvedBeamElement3D {
             let weight = w * half * self.radius;
             for j in 0..3 {
                 for k in 0..3 {
-                    flex[j * 3 + k] += weight
-                        * (torque[j] * torque[k] / gj + bending[j] * bending[k] / eiy);
+                    flex[j * 3 + k] +=
+                        weight * (torque[j] * torque[k] / gj + bending[j] * bending[k] / eiy);
                     if ga > 0.0 {
                         flex[j * 3 + k] += weight * shear[j] * shear[k] / ga;
                     }
@@ -305,8 +294,8 @@ impl CurvedBeamElement3D {
         // In-plane block: e = d2 - R d1 with R the planar transport.
         let stiff_in = invert_3x3(&self.flexibility_inplane());
         let b_in = [
-            -1.0, 0.0, dy, 1.0, 0.0, 0.0, 0.0, -1.0, -dx, 0.0, 1.0, 0.0, 0.0, 0.0,
-            -1.0, 0.0, 0.0, 1.0,
+            -1.0, 0.0, dy, 1.0, 0.0, 0.0, 0.0, -1.0, -dx, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0,
+            1.0,
         ];
         let k_in = Self::expand_block(&stiff_in, &b_in);
         let plane = [0_usize, 1, 5, 6, 7, 11];
@@ -318,8 +307,8 @@ impl CurvedBeamElement3D {
         // Out-of-plane block: uz2 = uz1 + rx1 dy - ry1 dx, rotations carry.
         let stiff_out = invert_3x3(&self.flexibility_out_of_plane());
         let b_out = [
-            -1.0, -dy, dx, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
-            -1.0, 0.0, 0.0, 1.0,
+            -1.0, -dy, dx, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -1.0, 0.0, 0.0,
+            1.0,
         ];
         let k_out = Self::expand_block(&stiff_out, &b_out);
         let out_of_plane = [2_usize, 3, 4, 8, 9, 10];
@@ -471,9 +460,13 @@ mod tests {
         let section = test_section();
         let curved = CurvedBeamElement3D::from_arc([0, 1], p1, p2, center, section);
         let chord = ((p2[0] - p1[0]).powi(2) + (p2[1] - p1[1]).powi(2)).sqrt();
-        let straight = BeamElement3D::new([0, 1], [0.0, 0.0, 0.0], [chord, 0.0, 0.0], section, [
-            0.0, 1.0, 0.0,
-        ]);
+        let straight = BeamElement3D::new(
+            [0, 1],
+            [0.0, 0.0, 0.0],
+            [chord, 0.0, 0.0],
+            section,
+            [0.0, 1.0, 0.0],
+        );
         let kc = curved.stiffness_local();
         let ks = straight.stiffness_local();
         // Compare the in-plane block entry by entry against the straight
@@ -497,8 +490,7 @@ mod tests {
         let center = [0.0, 0.0, 0.0];
         let p1 = [radius, 0.0, 0.0];
         let p2 = [radius * 0.5, radius * 0.866_025_403_784_438_6, 0.0];
-        let elem =
-            CurvedBeamElement3D::from_arc([0, 1], p1, p2, center, test_section());
+        let elem = CurvedBeamElement3D::from_arc([0, 1], p1, p2, center, test_section());
         let k = elem.stiffness_global();
         assert!(symmetry_error(&k) < 1.0e-12);
         // Rigid modes about the global origin in global coordinates.
@@ -556,8 +548,8 @@ mod tests {
         rhs[0] = -1000.0;
         let u = solve_6(&matrix, &rhs);
         // Castigliano: bending PR^3(3pi/4 - 2)/EI plus axial PR pi/(4 EA).
-        let bend = 1000.0 * radius.powi(3) / section.eiz()
-            * (3.0 * std::f64::consts::PI / 4.0 - 2.0);
+        let bend =
+            1000.0 * radius.powi(3) / section.eiz() * (3.0 * std::f64::consts::PI / 4.0 - 2.0);
         let axial = 1000.0 * radius * std::f64::consts::PI / (4.0 * section.ea());
         let expected = bend + axial;
         let error = (u[0].abs() - expected).abs() / expected;

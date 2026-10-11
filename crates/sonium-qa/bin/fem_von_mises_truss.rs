@@ -7,7 +7,7 @@
 
 // Rust guideline compliant 2026-02-21
 
-use sonium_fem::solver::nonlinear::arc_length::{riks_continuation, ArcLengthConfig};
+use sonium_fem::solver::nonlinear::arc_length::{ArcLengthConfig, riks_continuation};
 use sonium_qa::truss_von_mises_load;
 
 fn main() {

@@ -1,0 +1,52 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"cfl_bar",
+		"units":"SI"
+	},
+	"inputs":{
+		"youngs_modulus_pa":200000000000,
+		"density_kg_m3":7800,
+		"lengths_m":[
+			1.0e-2,
+			0.1,
+			1.0
+		],
+		"stepped_lengths_m":[
+			1.0,
+			0.1,
+			1.0e-2
+		]
+	},
+	"values":{
+		"sound_speed":{
+			"values":[
+				"5063.6968354183330813944771906982305297654517610467"
+			],
+			"exact":"Sqrt[E\/rho]"
+		},
+		"dt_crit":{
+			"values":[
+				"1.9748417658131499017438461043723099066085261868082e-6",
+				"0.000019748417658131499017438461043723099066085261868082",
+				"0.00019748417658131499017438461043723099066085261868082"
+			],
+			"exact":"L_e\/c per length"
+		},
+		"dt_crit_stepped":{
+			"values":[
+				"1.9748417658131499017438461043723099066085261868082e-6"
+			],
+			"exact":"Min[L_e]\/c (stepped-mesh min rule)"
+		}
+	},
+	"tolerances":{
+		"sound_speed_abs":1.0e-15,
+		"sound_speed_rel":1.0e-12,
+		"dt_crit_abs":1.0e-15,
+		"dt_crit_rel":1.0e-12,
+		"dt_crit_stepped_abs":1.0e-15,
+		"dt_crit_stepped_rel":1.0e-12
+	}
+}

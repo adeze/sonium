@@ -229,11 +229,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         normalize_port_flow(&mut candidate, &mesh, &project, usize::from(improved))?;
         eprintln!(
             "{}: {} triangles, {} frequencies",
-            if improved {
-                "Candidate"
-            } else {
-                "Baseline"
-            },
+            if improved { "Candidate" } else { "Baseline" },
             mesh.triangles.len(),
             frequencies.len()
         );
@@ -364,12 +360,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .collect();
         }
         designs.push(Design {
-            name: if improved {
-                "Candidate"
-            } else {
-                "Baseline"
-            }
-            .into(),
+            name: if improved { "Candidate" } else { "Baseline" }.into(),
             description: if project.linear.mode != "prescribed" {
                 format!(
                     "{:.0} mm spacing · {:.3} V RMS · {} rear load · {} active crossover",

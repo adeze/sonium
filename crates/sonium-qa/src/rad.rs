@@ -88,7 +88,10 @@ impl fmt::Display for RadError {
                 output,
             } => write!(f, "radioss {stage} failed (code {code:?}): {output}"),
             Self::MissingChannel { channel, available } => {
-                write!(f, "time history lacks channel {channel}; have {available:?}")
+                write!(
+                    f,
+                    "time history lacks channel {channel}; have {available:?}"
+                )
             }
             Self::ProbeMismatch {
                 label,
@@ -916,9 +919,7 @@ pub(crate) fn best_sibling(dir: &Path, prefix: &str) -> Option<PathBuf> {
         let rank = candidate_rank(&name);
         let replace = best
             .as_ref()
-            .map(|(best_rank, best_name, _)| {
-                (rank, &name) < (*best_rank, best_name)
-            })
+            .map(|(best_rank, best_name, _)| (rank, &name) < (*best_rank, best_name))
             .unwrap_or(true);
         if replace {
             best = Some((rank, name, entry.path()));
@@ -1280,10 +1281,7 @@ pub fn parse_t01(path: &Path) -> Result<TimeHistory, RadError> {
     }
     let mut channels = BTreeMap::new();
     for (index, name) in names.iter().skip(1).enumerate() {
-        channels.insert(
-            normalize_channel(name),
-            std::mem::take(&mut columns[index]),
-        );
+        channels.insert(normalize_channel(name), std::mem::take(&mut columns[index]));
     }
     Ok(TimeHistory { times, channels })
 }
@@ -1303,8 +1301,7 @@ fn normalize_channel(raw: &str) -> String {
     let tokens: Vec<&str> = unquoted.split_whitespace().collect();
     if tokens.len() >= 3 {
         let var = tokens[tokens.len() - 1];
-        let var_ok =
-            !var.is_empty() && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+        let var_ok = !var.is_empty() && var.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
         if var_ok {
             let head = &tokens[..tokens.len() - 1];
             let title = head.join(" ").to_lowercase();
@@ -1359,11 +1356,7 @@ pub fn impulse_to_force(times: &[f64], impulse: &[f64]) -> Vec<f64> {
 }
 
 fn slope(t0: f64, j0: f64, t1: f64, j1: f64) -> f64 {
-    if t1 > t0 {
-        (j1 - j0) / (t1 - t0)
-    } else {
-        0.0
-    }
+    if t1 > t0 { (j1 - j0) / (t1 - t0) } else { 0.0 }
 }
 
 /// Compare a probe value against its expectation.
@@ -2125,7 +2118,11 @@ pub fn write_extended_starter(case: &RadExtendedCase) -> String {
         deck.push_str(&format!("/FUNCT/{}\n", base.functions.len() + 1));
         deck.push_str("LAW36 yield stress vs plastic strain\n");
         for (strain, stress) in &table.points {
-            deck.push_str(&format!("{}{}\n", field_float(*strain), field_float(*stress)));
+            deck.push_str(&format!(
+                "{}{}\n",
+                field_float(*strain),
+                field_float(*stress)
+            ));
         }
     }
     for (index, bcs) in base.bcs.iter().enumerate() {
@@ -2228,10 +2225,7 @@ fn write_extended_material(deck: &mut String, case: &RadExtendedCase) {
             deck.push_str("/MAT/LAW1/1/1\n");
             deck.push_str("linear elastic solid\n");
             // Proven against the engine: line 1 is density, line 2 is E/nu.
-            deck.push_str(&format!(
-                "{}\n",
-                field_float(material.density_kg_per_m3)
-            ));
+            deck.push_str(&format!("{}\n", field_float(material.density_kg_per_m3)));
             deck.push_str(&format!(
                 "{}{}\n",
                 field_float(material.youngs_modulus_pa),
@@ -2285,10 +2279,7 @@ fn write_extended_material(deck: &mut String, case: &RadExtendedCase) {
             let curve = case.base.functions.len() + 1;
             deck.push_str("/MAT/LAW36/1/1\n");
             deck.push_str("tabulated isotropic hardening metal\n");
-            deck.push_str(&format!(
-                "{}\n",
-                field_float(table.density_kg_per_m3)
-            ));
+            deck.push_str(&format!("{}\n", field_float(table.density_kg_per_m3)));
             deck.push_str(&format!(
                 "{}{}{}{}{}\n",
                 field_float(table.youngs_modulus_pa),
@@ -2438,7 +2429,10 @@ pub struct ScordelisShellMesh {
 ///
 /// Panics for odd or zero divisions.
 pub fn scordelis_lo_shell_mesh(n_theta: usize, n_z: usize) -> ScordelisShellMesh {
-    assert!(n_theta >= 2 && n_theta.is_multiple_of(2), "n_theta must be even");
+    assert!(
+        n_theta >= 2 && n_theta.is_multiple_of(2),
+        "n_theta must be even"
+    );
     assert!(n_z >= 2 && n_z.is_multiple_of(2), "n_z must be even");
     let (radius, length) = (25.0, 50.0);
     let half_angle = 40.0_f64.to_radians();
@@ -2746,7 +2740,9 @@ pub fn shell_clamped_plate_case() -> RadExtendedCase {
         if i == 0 {
             vec![1]
         } else {
-            (0..n_sectors).map(|j| 1 + (i - 1) * n_sectors + j + 1).collect()
+            (0..n_sectors)
+                .map(|j| 1 + (i - 1) * n_sectors + j + 1)
+                .collect()
         }
     };
     for i in 0..=n_rings {
@@ -2991,7 +2987,9 @@ mod tests {
             "FNX/RWALL/2"
         );
         assert_eq!(
-            normalize_channel("\"time history nodes                       247                                           DZ\""),
+            normalize_channel(
+                "\"time history nodes                       247                                           DZ\""
+            ),
             "DZ/247"
         );
     }
@@ -3188,9 +3186,8 @@ mod tests {
         assert!(!starter.contains("/PROP/SHELL"));
 
         let mut law36 = RadExtendedCase::wrap_elastic(base);
-        law36.material = RadMaterial::Plastic(perfectly_plastic_steel_law36(
-            200.0e9, 0.3, 7800.0, 250.0e6,
-        ));
+        law36.material =
+            RadMaterial::Plastic(perfectly_plastic_steel_law36(200.0e9, 0.3, 7800.0, 250.0e6));
         law36.validate().unwrap();
         let starter = write_extended_starter(&law36);
         assert!(starter.contains("/MAT/LAW36/1/1"));
@@ -3224,15 +3221,21 @@ mod tests {
     fn channel_headers_normalize_to_probe_form() {
         // Observed `th_to_csv` spellings (engine prove-out, Oct 2026).
         assert_eq!(
-            normalize_channel("\"time history nodes                       95                                           DX         \""),
+            normalize_channel(
+                "\"time history nodes                       95                                           DX         \""
+            ),
             "DX/95"
         );
         assert_eq!(
-            normalize_channel("\"time history shells                       1                                           THIC         \""),
+            normalize_channel(
+                "\"time history shells                       1                                           THIC         \""
+            ),
             "THIC/SHEL/1"
         );
         assert_eq!(
-            normalize_channel("\"time history bricks                       25                                           SX         \""),
+            normalize_channel(
+                "\"time history bricks                       25                                           SX         \""
+            ),
             "SX/BRIC/25"
         );
         // Energy channels pass through with quotes stripped.
@@ -3266,10 +3269,7 @@ mod tests {
             ],
         );
         let (starter, engine) = resolve_engine_pair(&dir).unwrap();
-        assert_eq!(
-            starter.file_name().unwrap(),
-            "starter_linux64_gf"
-        );
+        assert_eq!(starter.file_name().unwrap(), "starter_linux64_gf");
         assert_eq!(engine.file_name().unwrap(), "engine_linux64_gf");
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -3277,16 +3277,9 @@ mod tests {
     #[test]
     fn engine_pair_matches_file_suffix() {
         let dir = fake_exec_dir("suffix", &["starter_linux64_gf_sp", "engine_linux64_gf_sp"]);
-        let (starter, engine) =
-            resolve_engine_pair(&dir.join("starter_linux64_gf_sp")).unwrap();
-        assert_eq!(
-            engine.file_name().unwrap(),
-            "engine_linux64_gf_sp"
-        );
-        assert_eq!(
-            starter.file_name().unwrap(),
-            "starter_linux64_gf_sp"
-        );
+        let (starter, engine) = resolve_engine_pair(&dir.join("starter_linux64_gf_sp")).unwrap();
+        assert_eq!(engine.file_name().unwrap(), "engine_linux64_gf_sp");
+        assert_eq!(starter.file_name().unwrap(), "starter_linux64_gf_sp");
         std::fs::remove_dir_all(&dir).ok();
     }
 

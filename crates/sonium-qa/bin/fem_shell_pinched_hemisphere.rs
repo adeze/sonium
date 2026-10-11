@@ -91,7 +91,11 @@ fn solve_quarter(n_circ: usize, n_mer: usize) -> (f64, f64) {
     // Inward load at equator on theta = 0 (-X), outward at theta = 90 (+Z).
     // Both load nodes sit on symmetry planes, so each carries half the
     // physical point load; the mirrored quarters carry the other halves.
-    add_shell_point_load(&mut rhs, node(n_mer, 0), [-LOAD / 2.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    add_shell_point_load(
+        &mut rhs,
+        node(n_mer, 0),
+        [-LOAD / 2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    );
     add_shell_point_load(
         &mut rhs,
         node(n_mer, n_circ),
@@ -118,11 +122,7 @@ fn solve_quarter(n_circ: usize, n_mer: usize) -> (f64, f64) {
     (u_in, u_out)
 }
 
-fn apply_dirichlet(
-    csr: &mut sonium_solvers::CsrMatrix<f64>,
-    rhs: &mut [f64],
-    fixed: &[usize],
-) {
+fn apply_dirichlet(csr: &mut sonium_solvers::CsrMatrix<f64>, rhs: &mut [f64], fixed: &[usize]) {
     use std::collections::BTreeSet;
     for dof in BTreeSet::from_iter(fixed.iter().copied()) {
         let range = csr.row_range(dof);

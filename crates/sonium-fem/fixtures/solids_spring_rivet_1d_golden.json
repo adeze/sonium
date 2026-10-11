@@ -1,0 +1,102 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"spring_rivet_1d",
+		"units":"SI"
+	},
+	"inputs":{
+		"linear":"k 2000, c 5, d 0.05, v 2",
+		"nonlinear":"k 1000, curve (0,0)-(0.1,50), d 0.05",
+		"diagonal":"(0,0,0)-(3,4,0), rest 4, k 1000",
+		"ramp":"0 -> 0.1 m to 100 N",
+		"step":"m1 = m2 = 2, k 1000",
+		"rivet":"penalty 1e6\/1e3, caps 5000\/2000\/50"
+	},
+	"values":{
+		"linear_force":{
+			"values":[
+				"110."
+			],
+			"exact":"k d + c v"
+		},
+		"nonlinear_force":{
+			"values":[
+				"75."
+			],
+			"exact":"k d + curve(d)"
+		},
+		"nonlinear_tangent":{
+			"values":[
+				"1500."
+			],
+			"exact":"k + curve slope"
+		},
+		"clamped_force":{
+			"values":[
+				"1050."
+			],
+			"exact":"k d + endpoint ordinate"
+		},
+		"axis_force":{
+			"values":[
+				"600.",
+				"800.",
+				"0"
+			],
+			"exact":"F axis on node 2"
+		},
+		"ramp_energy":{
+			"values":[
+				"5."
+			],
+			"exact":"(F0 + F1)\/2 (d1 - d0)"
+		},
+		"critical_step":{
+			"values":[
+				"0.063245553203367586639977870888654370674391102786504"
+			],
+			"exact":"2\/Sqrt[k (1\/m1 + 1\/m2)]"
+		},
+		"rivet_shear":{
+			"values":[
+				"0.25"
+			],
+			"exact":"(Fs\/Fsmax)^2"
+		},
+		"rivet_combined":{
+			"values":[
+				"0.61"
+			],
+			"exact":"(Fs\/Fsmax)^2 + (M\/Mmax)^2"
+		},
+		"rivet_axial":{
+			"values":[
+				"1.44"
+			],
+			"exact":"(Fa\/Famax)^2"
+		}
+	},
+	"tolerances":{
+		"linear_force_abs":1.0e-9,
+		"linear_force_rel":1.0e-12,
+		"nonlinear_force_abs":1.0e-9,
+		"nonlinear_force_rel":1.0e-12,
+		"nonlinear_tangent_abs":1.0e-9,
+		"nonlinear_tangent_rel":1.0e-12,
+		"clamped_force_abs":1.0e-9,
+		"clamped_force_rel":1.0e-12,
+		"axis_force_abs":1.0e-9,
+		"axis_force_rel":1.0e-12,
+		"ramp_energy_abs":1.0e-12,
+		"ramp_energy_rel":1.0e-12,
+		"critical_step_abs":1.0e-15,
+		"critical_step_rel":1.0e-12,
+		"rivet_shear_abs":1.0e-15,
+		"rivet_shear_rel":1.0e-12,
+		"rivet_combined_abs":1.0e-15,
+		"rivet_combined_rel":1.0e-12,
+		"rivet_axial_abs":1.0e-15,
+		"rivet_axial_rel":1.0e-12
+	}
+}

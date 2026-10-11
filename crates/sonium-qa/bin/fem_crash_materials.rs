@@ -22,7 +22,10 @@ use sonium_fem::physics::solid::plasticity::crash::{
 
 fn check(name: &str, actual: f64, expected: f64, rel: f64) {
     let ok = (actual - expected).abs() <= expected.abs() * rel;
-    println!("{name}: actual {actual:.6e}, expected {expected:.6e} -> {}", if ok { "OK" } else { "FAIL" });
+    println!(
+        "{name}: actual {actual:.6e}, expected {expected:.6e} -> {}",
+        if ok { "OK" } else { "FAIL" }
+    );
     assert!(ok, "{name} mismatch");
 }
 
@@ -56,13 +59,23 @@ fn main() {
     let cs_last = cs_curve.last().unwrap();
     let cs_rate = 0.02 / 40.0 / 5.0e-6;
     let cs_base = cs.base.current_yield_stress(cs_last.equiv_plastic_strain);
-    check("cs-dynamic", cs_last.stress_xx, cs_base * cs.dynamic_factor(cs_rate), 0.03);
+    check(
+        "cs-dynamic",
+        cs_last.stress_xx,
+        cs_base * cs.dynamic_factor(cs_rate),
+        0.03,
+    );
     // Piecewise-linear hits its hardening curve.
     let pwl = PiecewiseLinearPlasticity::mild_steel();
     let mut pwl_state = PlasticState::new_3d();
     let pwl_curve = drive_uniaxial_stress(&pwl, &mut pwl_state, 0.06, 120);
     let pwl_last = pwl_curve.last().unwrap();
-    check("pwl-curve", pwl_last.stress_xx, pwl.yield_stress(pwl_last.equiv_plastic_strain), 0.01);
+    check(
+        "pwl-curve",
+        pwl_last.stress_xx,
+        pwl.yield_stress(pwl_last.equiv_plastic_strain),
+        0.01,
+    );
     // Crushable foam hydrostatic crush tracks the crush curve.
     let foam = CrushableFoamMaterial::aluminum_foam();
     let mut foam_state = CrushableFoamState::new();
@@ -90,12 +103,19 @@ fn main() {
         .sqrt()
     };
     let phi = gurson.yield_function(gp, gq, 250.0e6, 0.05);
-    println!("gtn-surface: residual {phi:.3e} -> {}", if phi.abs() < 1e-9 { "OK" } else { "FAIL" });
+    println!(
+        "gtn-surface: residual {phi:.3e} -> {}",
+        if phi.abs() < 1e-9 { "OK" } else { "FAIL" }
+    );
     assert!(phi.abs() < 1e-9);
     // JC damage orders ductility by triaxiality.
     let damage = JohnsonCookDamage::c4340_steel();
     let shear = damage.fracture_strain(0.0, 1.0, 0.0);
-    let uni = damage.fracture_strain(stress_triaxiality_c1(&[300.0e6, 0.0, 0.0, 0.0, 0.0, 0.0]), 1.0, 0.0);
+    let uni = damage.fracture_strain(
+        stress_triaxiality_c1(&[300.0e6, 0.0, 0.0, 0.0, 0.0, 0.0]),
+        1.0,
+        0.0,
+    );
     println!("jc-damage: shear {shear:.4}, uniaxial {uni:.4}");
     assert!(shear > uni);
     // Ogden uniaxial energy and closed-form stress agree.
@@ -114,6 +134,11 @@ fn main() {
     // Yeoh uniaxial energy follows its invariant form.
     let yeoh = YeohMaterial::filled_rubber();
     let d = l * l + 2.0 * lt * lt - 3.0;
-    check("yeoh-energy", yeoh.energy(&f), yeoh.c1 * d + yeoh.c2 * d * d + yeoh.c3 * d * d * d, 1e-9);
+    check(
+        "yeoh-energy",
+        yeoh.energy(&f),
+        yeoh.c1 * d + yeoh.c2 * d * d + yeoh.c3 * d * d * d,
+        1e-9,
+    );
     println!("PASS: qa-fem-crash-materials");
 }

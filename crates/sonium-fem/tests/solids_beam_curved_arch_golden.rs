@@ -238,10 +238,7 @@ fn curved_arch_matches_wolfram() {
     for i in 0..=n {
         let theta = std::f64::consts::FRAC_PI_2 * i as f64 / n as f64;
         let tributary = if i == 0 || i == n { 0.5 } else { 1.0 } * q * r * dtheta;
-        for (component, value) in [
-            (0, -tributary * theta.cos()),
-            (1, -tributary * theta.sin()),
-        ] {
+        for (component, value) in [(0, -tributary * theta.cos()), (1, -tributary * theta.sin())] {
             let dof = i * 6 + component;
             if let Some(pos) = free.iter().position(|&d| d == dof) {
                 rhs[pos] += value;
@@ -262,8 +259,7 @@ fn curved_arch_matches_wolfram() {
     let expected = golden_value(&doc, "membrane_radial");
     for node in [0, n] {
         let theta = std::f64::consts::FRAC_PI_2 * node as f64 / n as f64;
-        let end_radial =
-            u[node * 6] * theta.cos() + u[node * 6 + 1] * theta.sin();
+        let end_radial = u[node * 6] * theta.cos() + u[node * 6 + 1] * theta.sin();
         assert!(
             (end_radial - expected).abs() <= 1.0e-15 + 1.0e-3 * expected.abs(),
             "end {node} radial {end_radial:.6e} vs golden {expected:.6e}"

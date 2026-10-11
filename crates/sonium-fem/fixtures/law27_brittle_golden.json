@@ -1,0 +1,65 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law27_brittle",
+		"units":"SI"
+	},
+	"inputs":{
+		"eps_t":8.0e-2,
+		"eps_m":0.15,
+		"dmax":0.999
+	},
+	"values":{
+		"damage_0_05":{
+			"values":[
+				"0"
+			],
+			"exact":"0 below eps_t"
+		},
+		"damage_0_08":{
+			"values":[
+				"0"
+			],
+			"exact":"0 at eps_t"
+		},
+		"damage_0_115":{
+			"values":[
+				"0.5"
+			],
+			"exact":"(0.115-0.08)\/0.07 = 1\/2"
+		},
+		"damage_knee":{
+			"values":[
+				"0.999"
+			],
+			"exact":"ramp reaches dmax at eps_t + dmax (eps_m - eps_t)"
+		},
+		"damage_0_15":{
+			"values":[
+				"0.999"
+			],
+			"exact":"dmax at eps_m"
+		},
+		"damage_0_20":{
+			"values":[
+				"0.999"
+			],
+			"exact":"dmax above eps_m"
+		}
+	},
+	"tolerances":{
+		"damage_0_05_abs":1.0e-15,
+		"damage_0_05_rel":1.0e-12,
+		"damage_0_08_abs":1.0e-15,
+		"damage_0_08_rel":1.0e-12,
+		"damage_0_115_abs":1.0e-15,
+		"damage_0_115_rel":1.0e-12,
+		"damage_knee_abs":1.0e-15,
+		"damage_knee_rel":1.0e-12,
+		"damage_0_15_abs":1.0e-15,
+		"damage_0_15_rel":1.0e-12,
+		"damage_0_20_abs":1.0e-15,
+		"damage_0_20_rel":1.0e-12
+	}
+}

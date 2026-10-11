@@ -11,7 +11,7 @@ use super::FemNewtonConfig;
 use crate::forms::NonlinearForm;
 use crate::mesh::Mesh;
 use crate::spaces::FunctionSpace;
-use sonium_solvers::{solve_real, LinearSolveConfig, NewtonError};
+use sonium_solvers::{LinearSolveConfig, NewtonError, solve_real};
 
 /// Riks continuation settings.
 #[derive(Debug, Clone)]

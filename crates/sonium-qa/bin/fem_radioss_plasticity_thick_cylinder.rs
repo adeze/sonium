@@ -390,7 +390,8 @@ fn decks_dir() -> PathBuf {
 
 fn main() {
     let case = plasticity_thick_cylinder_case();
-    case.validate().expect("plasticity_thick_cylinder must validate");
+    case.validate()
+        .expect("plasticity_thick_cylinder must validate");
     let dir = decks_dir();
     let starter_path = dir.join("plasticity_thick_cylinder_0000.rad");
     let engine_path = dir.join("plasticity_thick_cylinder_0001.rad");
@@ -460,8 +461,8 @@ fn main() {
     // crosses 50 MPa: 50/150 = (1 - cos(pi t/T)) / 2. The outer probe is
     // retarded by one dilatational transit: the bore load reaches r = B
     // 8.5 us late, worth 4% of signal on this ramp (proven by experiment).
-    let t_elastic = LOAD_TIME_S * (1.0 - 2.0 * ELASTIC_PROBE_PA / P_STAR_PA).acos()
-        / std::f64::consts::PI;
+    let t_elastic =
+        LOAD_TIME_S * (1.0 - 2.0 * ELASTIC_PROBE_PA / P_STAR_PA).acos() / std::f64::consts::PI;
     let lame_lambda = E_PA * NU / ((1.0 + NU) * (1.0 - 2.0 * NU));
     let shear_mu = E_PA / (2.0 * (1.0 + NU));
     let c_dil = ((lame_lambda + 2.0 * shear_mu) / RHO_KG_M3).sqrt();

@@ -115,7 +115,10 @@ fn beam_mesh(
     length: f64,
     section: f64,
 ) -> (RadMesh, Vec<usize>, Vec<usize>, Vec<usize>, usize, usize) {
-    assert!(nx.is_multiple_of(2), "bending mesh needs an even axial count");
+    assert!(
+        nx.is_multiple_of(2),
+        "bending mesh needs an even axial count"
+    );
     let mut nodes = Vec::with_capacity((nx + 1) * (ny + 1) * (nz + 1));
     let id = |i: usize, j: usize, k: usize| i * (ny + 1) * (nz + 1) + j * (nz + 1) + k + 1;
     for i in 0..=nx {
@@ -187,7 +190,11 @@ fn main() {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(&starter_path, &starter).unwrap();
         std::fs::write(&engine_path, &engine).unwrap();
-        std::fs::write(&probes_path, probes_json(&case, "none (prove-out deferred)")).unwrap();
+        std::fs::write(
+            &probes_path,
+            probes_json(&case, "none (prove-out deferred)"),
+        )
+        .unwrap();
         println!("wrote decks/bending_3pt artifacts");
         return;
     }
@@ -202,7 +209,10 @@ fn main() {
         checked_engine, engine,
         "decks/bending_3pt/bending_3pt_0001.rad drifted from the rad writer"
     );
-    assert!(probes_path.exists(), "decks/bending_3pt/probes.json must be checked in");
+    assert!(
+        probes_path.exists(),
+        "decks/bending_3pt/probes.json must be checked in"
+    );
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
@@ -224,10 +234,17 @@ fn main() {
     for probe in &case.probes {
         match output.history.final_value(&probe.channel) {
             Ok(actual) => {
-                println!("probe {}: actual {actual:.6e}, expected {:.6e}", probe.label, probe.expected);
-                if let Err(error) =
-                    assert_probe_close(actual, probe.expected, probe.abs_tol, probe.rel_tol, &probe.label)
-                {
+                println!(
+                    "probe {}: actual {actual:.6e}, expected {:.6e}",
+                    probe.label, probe.expected
+                );
+                if let Err(error) = assert_probe_close(
+                    actual,
+                    probe.expected,
+                    probe.abs_tol,
+                    probe.rel_tol,
+                    &probe.label,
+                ) {
                     eprintln!("FAIL: {error}");
                     failed = true;
                 }

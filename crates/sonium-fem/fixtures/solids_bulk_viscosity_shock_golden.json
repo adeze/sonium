@@ -1,0 +1,106 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"bulk_viscosity_shock",
+		"units":"SI"
+	},
+	"inputs":{
+		"density":7800,
+		"sound_speed":4500,
+		"hugoniot_slope":1.5,
+		"piston_velocity":100,
+		"element_length":1.0e-2,
+		"c0_quadratic":1.1,
+		"c1_linear":5.0e-2,
+		"sample_rates":[
+			-50000,
+			-1000,
+			-100,
+			0,
+			500
+		],
+		"c0_set":[
+			0.5,
+			1.1,
+			2.0
+		],
+		"end_c0":[
+			1.1,
+			2.0
+		],
+		"end_c1":[
+			5.0e-2,
+			0.5
+		]
+	},
+	"values":{
+		"shock_speed":{
+			"values":[
+				"4650."
+			],
+			"exact":"Us = c + s*Up"
+		},
+		"pressure_jump":{
+			"values":[
+				"3.627e9"
+			],
+			"exact":"[p] = rho0*Us*Up"
+		},
+		"q_samples":{
+			"values":[
+				"3.0225e9",
+				"1.8408e7",
+				"1.76358e6",
+				"0",
+				"0"
+			],
+			"exact":"q = rho*l*(c0*l*d^2 - c1*c*d) for d < 0, else 0"
+		},
+		"center_strain_rates":{
+			"values":[
+				"8660.2540378443864676372317075293618347140262690519",
+				"5838.7420812114222818713174898363365543033420507092",
+				"4330.127018922193233818615853764680917357013134526"
+			],
+			"exact":"zc = Up*Sqrt[s\/c0]\/(2*l)"
+		},
+		"center_q":{
+			"values":[
+				"2.925e7"
+			],
+			"exact":"q(-zc; c0, c1 = 0) = rho0*s*Up^2\/4 for every c0"
+		},
+		"shock_widths":{
+			"values":[
+				"0.018137993642342178505940782576421557322840662480927",
+				"0.02690299220185776346551539698677917517381307204846",
+				"0.036275987284684357011881565152843114645681324961855"
+			],
+			"exact":"L = Pi*l*Sqrt[c0\/s]"
+		},
+		"shock_end_q":{
+			"values":[
+				"0",
+				"0"
+			],
+			"exact":"q = 0 at both shock ends for any c0\/c1"
+		}
+	},
+	"tolerances":{
+		"shock_speed_abs":1.0e-9,
+		"shock_speed_rel":1.0e-12,
+		"pressure_jump_abs":1.0e-3,
+		"pressure_jump_rel":1.0e-12,
+		"q_samples_abs":1.0e-6,
+		"q_samples_rel":1.0e-12,
+		"center_strain_rates_abs":1.0e-9,
+		"center_strain_rates_rel":1.0e-12,
+		"center_q_abs":1.0e-6,
+		"center_q_rel":1.0e-12,
+		"shock_widths_abs":1.0e-15,
+		"shock_widths_rel":1.0e-12,
+		"shock_end_q_abs":0,
+		"shock_end_q_rel":0
+	}
+}

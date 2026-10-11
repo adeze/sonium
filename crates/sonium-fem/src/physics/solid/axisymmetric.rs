@@ -402,11 +402,7 @@ mod tests {
 ///
 /// Returns `[cos_phi / r, sin_phi / r]` so that
 /// `eps_theta = f[0] * u_s + f[1] * w`.
-pub fn axisymmetric_shell_hoop_membrane_factors(
-    cos_phi: f64,
-    sin_phi: f64,
-    r: f64,
-) -> [f64; 2] {
+pub fn axisymmetric_shell_hoop_membrane_factors(cos_phi: f64, sin_phi: f64, r: f64) -> [f64; 2] {
     let rr = r.abs().max(1.0e-12);
     [cos_phi / rr, sin_phi / rr]
 }
@@ -438,5 +434,102 @@ mod shell_meridional_tests {
     fn hoop_bending_factor_vanishes_on_cylinder() {
         assert!((axisymmetric_shell_hoop_bending_factor(0.0, 1.0)).abs() < 1.0e-15);
         assert!((axisymmetric_shell_hoop_bending_factor(1.0, 2.0) - 0.5).abs() < 1.0e-15);
+    }
+}
+
+// --- Explicit-path shared blocks (Phase-3 lane 3E, additive) ---
+//
+// Axisymmetric strain `[e_rr, e_zz, e_th, g_rz]` <-> C1 Voigt mappings
+// plus the axis-safe radius, shared by the implicit forms above and
+// the explicit QUAD ring path. The hoop direction plays the role of
+// C1 `zz`; the two out-of-meridian shears vanish by symmetry.
+
+/// Clamped radius for axisymmetric hoop divisions.
+///
+/// Returns `max(|r|, axis_epsilon)` so hoop terms stay finite on the
+/// axis. Callers pass a positive epsilon (the implicit forms use
+/// `1.0e-12`); symmetry conditions must still pin `u_r = 0` on axis
+/// nodes, since the clamp alone cannot supply the boundary condition.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::axisymmetric::axis_radius;
+///
+/// assert_eq!(axis_radius(2.0, 1.0e-12), 2.0);
+/// assert_eq!(axis_radius(0.0, 1.0e-12), 1.0e-12);
+/// ```
+pub fn axis_radius(r: f64, axis_epsilon: f64) -> f64 {
+    r.abs().max(axis_epsilon)
+}
+
+/// Hoop strain `u_r / r` with an axis-safe radius.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::axisymmetric::hoop_strain;
+///
+/// assert!((hoop_strain(0.5, 2.0, 1.0e-12) - 0.25).abs() < 1e-15);
+/// assert_eq!(hoop_strain(0.0, 0.0, 1.0e-12), 0.0);
+/// ```
+pub fn hoop_strain(u_r: f64, r: f64, axis_epsilon: f64) -> f64 {
+    u_r / axis_radius(r, axis_epsilon)
+}
+
+/// Maps axisymmetric strain onto C1 Voigt order.
+///
+/// Reads `[e_rr, e_zz, e_th, g_rz]` (tensor hoop strain, engineering
+/// meridian shear) and returns `[rr, zz, th, rz, 0, 0]`: hoop third,
+/// out-of-meridian shears zero by symmetry.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::axisymmetric::c1_of_axisym_strain;
+///
+/// let c1 = c1_of_axisym_strain(&[0.002, -0.001, 0.0005, 0.00025]);
+/// assert_eq!(c1, [0.002, -0.001, 0.0005, 0.00025, 0.0, 0.0]);
+/// ```
+pub fn c1_of_axisym_strain(strain: &[f64; 4]) -> [f64; 6] {
+    [strain[0], strain[1], strain[2], strain[3], 0.0, 0.0]
+}
+
+/// Extracts axisymmetric stress from C1 Voigt order.
+///
+/// Returns `[s_rr, s_zz, s_th, s_rz]`; the out-of-meridian C1 shears
+/// are dropped (they vanish for axisymmetric states).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::axisymmetric::axisym_of_c1_stress;
+///
+/// let s = axisym_of_c1_stress(&[1.0, 2.0, 3.0, 4.0, 0.0, 0.0]);
+/// assert_eq!(s, [1.0, 2.0, 3.0, 4.0]);
+/// ```
+pub fn axisym_of_c1_stress(stress: &[f64; 6]) -> [f64; 4] {
+    [stress[0], stress[1], stress[2], stress[3]]
+}
+
+#[cfg(test)]
+mod explicit_blocks_tests {
+    use super::*;
+
+    #[test]
+    fn c1_axisym_mappings_round_trip() {
+        let strain = [0.002, -0.001, 0.0005, 0.00025];
+        let c1 = c1_of_axisym_strain(&strain);
+        assert_eq!(c1[4], 0.0);
+        assert_eq!(c1[5], 0.0);
+        assert_eq!(axisym_of_c1_stress(&c1), strain);
+    }
+
+    #[test]
+    fn hoop_helpers_clamp_on_axis() {
+        assert_eq!(axis_radius(-3.0, 1.0e-12), 3.0);
+        assert_eq!(axis_radius(0.0, 1.0e-12), 1.0e-12);
+        assert!((hoop_strain(0.5, 2.0, 1.0e-12) - 0.25).abs() < 1e-15);
+        assert_eq!(hoop_strain(0.0, 0.0, 1.0e-12), 0.0);
     }
 }

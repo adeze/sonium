@@ -14,21 +14,21 @@ pub mod arc_length;
 
 #[doc(inline)]
 pub use arc_length::{
-    fem_riks_solve_with_bcs_and_load, riks_continuation, ArcLengthConfig, ArcLengthPath,
-    ArcLengthPoint, ArcLengthStop,
+    ArcLengthConfig, ArcLengthPath, ArcLengthPoint, ArcLengthStop,
+    fem_riks_solve_with_bcs_and_load, riks_continuation,
 };
 
 use crate::assembly::TripletMatrix;
 use crate::forms::{LocalMatrix, LocalVector, NonlinearElementForm, NonlinearForm};
 use crate::mesh::Mesh;
-use crate::parallelism::{collect_indexed, merge_element_triplets, ELEMENTS_PER_THREAD};
+use crate::parallelism::{ELEMENTS_PER_THREAD, collect_indexed, merge_element_triplets};
 use crate::physics::solid::contact::augmented_lagrangian::{ContactManager, ContactResult};
 use crate::quadrature::QuadratureRule;
 use crate::spaces::FunctionSpace;
 use sonium_solvers::traits::{AccuracyStatus, SolverStatus};
-use sonium_solvers::{solve_real, LineSearch, LinearSolveConfig, LinearSolverType};
+use sonium_solvers::{LineSearch, LinearSolveConfig, LinearSolverType, solve_real};
 
-use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 /// Per-element nonlinear assembly output: (residual_contribs, tangent_triplets).
 type ElementNonlinearContrib = (Vec<(usize, f64)>, Vec<(usize, usize, f64)>);
@@ -1093,10 +1093,12 @@ mod tests {
 
     #[test]
     fn backtracking_settings_are_validated() {
-        assert!(FemNewtonConfig::default()
-            .with_backtracking(1e-4, 10)
-            .validate()
-            .is_ok());
+        assert!(
+            FemNewtonConfig::default()
+                .with_backtracking(1e-4, 10)
+                .validate()
+                .is_ok()
+        );
         for (c1, halvings) in [(0.0, 10), (1.0, 10), (f64::NAN, 10), (1e-4, 0)] {
             assert!(
                 matches!(
@@ -1181,7 +1183,7 @@ mod tests {
     #[test]
     fn riks_fem_trace_matches_load_controlled_newton() {
         use crate::solver::nonlinear::arc_length::{
-            fem_riks_solve_with_bcs_and_load, ArcLengthConfig,
+            ArcLengthConfig, fem_riks_solve_with_bcs_and_load,
         };
 
         let (form, space, mesh, dirichlet, load) = stretched_square_fixture();

@@ -169,7 +169,8 @@ fn test_stepped_reference() {
     // deflects and rotates under shear P plus moment M. Reduces to
     // P L^3/(3EI) for I1 = I2 (binomial identity).
     let p = 1000.0;
-    let expected = p * l2.powi(3) / (3.0 * e * tip.iz) + p * l1.powi(3) / (3.0 * e * root.iz)
+    let expected = p * l2.powi(3) / (3.0 * e * tip.iz)
+        + p * l1.powi(3) / (3.0 * e * root.iz)
         + p * l1 * l1 * l2 / (e * root.iz)
         + p * l1 * l2 * l2 / (e * root.iz);
     let error = (fem - expected).abs() / expected;
@@ -253,7 +254,10 @@ fn test_convergence() {
     let expected = tapered_closed_form(1.0, 1000.0, 200.0e9, 0.05, 0.05, 0.5);
     let err8 = (tapered_tip(8) - expected).abs() / expected;
     let err32 = (tapered_tip(32) - expected).abs() / expected;
-    println!("convergence: err8={err8:.2e} err32={err32:.2e} ratio={:.1}", err8 / err32);
+    println!(
+        "convergence: err8={err8:.2e} err32={err32:.2e} ratio={:.1}",
+        err8 / err32
+    );
     assert!(err32 < err8 / 8.0, "no quadratic convergence");
 }
 

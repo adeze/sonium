@@ -87,7 +87,11 @@ fn solve_quarter(n_circ: usize, n_mer: usize) -> (f64, f64) {
     let n_dofs = points.len() * 6;
     let mut csr = assemble_shell_stiffness(&elements, n_dofs).to_csr();
     let mut rhs = vec![0.0; n_dofs];
-    add_shell_point_load(&mut rhs, node(n_mer, 0), [-load / 2.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+    add_shell_point_load(
+        &mut rhs,
+        node(n_mer, 0),
+        [-load / 2.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    );
     add_shell_point_load(
         &mut rhs,
         node(n_mer, n_circ),

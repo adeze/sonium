@@ -1,0 +1,122 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"tetra_penta_patch",
+		"units":"SI"
+	},
+	"inputs":{
+		"tet":"reference (0,0,0),(1,0,0),(0,1,0),(0,0,1)",
+		"wedge":"unit bottom triangle, height 1",
+		"density":7800,
+		"youngs":2.0e11,
+		"poisson":0.3,
+		"exx":1.0e-3
+	},
+	"values":{
+		"tet_volume":{
+			"values":[
+				"0.16666666666666666666666666666666666666666666666667"
+			],
+			"exact":"det J \/ 6 = 1\/6"
+		},
+		"tet_b_row_xx":{
+			"values":[
+				"-1.",
+				"0",
+				"0",
+				"1.",
+				"0",
+				"0",
+				"0",
+				"0",
+				"0",
+				"0",
+				"0",
+				"0"
+			],
+			"exact":"exx row over [ux1,uy1,uz1..]"
+		},
+		"tet_b_row_xy":{
+			"values":[
+				"-1.",
+				"-1.",
+				"0",
+				"0",
+				"1.",
+				"0",
+				"1.",
+				"0",
+				"0",
+				"0",
+				"0",
+				"0"
+			],
+			"exact":"gxy row [dNy,dNx,0] per node"
+		},
+		"tet_char_length":{
+			"values":[
+				"0.19245008972987525483638292683398581854920058375671"
+			],
+			"exact":"V \/ Amax = 1\/(3 Sqrt[3])"
+		},
+		"tet_nodal_mass":{
+			"values":[
+				"325."
+			],
+			"exact":"rho V \/ 4"
+		},
+		"uniaxial_sxx":{
+			"values":[
+				"2.6923076923076923076923076923076923076923076923077e8"
+			],
+			"exact":"(K + 4G\/3) exx"
+		},
+		"wedge_volume":{
+			"values":[
+				"0.5"
+			],
+			"exact":"triangle area 1\/2 times height"
+		},
+		"wedge_char_length":{
+			"values":[
+				"0.35355339059327376220042218105242451964241796884424"
+			],
+			"exact":"V \/ Amax = 1\/(2 Sqrt[2])"
+		},
+		"wedge_nodal_mass":{
+			"values":[
+				"650."
+			],
+			"exact":"rho V \/ 6"
+		},
+		"wedge_quad_sum":{
+			"values":[
+				"1."
+			],
+			"exact":"reference wedge volume 1"
+		}
+	},
+	"tolerances":{
+		"tet_volume_abs":1.0e-15,
+		"tet_volume_rel":1.0e-12,
+		"tet_b_row_xx_abs":1.0e-15,
+		"tet_b_row_xx_rel":1.0e-12,
+		"tet_b_row_xy_abs":1.0e-15,
+		"tet_b_row_xy_rel":1.0e-12,
+		"tet_char_length_abs":1.0e-15,
+		"tet_char_length_rel":1.0e-12,
+		"tet_nodal_mass_abs":1.0e-9,
+		"tet_nodal_mass_rel":1.0e-12,
+		"uniaxial_sxx_abs":1.0e-3,
+		"uniaxial_sxx_rel":1.0e-9,
+		"wedge_volume_abs":1.0e-14,
+		"wedge_volume_rel":1.0e-12,
+		"wedge_char_length_abs":1.0e-15,
+		"wedge_char_length_rel":1.0e-12,
+		"wedge_nodal_mass_abs":1.0e-9,
+		"wedge_nodal_mass_rel":1.0e-12,
+		"wedge_quad_sum_abs":1.0e-15,
+		"wedge_quad_sum_rel":1.0e-12
+	}
+}

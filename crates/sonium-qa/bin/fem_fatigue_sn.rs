@@ -35,12 +35,19 @@ fn test_constant_amplitude() {
         .iter()
         .map(|c| c.count / curve.cycles_to_failure(c.range / 2.0, c.mean))
         .sum();
-    println!("constant amplitude: damage={damage:.6e} cycles={}", cycles.len());
+    println!(
+        "constant amplitude: damage={damage:.6e} cycles={}",
+        cycles.len()
+    );
     assert!((damage - expected).abs() < 1e-15);
     // Closed form: 250 sine periods at amplitude 200 count 249 full
     // range-400 cycles plus negligible range-200 residue halves.
     let life = curve.cycles_to_failure(200.0, 0.0);
-    let full: f64 = cycles.iter().filter(|c| c.count == 1.0).map(|c| c.count).sum();
+    let full: f64 = cycles
+        .iter()
+        .filter(|c| c.count == 1.0)
+        .map(|c| c.count)
+        .sum();
     assert!((full - 249.0).abs() < 1e-9, "full count is {full}");
     assert!((damage - 250.0 / life).abs() / damage < 0.01);
 }
@@ -48,8 +55,16 @@ fn test_constant_amplitude() {
 fn test_two_block_miner() {
     let curve = sn_curve();
     let cycles = vec![
-        RainflowCycle { range: 600.0, mean: 0.0, count: 100.0 },
-        RainflowCycle { range: 300.0, mean: 0.0, count: 1000.0 },
+        RainflowCycle {
+            range: 600.0,
+            mean: 0.0,
+            count: 100.0,
+        },
+        RainflowCycle {
+            range: 300.0,
+            mean: 0.0,
+            count: 1000.0,
+        },
     ];
     let expected =
         100.0 / curve.cycles_to_failure(300.0, 0.0) + 1000.0 / curve.cycles_to_failure(150.0, 0.0);
@@ -62,12 +77,22 @@ fn test_goodman_and_endurance() {
     let curve = sn_curve();
     let zero_mean = curve.cycles_to_failure(300.0, 0.0);
     let tensile = curve.cycles_to_failure(300.0, 300.0);
-    assert!(tensile < zero_mean, "Goodman must shorten tensile-mean life");
+    assert!(
+        tensile < zero_mean,
+        "Goodman must shorten tensile-mean life"
+    );
     // Goodman closed form: 300/(1-300/1200) = 400.
     assert!((tensile - curve.cycles_to_failure(400.0, 0.0)).abs() / tensile < 1e-12);
-    let limited = BasquinCurve { endurance_limit: Some(250.0), ..curve };
+    let limited = BasquinCurve {
+        endurance_limit: Some(250.0),
+        ..curve
+    };
     assert!(limited.cycles_to_failure(200.0, 0.0).is_infinite());
-    let cycles = vec![RainflowCycle { range: 400.0, mean: 0.0, count: 1e9 }];
+    let cycles = vec![RainflowCycle {
+        range: 400.0,
+        mean: 0.0,
+        count: 1e9,
+    }];
     assert_eq!(miner_damage(&cycles, &limited), 0.0);
     println!("goodman/endurance: tensile={tensile:.6e} zero-mean={zero_mean:.6e}");
 }
@@ -77,8 +102,11 @@ fn test_astm_decomposition() {
     let full: Vec<_> = cycles.iter().filter(|c| c.count == 1.0).collect();
     assert_eq!(full.len(), 1);
     assert!((full[0].range - 2.0).abs() < 1e-15);
-    let mut halves: Vec<f64> =
-        cycles.iter().filter(|c| c.count == 0.5).map(|c| c.range).collect();
+    let mut halves: Vec<f64> = cycles
+        .iter()
+        .filter(|c| c.count == 0.5)
+        .map(|c| c.range)
+        .collect();
     halves.sort_by(|a, b| a.total_cmp(b));
     assert_eq!(halves, vec![1.0, 1.0, 2.0]);
     println!("astm decomposition: 1 full + 3 halves");
@@ -95,7 +123,10 @@ fn test_spotweld_pulsating() {
         .collect();
     let peak = history.iter().cloned().fold(0.0, f64::max);
     assert!((peak - 2000.0).abs() < 1e-6, "resultant peak is {peak}");
-    let curve = ForceLifeCurve { force_intercept: 10000.0, exponent: -0.2 };
+    let curve = ForceLifeCurve {
+        force_intercept: 10000.0,
+        exponent: -0.2,
+    };
     curve.validate().unwrap();
     let damage = spotweld_force_damage(&history, &curve);
     // All counted ranges are 2000 N (amplitude 1000): closed-form total.

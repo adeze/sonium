@@ -38,8 +38,14 @@ fn check_all(doc: &Value, name: &str, actual: &[f64]) {
 fn necking_consider_matches_wolfram() {
     let doc: Value = serde_json::from_str(GOLDEN).unwrap();
     assert_eq!(doc["meta"]["protocol"], "solids-golden-v1");
-    let strains: Vec<f64> = [0.1, 0.2, 0.3].iter().map(|n| hollomon_necking_strain(*n)).collect();
+    let strains: Vec<f64> = [0.1, 0.2, 0.3]
+        .iter()
+        .map(|n| hollomon_necking_strain(*n))
+        .collect();
     check_all(&doc, "uniform_strain", &strains);
-    let bridgman: Vec<f64> = [0.5, 1.0, 2.0].iter().map(|x| bridgman_correction(*x)).collect();
+    let bridgman: Vec<f64> = [0.5, 1.0, 2.0]
+        .iter()
+        .map(|x| bridgman_correction(*x))
+        .collect();
     check_all(&doc, "bridgman", &bridgman);
 }

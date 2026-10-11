@@ -98,7 +98,12 @@ fn cantilever_system() -> (CsrMatrix<f64>, CsrMatrix<f64>, f64, f64) {
     let beta1 = 1.87510406871196;
     let scale = (e_mod * section.moment_of_inertia / (rho * width * height)).sqrt();
     let omega1_exact = beta1 * beta1 * scale;
-    (extract_submatrix(&k_full, &free_dofs), extract_submatrix(&m_full, &free_dofs), omega1_exact, length)
+    (
+        extract_submatrix(&k_full, &free_dofs),
+        extract_submatrix(&m_full, &free_dofs),
+        omega1_exact,
+        length,
+    )
 }
 
 fn run_transient(
@@ -117,7 +122,9 @@ fn run_transient(
     };
     let mut integrator = ImplicitDynamicsIntegrator::new(system, config, dt).unwrap();
     let force = vec![0.0; shape.len()];
-    integrator.initialize(shape, &vec![0.0; shape.len()], &force).unwrap();
+    integrator
+        .initialize(shape, &vec![0.0; shape.len()], &force)
+        .unwrap();
     let steps = (periods as f64 * 2.0 * PI / omega / dt).round() as usize;
     // Tip transverse DOF is index 1 of the last free node.
     let tip = shape.len() - 2;
@@ -156,7 +163,10 @@ fn main() {
             let exact = tip0 * (omega1 * t).cos();
             let scale = tip0.abs().max(1e-30);
             let error = (trace[index] - exact).abs() / scale;
-            println!("transient t={t:.4e}: FEM={:.6e} exact={exact:.6e}", trace[index]);
+            println!(
+                "transient t={t:.4e}: FEM={:.6e} exact={exact:.6e}",
+                trace[index]
+            );
             assert!(error < 1e-2, "transient error {error:.3e} at t={t}");
         }
         // Trapezoidal amplitude holds over two periods.

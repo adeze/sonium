@@ -16,11 +16,17 @@ fn main() {
     // Bilinear epoxy: peak traction and dissipated energy.
     let law = BilinearCohesiveLaw::epoxy();
     let mut state = CohesiveState::new();
-    let curve = cohesive_patch_response(2000, law.failure_opening(), |d| law.traction(d, &mut state));
+    let curve =
+        cohesive_patch_response(2000, law.failure_opening(), |d| law.traction(d, &mut state));
     let peak = curve.iter().map(|(_, t)| *t).fold(0.0, f64::max);
-    println!("bilinear: peak {peak:.6e}, dissipated {:.6e}", patch_dissipated_energy(&curve));
+    println!(
+        "bilinear: peak {peak:.6e}, dissipated {:.6e}",
+        patch_dissipated_energy(&curve)
+    );
     assert!((peak - law.strength).abs() / law.strength < 1e-3);
-    assert!((patch_dissipated_energy(&curve) - law.fracture_energy).abs() / law.fracture_energy < 1e-6);
+    assert!(
+        (patch_dissipated_energy(&curve) - law.fracture_energy).abs() / law.fracture_energy < 1e-6
+    );
     assert!((state.damage - 1.0).abs() < 1e-12);
     // Bilinear unloading follows the damaged secant.
     let mut secant = CohesiveState::new();
@@ -36,7 +42,10 @@ fn main() {
     assert!((exp_law.traction(dc, &mut exp_state) - 30.0e6).abs() / 30.0e6 < 1e-12);
     let mut tail = CohesiveState::new();
     let exp_curve = cohesive_patch_response(20000, 20.0 * dc, |d| exp_law.traction(d, &mut tail));
-    println!("exponential: dissipated {:.6e}", patch_dissipated_energy(&exp_curve));
+    println!(
+        "exponential: dissipated {:.6e}",
+        patch_dissipated_energy(&exp_curve)
+    );
     assert!((patch_dissipated_energy(&exp_curve) - 500.0).abs() / 500.0 < 1e-4);
     // Mixed mode recovers pure modes and the BK interpolation.
     let mixed = MixedModeCohesiveLaw::epoxy();

@@ -36,7 +36,19 @@ fn check(doc: &Value, name: &str, actual: f64) {
 fn hertz_impact_matches_wolfram() {
     let doc: Value = serde_json::from_str(GOLDEN).unwrap();
     assert_eq!(doc["meta"]["protocol"], "solids-golden-v1");
-    check(&doc, "max_approach", hertz_impact_max_approach(2.0, 3.0, 0.05, 110.0e9));
-    check(&doc, "peak_force", hertz_impact_peak_force(2.0, 3.0, 0.05, 110.0e9));
-    check(&doc, "contact_time", hertz_impact_contact_time(2.0, 3.0, 0.05, 110.0e9));
+    check(
+        &doc,
+        "max_approach",
+        hertz_impact_max_approach(2.0, 3.0, 0.05, 110.0e9),
+    );
+    check(
+        &doc,
+        "peak_force",
+        hertz_impact_peak_force(2.0, 3.0, 0.05, 110.0e9),
+    );
+    check(
+        &doc,
+        "contact_time",
+        hertz_impact_contact_time(2.0, 3.0, 0.05, 110.0e9),
+    );
 }

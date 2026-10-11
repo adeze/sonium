@@ -73,7 +73,12 @@ fn cantilever_tip(n_x: usize, d_star_11: f64) -> (f64, f64) {
                 node(ix, iy + 1),
             ];
             elements.push(QuadShellElement::from_points_with_section(
-                q, &points[q[0]], &points[q[1]], &points[q[2]], &points[q[3]], section,
+                q,
+                &points[q[0]],
+                &points[q[1]],
+                &points[q[2]],
+                &points[q[3]],
+                section,
             ));
         }
     }
@@ -163,15 +168,12 @@ fn main() {
         let mut max_err = 0.0f64;
         for i in 0..3 {
             for j in 0..3 {
-                max_err = max_err.max(
-                    (res.d_mm[i * 3 + j] - abd.a[i][j]).abs() / abd.a[i][j].abs().max(1.0),
-                );
-                max_err = max_err.max(
-                    (res.d_mb[i * 3 + j] - abd.b[i][j]).abs() / abd.b[i][j].abs().max(1.0),
-                );
-                max_err = max_err.max(
-                    (res.d_bb[i * 3 + j] - abd.d[i][j]).abs() / abd.d[i][j].abs().max(1.0),
-                );
+                max_err = max_err
+                    .max((res.d_mm[i * 3 + j] - abd.a[i][j]).abs() / abd.a[i][j].abs().max(1.0));
+                max_err = max_err
+                    .max((res.d_mb[i * 3 + j] - abd.b[i][j]).abs() / abd.b[i][j].abs().max(1.0));
+                max_err = max_err
+                    .max((res.d_bb[i * 3 + j] - abd.d[i][j]).abs() / abd.d[i][j].abs().max(1.0));
             }
         }
         println!("Layered patch: CLT A/B/D max rel err = {max_err:.3e}");
@@ -203,8 +205,7 @@ fn main() {
         assert!(j2.max_equiv_plastic_strain() > 0.01);
 
         // 4. Thickness coupling on a stretched element.
-        let mut field =
-            ThicknessField::new(vec![0.01], ThicknessRule::plane_stress(0.3));
+        let mut field = ThicknessField::new(vec![0.01], ThicknessRule::plane_stress(0.3));
         field.commit_element(0, &[1e-2, -0.3e-2, 0.0]);
         let t = field.current(0);
         let expected = 0.01f64 * (-0.3f64 / 0.7f64 * 0.7e-2f64).exp();

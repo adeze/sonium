@@ -623,11 +623,7 @@ pub fn contact_winkler_layer_pressure(displacement: f64, modulus: f64, thickness
 
 /// Penalty contact pressure for a prescribed gap.
 pub fn contact_penalty_pressure(gap: f64, penalty: f64) -> f64 {
-    if gap < 0.0 {
-        -penalty * gap
-    } else {
-        0.0
-    }
+    if gap < 0.0 { -penalty * gap } else { 0.0 }
 }
 
 // =====================================================================

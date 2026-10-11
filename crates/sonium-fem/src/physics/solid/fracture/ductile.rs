@@ -208,15 +208,7 @@ impl GursonMaterial {
 
     /// Mild steel matrix with textbook void parameters.
     pub fn mild_steel() -> Self {
-        Self::new(
-            J2Material::mild_steel(),
-            1.5,
-            1.0,
-            2.25,
-            0.001,
-            0.05,
-            0.20,
-        )
+        Self::new(J2Material::mild_steel(), 1.5, 1.0, 2.25, 0.001, 0.05, 0.20)
     }
 
     /// Effective porosity after Tvergaard and Needleman.
@@ -332,7 +324,8 @@ impl StressUpdateModel for GursonMaterial {
             .current_yield_stress(state.plastic.equiv_plastic_strain)
             .max(1e-9);
         let f_star = self.effective_porosity(state.porosity);
-        let volumetric = update.delta_equiv_plastic_strain * 2.0
+        let volumetric = update.delta_equiv_plastic_strain
+            * 2.0
             * self.q1
             * f_star
             * (1.5 * self.q2 / sy)
@@ -352,8 +345,9 @@ impl StressUpdateModel for GursonMaterial {
 /// Element erosion criterion for ductile failure.
 ///
 /// An element erodes when any enabled limit trips: accumulated plastic
-/// strain, Johnson-Cook damage, or GTN porosity. Limits set to infinity
-/// (the default for damage and porosity) disable that leg.
+/// strain, Johnson-Cook damage, GTN porosity, or tabulated/Lode failure
+/// damage. Limits set to infinity (the default for damage, porosity, and
+/// tabular damage) disable that leg.
 ///
 /// # Examples
 ///
@@ -372,6 +366,8 @@ pub struct ErosionCriterion {
     pub max_damage: f64,
     /// Erosion threshold on GTN porosity.
     pub max_porosity: f64,
+    /// Erosion threshold on tabulated (`/FAIL/TAB1`) or Wierzbicki damage.
+    pub max_tabular_damage: f64,
 }
 
 impl ErosionCriterion {
@@ -381,6 +377,7 @@ impl ErosionCriterion {
             max_equiv_plastic_strain: limit,
             max_damage: f64::INFINITY,
             max_porosity: f64::INFINITY,
+            max_tabular_damage: f64::INFINITY,
         }
     }
 
@@ -390,6 +387,30 @@ impl ErosionCriterion {
             max_equiv_plastic_strain: f64::INFINITY,
             max_damage,
             max_porosity,
+            max_tabular_damage: f64::INFINITY,
+        }
+    }
+
+    /// Creates a criterion that erodes on tabulated failure damage only.
+    ///
+    /// Trips when the `/FAIL/TAB1` accumulated damage or the Wierzbicki
+    /// damage reaches `limit` (the card `Dcrit` or 1.0 respectively).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::fracture::ductile::ErosionCriterion;
+    ///
+    /// let criterion = ErosionCriterion::tabular(1.1);
+    /// assert!(!criterion.eroded_with_tabular(0.0, 0.0, 0.0, 1.0));
+    /// assert!(criterion.eroded_with_tabular(0.0, 0.0, 0.0, 1.2));
+    /// ```
+    pub fn tabular(limit: f64) -> Self {
+        Self {
+            max_equiv_plastic_strain: f64::INFINITY,
+            max_damage: f64::INFINITY,
+            max_porosity: f64::INFINITY,
+            max_tabular_damage: limit,
         }
     }
 
@@ -401,6 +422,31 @@ impl ErosionCriterion {
         equiv_plastic_strain >= self.max_equiv_plastic_strain
             || damage >= self.max_damage
             || porosity >= self.max_porosity
+    }
+
+    /// Tests one element including tabulated failure damage.
+    ///
+    /// Extends [`eroded`](Self::eroded) with the `/FAIL/TAB1` or
+    /// Wierzbicki damage leg; existing three-tuple callers are unaffected.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::fracture::ductile::ErosionCriterion;
+    ///
+    /// let criterion = ErosionCriterion::tabular(1.1);
+    /// assert!(!criterion.eroded_with_tabular(10.0, 10.0, 10.0, 0.0));
+    /// assert!(criterion.eroded_with_tabular(0.0, 0.0, 0.0, 1.1));
+    /// ```
+    pub fn eroded_with_tabular(
+        &self,
+        equiv_plastic_strain: f64,
+        damage: f64,
+        porosity: f64,
+        tabular_damage: f64,
+    ) -> bool {
+        self.eroded(equiv_plastic_strain, damage, porosity)
+            || tabular_damage >= self.max_tabular_damage
     }
 }
 
@@ -479,6 +525,38 @@ impl ErosionSet {
             }
             let (ep, damage, porosity) = features[id];
             if criterion.eroded(ep, damage, porosity) {
+                *done = true;
+                fresh.push(id);
+            }
+        }
+        fresh
+    }
+
+    /// Erodes elements tripping the tabulated leg too.
+    ///
+    /// Takes the criterion plus one `(ep, damage, porosity, tabular)`
+    /// tuple per element; returns the ids newly eroded by this sweep.
+    /// Existing three-tuple sweeps are unaffected.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `features` is shorter than the element count.
+    pub fn sweep_with_tabular(
+        &mut self,
+        criterion: &ErosionCriterion,
+        features: &[(f64, f64, f64, f64)],
+    ) -> Vec<usize> {
+        assert!(
+            features.len() >= self.deleted.len(),
+            "erosion sweep needs one feature tuple per element"
+        );
+        let mut fresh = Vec::new();
+        for (id, done) in self.deleted.iter_mut().enumerate() {
+            if *done {
+                continue;
+            }
+            let (ep, damage, porosity, tabular) = features[id];
+            if criterion.eroded_with_tabular(ep, damage, porosity, tabular) {
                 *done = true;
                 fresh.push(id);
             }
@@ -604,13 +682,29 @@ mod tests {
     fn erosion_set_sweep_is_irreversible() {
         let criterion = ErosionCriterion::damage_driven(1.0, 0.2);
         let mut set = ErosionSet::new(3);
-        let fresh = set.sweep(&criterion, &[(0.0, 0.5, 0.0), (0.0, 1.2, 0.0), (0.0, 0.0, 0.3)]);
+        let fresh = set.sweep(
+            &criterion,
+            &[(0.0, 0.5, 0.0), (0.0, 1.2, 0.0), (0.0, 0.0, 0.3)],
+        );
         assert_eq!(fresh, vec![1, 2]);
         assert_eq!(set.active_count(), 1);
         // Healing the features must not resurrect elements.
         let fresh = set.sweep(&criterion, &[(0.0, 0.0, 0.0); 3]);
         assert!(fresh.is_empty());
         assert!(!set.is_active(1));
+    }
+
+    #[test]
+    fn tabular_leg_trips_without_touching_legacy_legs() {
+        let legacy = ErosionCriterion::damage_driven(1.0, 0.2);
+        assert!(!legacy.eroded_with_tabular(0.0, 0.5, 0.0, 100.0));
+        let tab = ErosionCriterion::tabular(1.1);
+        assert!(!tab.eroded_with_tabular(0.0, 0.0, 0.0, 1.0));
+        assert!(tab.eroded_with_tabular(0.0, 0.0, 0.0, 1.1));
+        let mut set = ErosionSet::new(2);
+        let fresh = set.sweep_with_tabular(&tab, &[(0.0, 0.0, 0.0, 0.5), (0.0, 0.0, 0.0, 1.2)]);
+        assert_eq!(fresh, vec![1]);
+        assert_eq!(set.active_count(), 1);
     }
 
     #[test]

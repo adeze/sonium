@@ -15,7 +15,12 @@
 //! plasticity with the Green-Naghdi rate lives in [`finite_strain`].
 
 pub mod crash;
+pub mod eos;
 pub mod finite_strain;
+pub mod funct;
+pub mod funct_deck;
+pub mod law_foams;
+pub mod law_metals;
 mod material;
 mod return_mapping;
 pub mod update;

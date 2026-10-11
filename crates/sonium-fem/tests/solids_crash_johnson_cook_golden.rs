@@ -36,7 +36,11 @@ fn johnson_cook_matches_wolfram() {
     let doc: Value = serde_json::from_str(GOLDEN).unwrap();
     assert_eq!(doc["meta"]["protocol"], "solids-golden-v1");
     let steel = JohnsonCookMaterial::c4340_steel();
-    check(&doc, "flow_quasistatic", steel.flow_stress(0.01, 1.0, 293.0));
+    check(
+        &doc,
+        "flow_quasistatic",
+        steel.flow_stress(0.01, 1.0, 293.0),
+    );
     check(&doc, "flow_fast", steel.flow_stress(0.01, 1000.0, 293.0));
     check(&doc, "flow_hot", steel.flow_stress(0.01, 1.0, 900.0));
     let damage = JohnsonCookDamage::c4340_steel();

@@ -1,5 +1,5 @@
 use meshlang_compiler::{
-    CompileOptions, compile_to_geo_full_with_options, compile_to_python_full_with_options,
+    compile_to_geo_full_with_options, compile_to_python_full_with_options, CompileOptions,
 };
 use serde_json::Value;
 use std::fs;
@@ -70,11 +70,9 @@ pub fn imported_nested_transforms_preserve_comments_spans_and_parent_chain() {
         .map(|identity| identity.display_name.as_str())
         .collect::<Vec<_>>();
     assert!(source_names.iter().any(|name| name.ends_with("root.mlg")));
-    assert!(
-        source_names
-            .iter()
-            .any(|name| name.ends_with("imported.mlg"))
-    );
+    assert!(source_names
+        .iter()
+        .any(|name| name.ends_with("imported.mlg")));
     assert_eq!(
         geo.provenance_manifest_json,
         python.provenance_manifest_json
@@ -89,16 +87,12 @@ pub fn imported_nested_transforms_preserve_comments_spans_and_parent_chain() {
     let spun = entity(&geo_metadata, "Imported.spun");
     assert_eq!(shifted["parent_chain"].as_array().map(Vec::len), Some(1));
     assert_eq!(spun["parent_chain"].as_array().map(Vec::len), Some(2));
-    assert!(
-        shifted["provenance"]
-            .as_array()
-            .is_some_and(|items| !items.is_empty())
-    );
-    assert!(
-        spun["provenance"]
-            .as_array()
-            .is_some_and(|items| !items.is_empty())
-    );
+    assert!(shifted["provenance"]
+        .as_array()
+        .is_some_and(|items| !items.is_empty()));
+    assert!(spun["provenance"]
+        .as_array()
+        .is_some_and(|items| !items.is_empty()));
 
     let comments = geo_metadata["source_map"]["source_file"]["comments"]
         .as_array()

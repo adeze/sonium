@@ -99,7 +99,10 @@ fn main() {
         for (r, omega) in omegas.iter().enumerate() {
             let exact = beta_l[r] * beta_l[r] * scale;
             let error = (omega - exact).abs() / exact;
-            println!("mode {}: FEM w={omega:.6e} exact={exact:.6e} err={error:.2e}", r + 1);
+            println!(
+                "mode {}: FEM w={omega:.6e} exact={exact:.6e} err={error:.2e}",
+                r + 1
+            );
             assert!(error < 1e-3, "mode {} frequency error {error:.2e}", r + 1);
         }
         // Tip transverse shapes (mass-normalized LOBPCG columns,
@@ -118,20 +121,28 @@ fn main() {
         let h0 = modal_receptance(&[0.0], &omegas, &pairs, &zetas).unwrap()[0];
         let compliance = length.powi(3) / (3.0 * e_mod * section.moment_of_inertia);
         let static_err = (h0.re - compliance).abs() / compliance;
-        println!("static compliance: modal={:.6e} exact={compliance:.6e}", h0.re);
+        println!(
+            "static compliance: modal={:.6e} exact={compliance:.6e}",
+            h0.re
+        );
         assert!(static_err < 0.02, "static error {static_err:.2e}");
 
         // Resonant peak of mode 1 vs the SDOF equivalent.
         let peak = modal_receptance(&[omegas[0]], &omegas, &pairs, &zetas).unwrap()[0];
         let expected = pairs[0].0 * pairs[0].1 / (2.0 * zetas[0] * omegas[0].powi(2));
         let peak_err = (peak.norm() - expected).abs() / expected;
-        println!("resonant peak: modal={:.6e} sdof={expected:.6e}", peak.norm());
+        println!(
+            "resonant peak: modal={:.6e} sdof={expected:.6e}",
+            peak.norm()
+        );
         assert!(peak_err < 0.01, "peak error {peak_err:.2e}");
 
         // White tip-force PSD: numeric integration vs the modal sum.
         let f3 = omegas[2] / (2.0 * PI);
         let n = 200_001;
-        let freqs: Vec<f64> = (0..n).map(|i| 2.0 * f3 * i as f64 / (n - 1) as f64).collect();
+        let freqs: Vec<f64> = (0..n)
+            .map(|i| 2.0 * f3 * i as f64 / (n - 1) as f64)
+            .collect();
         let omegas_grid: Vec<f64> = freqs.iter().map(|f| 2.0 * PI * f).collect();
         let frf = modal_receptance(&omegas_grid, &omegas, &pairs, &zetas).unwrap();
         let numeric = psd_response_rms(&freqs, &frf, &vec![1.0; n]).unwrap();

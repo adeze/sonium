@@ -8,8 +8,8 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_fem::solver::explicit_dynamics::{
-    ElasticBar1D, TaylorBarSetup, dalembert_gaussian, hex8_hourglass_forces,
-    hex8_hourglass_gammas, mass_scaling_factor,
+    ElasticBar1D, TaylorBarSetup, dalembert_gaussian, hex8_hourglass_forces, hex8_hourglass_gammas,
+    mass_scaling_factor,
 };
 
 fn main() {
@@ -47,7 +47,11 @@ fn main() {
     let (nodes, bricks) = setup.mesh(6, 8);
     assert!(!bricks.is_empty());
     assert!(nodes.iter().any(|n| n[2] == 0.0));
-    println!("taylor-mesh: {} nodes, {} bricks", nodes.len(), bricks.len());
+    println!(
+        "taylor-mesh: {} nodes, {} bricks",
+        nodes.len(),
+        bricks.len()
+    );
     println!("taylor-plateau: {:.6e} N", setup.elastic_plateau_force());
     assert!(setup.elastic_plateau_force() > 0.0);
     // Hourglass forces vanish on rigid motion, dissipate on HG modes.
@@ -63,7 +67,10 @@ fn main() {
     ];
     let rigid = [[1.0, 0.0, 0.0]; 8];
     let f = hex8_hourglass_forces(&coords, &rigid, 7800.0, 5000.0, 0.1);
-    assert!(f.iter().all(|v| v[0].abs() + v[1].abs() + v[2].abs() < 1e-6));
+    assert!(
+        f.iter()
+            .all(|v| v[0].abs() + v[1].abs() + v[2].abs() < 1e-6)
+    );
     let (gamma, _, _) = hex8_hourglass_gammas(&coords);
     let hg: [[f64; 3]; 8] = std::array::from_fn(|i| [gamma[0][i], 0.0, 0.0]);
     let fh = hex8_hourglass_forces(&coords, &hg, 7800.0, 5000.0, 0.1);

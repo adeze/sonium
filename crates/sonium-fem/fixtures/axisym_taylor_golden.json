@@ -1,0 +1,185 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"axisym_taylor",
+		"units":"SI"
+	},
+	"inputs":{
+		"bar":"r in [0, R], z in [0, L], R = 3.175 mm, L = 25.4 mm",
+		"density":8930,
+		"sound_speed":4500,
+		"youngs":1.17e11,
+		"poisson":0.35,
+		"yield":3.0e8,
+		"hardening":1.0e9,
+		"impact_velocity":227,
+		"dt_elastic":1.0e-9,
+		"dt_plastic":1.0e-6
+	},
+	"values":{
+		"b_r_row":{
+			"values":[
+				"-157.48031496062992125984251968503937007874015748031",
+				"157.48031496062992125984251968503937007874015748031",
+				"157.48031496062992125984251968503937007874015748031",
+				"-157.48031496062992125984251968503937007874015748031"
+			],
+			"exact":"dN\/dr row, exact over 2R"
+		},
+		"b_z_row":{
+			"values":[
+				"-19.685039370078740157480314960629921259842519685039",
+				"-19.685039370078740157480314960629921259842519685039",
+				"19.685039370078740157480314960629921259842519685039",
+				"19.685039370078740157480314960629921259842519685039"
+			],
+			"exact":"dN\/dz row, exact over 2L"
+		},
+		"gamma":{
+			"values":[
+				"1.",
+				"-1.",
+				"1.",
+				"-1."
+			],
+			"exact":"h - (h.r)br - (h.z)bz = {1,-1,1,-1}"
+		},
+		"area":{
+			"values":[
+				"0.000080645"
+			],
+			"exact":"R L"
+		},
+		"radius_bar":{
+			"values":[
+				"0.0015875"
+			],
+			"exact":"R\/2"
+		},
+		"volume":{
+			"values":[
+				"8.0439812306727768039772810517152724455505630572502e-7"
+			],
+			"exact":"2 Pi rbar A = Pi R^2 L"
+		},
+		"nodal_mass":{
+			"values":[
+				"0.0017958188097476974214879279947954345734691632025311"
+			],
+			"exact":"rho V \/ 4"
+		},
+		"char_length":{
+			"values":[
+				"0.0031504822585658947872324919392263967189355948640378"
+			],
+			"exact":"A \/ Sqrt[R^2 + L^2]"
+		},
+		"critical_step":{
+			"values":[
+				"7.0010716857019884160722043093919927087457663645285e-7"
+			],
+			"exact":"L \/ c at c = 4500"
+		},
+		"elastic_szz":{
+			"values":[
+				"-1.6781714785651793525809273840769903762029746281715e6"
+			],
+			"exact":"(lambda + 2 mu) ezz"
+		},
+		"elastic_srr":{
+			"values":[
+				"-903630.7961504811898512685914260717410323709536308"
+			],
+			"exact":"lambda ezz"
+		},
+		"elastic_sth":{
+			"values":[
+				"-903630.7961504811898512685914260717410323709536308"
+			],
+			"exact":"lambda ezz"
+		},
+		"bulk_q":{
+			"values":[
+				"6.4359432468223560335492295425972960568732544175215e7"
+			],
+			"exact":"rho L (c0 L d^2 - c1 c d) at c = 4500"
+		},
+		"bottom_el":{
+			"values":[
+				"-1985.0664839201328314040007305719880598469865193075"
+			],
+			"exact":"-Pi R^2 (szz + q)"
+		},
+		"plastic_szz":{
+			"values":[
+				"-1.3642259889269566495027816179466116353776388638443e9"
+			],
+			"exact":"radial return about trial pressure"
+		},
+		"plastic_srr":{
+			"values":[
+				"-1.0606035409695925413903414744912611114450388357944e9"
+			],
+			"exact":"radial return about trial pressure"
+		},
+		"plastic_sth":{
+			"values":[
+				"-1.0606035409695925413903414744912611114450388357944e9"
+			],
+			"exact":"radial return, equals srr"
+		},
+		"plastic_dep":{
+			"values":[
+				"0.0036224479573641081124401434553505239326000280499289"
+			],
+			"exact":"(2 mu |e| - sigY)\/(3 mu + H)"
+		},
+		"bottom_pl":{
+			"values":[
+				"41165.756624146867347609653720004790836983857279406"
+			],
+			"exact":"-Pi R^2 (szz + q)"
+		}
+	},
+	"tolerances":{
+		"b_r_row_abs":1.0e-12,
+		"b_r_row_rel":1.0e-12,
+		"b_z_row_abs":1.0e-12,
+		"b_z_row_rel":1.0e-12,
+		"gamma_abs":1.0e-15,
+		"gamma_rel":1.0e-12,
+		"area_abs":1.0e-15,
+		"area_rel":1.0e-12,
+		"radius_bar_abs":1.0e-18,
+		"radius_bar_rel":1.0e-12,
+		"volume_abs":1.0e-15,
+		"volume_rel":1.0e-12,
+		"nodal_mass_abs":1.0e-12,
+		"nodal_mass_rel":1.0e-12,
+		"char_length_abs":1.0e-15,
+		"char_length_rel":1.0e-12,
+		"critical_step_abs":1.0e-18,
+		"critical_step_rel":1.0e-12,
+		"elastic_szz_abs":1.0e-3,
+		"elastic_szz_rel":1.0e-9,
+		"elastic_srr_abs":1.0e-3,
+		"elastic_srr_rel":1.0e-9,
+		"elastic_sth_abs":1.0e-3,
+		"elastic_sth_rel":1.0e-9,
+		"bulk_q_abs":1.0e-3,
+		"bulk_q_rel":1.0e-9,
+		"bottom_el_abs":1.0e-6,
+		"bottom_el_rel":1.0e-9,
+		"plastic_szz_abs":1.0e-3,
+		"plastic_szz_rel":1.0e-9,
+		"plastic_srr_abs":1.0e-3,
+		"plastic_srr_rel":1.0e-9,
+		"plastic_sth_abs":1.0e-3,
+		"plastic_sth_rel":1.0e-9,
+		"plastic_dep_abs":1.0e-12,
+		"plastic_dep_rel":1.0e-9,
+		"bottom_pl_abs":1.0e-6,
+		"bottom_pl_rel":1.0e-9
+	}
+}

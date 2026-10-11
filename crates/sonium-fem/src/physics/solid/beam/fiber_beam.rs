@@ -182,11 +182,7 @@ impl<M: FiberCompatibleModel> FiberBeamForm3D<M> {
             let rows = Self::strain_rows(elem.beam.length, *xi);
             let mut def = [0.0; 3];
             for r in 0..3 {
-                def[r] = rows[r]
-                    .iter()
-                    .zip(local.iter())
-                    .map(|(b, v)| b * v)
-                    .sum();
+                def[r] = rows[r].iter().zip(local.iter()).map(|(b, v)| b * v).sum();
             }
             let committed = self.states[elem_idx].section_deformations[g];
             let result = elem.section.integrate(
@@ -221,11 +217,8 @@ impl<M: FiberCompatibleModel> FiberBeamForm3D<M> {
             for (g, (xi, _)) in Self::gauss_points(elem.n_gauss).iter().enumerate() {
                 let rows = Self::strain_rows(elem.beam.length, *xi);
                 for (r, row) in rows.iter().enumerate() {
-                    self.states[elem_idx].section_deformations[g][r] = row
-                        .iter()
-                        .zip(local.iter())
-                        .map(|(b, v)| b * v)
-                        .sum();
+                    self.states[elem_idx].section_deformations[g][r] =
+                        row.iter().zip(local.iter()).map(|(b, v)| b * v).sum();
                 }
                 let states = &mut self.states[elem_idx].fiber_states[g];
                 elem.section.commit(states, &results[g]);
@@ -289,7 +282,6 @@ where
     M: FiberCompatibleModel + Send + Sync,
     M::State: Send + Sync,
 {
-
     fn num_elements(&self) -> usize {
         self.elements.len()
     }

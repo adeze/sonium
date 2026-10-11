@@ -106,5 +106,9 @@ fn clamped_plate_matches_wolfram() {
     let hoop = q / 16.0 * ((1.0 + nu) * a.powi(2) - (1.0 + 3.0 * nu) * r.powi(2));
     check(&doc, "hoop_moment", hoop);
     check(&doc, "probe_m1", hoop / t.powi(2));
-    check(&doc, "center_deflection", dkt_center_deflection(a, t, e, nu, q));
+    check(
+        &doc,
+        "center_deflection",
+        dkt_center_deflection(a, t, e, nu, q),
+    );
 }

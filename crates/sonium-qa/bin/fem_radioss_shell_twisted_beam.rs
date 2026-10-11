@@ -50,7 +50,10 @@ struct TwistedMesh {
 }
 
 fn twisted_beam_mesh(n_x: usize, n_y: usize) -> TwistedMesh {
-    assert!(n_y.is_multiple_of(2), "tip center needs an even across count");
+    assert!(
+        n_y.is_multiple_of(2),
+        "tip center needs an even across count"
+    );
     let total = std::f64::consts::FRAC_PI_2;
     let mut nodes = Vec::with_capacity((n_x + 1) * (n_y + 1));
     for ix in 0..=n_x {

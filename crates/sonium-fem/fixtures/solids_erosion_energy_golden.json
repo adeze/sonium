@@ -1,0 +1,98 @@
+{
+	"meta": {
+		"engine": "Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol": "solids-golden-v1",
+		"case": "erosion_energy",
+		"units": "SI"
+	},
+	"inputs": {
+		"volumes_m3": [
+			2e-06,
+			1e-06,
+			5e-07
+		],
+		"plastic_densities": [
+			150000000.0,
+			300000000.0,
+			200000000.0
+		],
+		"internal_densities": [
+			160000000.0,
+			320000000.0,
+			210000000.0
+		],
+		"eroded": [
+			false,
+			true,
+			false
+		],
+		"layer_thickness": [
+			0.2,
+			0.2,
+			0.2,
+			0.2,
+			0.2
+		],
+		"thick_fail": 0.4
+	},
+	"values": {
+		"active_plastic": {
+			"values": [
+				"400."
+			],
+			"exact": "2e-6*1.5e8 + 5e-7*2e8"
+		},
+		"eroded_plastic": {
+			"values": [
+				"300."
+			],
+			"exact": "1e-6*3e8"
+		},
+		"active_internal": {
+			"values": [
+				"425."
+			],
+			"exact": "2e-6*1.6e8 + 5e-7*2.1e8"
+		},
+		"eroded_internal": {
+			"values": [
+				"320."
+			],
+			"exact": "1e-6*3.2e8"
+		},
+		"verdict_two_layers": {
+			"values": [
+				"0"
+			],
+			"exact": "0.4 > 0.4 is false"
+		},
+		"verdict_three_layers": {
+			"values": [
+				"1."
+			],
+			"exact": "0.6 > 0.4"
+		},
+		"verdict_split_layers": {
+			"values": [
+				"0"
+			],
+			"exact": "run breaks at the sound layer"
+		}
+	},
+	"tolerances": {
+		"active_plastic_abs": 1e-09,
+		"active_plastic_rel": 1e-12,
+		"eroded_plastic_abs": 1e-09,
+		"eroded_plastic_rel": 1e-12,
+		"active_internal_abs": 1e-09,
+		"active_internal_rel": 1e-12,
+		"eroded_internal_abs": 1e-09,
+		"eroded_internal_rel": 1e-12,
+		"verdict_two_layers_abs": 1e-15,
+		"verdict_two_layers_rel": 1e-12,
+		"verdict_three_layers_abs": 1e-15,
+		"verdict_three_layers_rel": 1e-12,
+		"verdict_split_layers_abs": 1e-15,
+		"verdict_split_layers_rel": 1e-12
+	}
+}

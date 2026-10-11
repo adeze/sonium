@@ -125,7 +125,10 @@ impl ExplicitState {
     ///
     /// Panics when a mass is negative or the list is empty.
     pub fn new(masses: &[f64]) -> Self {
-        assert!(!masses.is_empty(), "explicit state needs degrees of freedom");
+        assert!(
+            !masses.is_empty(),
+            "explicit state needs degrees of freedom"
+        );
         assert!(
             masses.iter().all(|m| *m >= 0.0),
             "lumped masses must be non-negative"
@@ -604,7 +607,11 @@ impl ElasticBar1D {
     ///
     /// Panics on length mismatch or non-positive `dt`.
     pub fn step_with_forces(&mut self, dt: f64, external: &[f64]) {
-        assert_eq!(external.len(), self.num_elements + 1, "force length mismatch");
+        assert_eq!(
+            external.len(),
+            self.num_elements + 1,
+            "force length mismatch"
+        );
         let u = self.state.displacement().to_vec();
         let mut f = self.internal_forces(&u);
         for (total, extra) in f.iter_mut().zip(external.iter()) {
@@ -643,12 +650,7 @@ impl ElasticBar1D {
 /// let f = elastic_bar_impact_force(100.0, 7800.0, 5000.0, 1.0e-4);
 /// assert!((f - 390.0e3).abs() < 1.0);
 /// ```
-pub fn elastic_bar_impact_force(
-    velocity: f64,
-    density: f64,
-    wave_speed: f64,
-    area: f64,
-) -> f64 {
+pub fn elastic_bar_impact_force(velocity: f64, density: f64, wave_speed: f64, area: f64) -> f64 {
     density * wave_speed * area * velocity
 }
 
@@ -893,7 +895,10 @@ mod tests {
             prev = density;
         }
         let closed = gaussian_pulse_strain_energy(e, a, w, amp);
-        assert!((energy - closed).abs() / closed < 1e-6, "quad {energy}, closed {closed}");
+        assert!(
+            (energy - closed).abs() / closed < 1e-6,
+            "quad {energy}, closed {closed}"
+        );
     }
 
     #[test]
@@ -943,9 +948,8 @@ mod tests {
             }
         }
         // Linear velocity field draws no hourglass force.
-        let velocities: [[f64; 3]; 8] = std::array::from_fn(|i| {
-            [coords[i][0] + 1.0, 2.0 * coords[i][1], -coords[i][2]]
-        });
+        let velocities: [[f64; 3]; 8] =
+            std::array::from_fn(|i| [coords[i][0] + 1.0, 2.0 * coords[i][1], -coords[i][2]]);
         let forces = hex8_hourglass_forces(&coords, &velocities, 7800.0, 5000.0, 0.1);
         for f in forces {
             assert!(f[0].abs() + f[1].abs() + f[2].abs() < 1e-6);
@@ -1005,8 +1009,10 @@ mod tests {
     #[test]
     fn elastic_impact_plateau_matches_rho_c_a_v() {
         let setup = TaylorBarSetup::copper_bar();
-        let expected =
-            setup.density * bar_wave_speed(setup.youngs, setup.density) * setup.area() * setup.velocity;
+        let expected = setup.density
+            * bar_wave_speed(setup.youngs, setup.density)
+            * setup.area()
+            * setup.velocity;
         assert!((setup.elastic_plateau_force() - expected).abs() < 1.0);
     }
 }

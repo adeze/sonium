@@ -60,10 +60,7 @@ fn dense_solve(matrix: &[f64], rhs: &[f64], n: usize) -> Vec<f64> {
     for i in 0..n {
         y[i] += correction[i];
     }
-    y.iter()
-        .zip(scale.iter())
-        .map(|(v, s)| v / s)
-        .collect()
+    y.iter().zip(scale.iter()).map(|(v, s)| v / s).collect()
 }
 
 fn eliminate(matrix: &[f64], rhs: &[f64], n: usize) -> Vec<f64> {

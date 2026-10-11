@@ -1,0 +1,75 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"penalty_hertz",
+		"units":"SI"
+	},
+	"inputs":{
+		"force_n":1000,
+		"radius_m":1.0e-2,
+		"youngs_modulus_pa":200000000000,
+		"poisson_ratio":0.3,
+		"penalty_stiffness_n_per_m":[
+			1.0e8,
+			1.0e10,
+			1.0e12
+		]
+	},
+	"values":{
+		"effective_modulus":{
+			"values":[
+				"2.1978021978021978021978021978021978021978021978022e11"
+			],
+			"exact":"E\/(1-nu^2)"
+		},
+		"contact_radius":{
+			"values":[
+				"0.00032435770583581752125684666013012314239749367407669"
+			],
+			"exact":"(3 F R\/(4 E*))^(1\/3)"
+		},
+		"hertz_approach":{
+			"values":[
+				"0.000010520792133507473168590992527338280623102682317787"
+			],
+			"exact":"a^2\/R"
+		},
+		"hertz_stiffness":{
+			"values":[
+				"1.4257481575200770165136116928796621643845875783591e8"
+			],
+			"exact":"2 E* a"
+		},
+		"approach_total":{
+			"values":[
+				"0.000020520792133507473168590992527338280623102682317787",
+				"0.000010620792133507473168590992527338280623102682317787",
+				"0.000010521792133507473168590992527338280623102682317787"
+			],
+			"exact":"a^2\/R + F\/k_p per k_p"
+		},
+		"effective_stiffness":{
+			"values":[
+				"5.877560508909823333850757530744163249683862962093e7",
+				"1.4057063254843408500025796988752924630213759577688e8",
+				"1.4255449107170853158054623623176883421897655822978e8"
+			],
+			"exact":"1\/(1\/k_H + 1\/k_p) per k_p"
+		}
+	},
+	"tolerances":{
+		"effective_modulus_abs":1.0e-6,
+		"effective_modulus_rel":1.0e-12,
+		"contact_radius_abs":1.0e-15,
+		"contact_radius_rel":1.0e-12,
+		"hertz_approach_abs":1.0e-15,
+		"hertz_approach_rel":1.0e-12,
+		"hertz_stiffness_abs":1.0e-6,
+		"hertz_stiffness_rel":1.0e-12,
+		"approach_total_abs":1.0e-15,
+		"approach_total_rel":1.0e-12,
+		"effective_stiffness_abs":1.0e-6,
+		"effective_stiffness_rel":1.0e-12
+	}
+}

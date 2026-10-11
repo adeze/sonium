@@ -53,8 +53,16 @@ fn fatigue_closed_forms_match_wolfram() {
         curve.cycles_to_failure(300.0, input("goodman_mean")),
     );
     let blocks = vec![
-        RainflowCycle { range: 600.0, mean: 0.0, count: 100.0 },
-        RainflowCycle { range: 300.0, mean: 0.0, count: 1000.0 },
+        RainflowCycle {
+            range: 600.0,
+            mean: 0.0,
+            count: 100.0,
+        },
+        RainflowCycle {
+            range: 300.0,
+            mean: 0.0,
+            count: 1000.0,
+        },
     ];
     check(&doc, "miner_two_block", miner_damage(&blocks, &curve));
     let cycles = rainflow_counts(&[0.0, 1.0, -1.0, 1.0, -1.0, 0.0]);
@@ -64,7 +72,11 @@ fn fatigue_closed_forms_match_wolfram() {
     check(&doc, "rainflow_full_mean", full[0].mean);
     let full_total: f64 = full.iter().map(|c| c.count).sum();
     check(&doc, "rainflow_full_count", full_total);
-    let half_total: f64 = cycles.iter().filter(|c| c.count == 0.5).map(|c| c.count).sum();
+    let half_total: f64 = cycles
+        .iter()
+        .filter(|c| c.count == 0.5)
+        .map(|c| c.count)
+        .sum();
     check(&doc, "rainflow_half_total", half_total);
     let fn_curve = ForceLifeCurve {
         force_intercept: input("fn_f0"),
@@ -72,8 +84,14 @@ fn fatigue_closed_forms_match_wolfram() {
     };
     fn_curve.validate().unwrap();
     check(&doc, "spotweld_life_250", fn_curve.cycles_to_failure(250.0));
-    let history: Vec<f64> = (0..10).map(|i| if i % 2 == 0 { 0.0 } else { 500.0 }).collect();
-    check(&doc, "spotweld_damage", spotweld_force_damage(&history, &fn_curve));
+    let history: Vec<f64> = (0..10)
+        .map(|i| if i % 2 == 0 { 0.0 } else { 500.0 })
+        .collect();
+    check(
+        &doc,
+        "spotweld_damage",
+        spotweld_force_damage(&history, &fn_curve),
+    );
     let total: f64 = rainflow_counts(&history).iter().map(|c| c.count).sum();
     check(&doc, "spotweld_cycle_total", total);
 }

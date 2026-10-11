@@ -151,7 +151,10 @@ fn test_free_warping() {
     let u = solve_cantilever(1, 1000.0, false);
     let expected = 1000.0 * 2.0 / i_section().gj();
     let error = (u[10] - expected).abs() / expected;
-    println!("free warping: FEM={:.12e} exact={expected:.12e} rel={error:.2e}", u[10]);
+    println!(
+        "free warping: FEM={:.12e} exact={expected:.12e} rel={error:.2e}",
+        u[10]
+    );
     assert!(error < 1.0e-9, "free warping error {error:.3e}");
 }
 
@@ -208,7 +211,10 @@ fn test_convergence() {
     let tip24 = solve_cantilever(24, t, true)[25 * 7 - 4];
     let err6 = (tip6 - expected).abs() / expected;
     let err24 = (tip24 - expected).abs() / expected;
-    println!("convergence: err6={err6:.2e} err24={err24:.2e} ratio={:.1}", err6 / err24);
+    println!(
+        "convergence: err6={err6:.2e} err24={err24:.2e} ratio={:.1}",
+        err6 / err24
+    );
     assert!(err24 < err6 / 64.0, "no fourth-order convergence");
 }
 

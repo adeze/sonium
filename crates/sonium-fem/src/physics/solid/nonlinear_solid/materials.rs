@@ -295,10 +295,7 @@ impl HyperelasticMaterial for OgdenMaterial {
         for (mu, alpha) in self.mu.iter().zip(self.alpha.iter()) {
             // expm1 form: exact at identity and cancellation-free nearby,
             // which the numerical stress and tangent differentiate cleanly.
-            let sum: f64 = stretches
-                .iter()
-                .map(|l| (alpha * l.ln()).exp_m1())
-                .sum();
+            let sum: f64 = stretches.iter().map(|l| (alpha * l.ln()).exp_m1()).sum();
             w += mu / alpha * sum;
         }
         w + 0.5 * self.bulk * (j - 1.0).powi(2)

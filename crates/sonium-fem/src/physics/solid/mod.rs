@@ -5,6 +5,7 @@
 
 // Rust guideline compliant 2026-02-21
 
+pub mod axisym_explicit;
 pub mod axisymmetric;
 pub mod beam;
 pub mod biharmonic;
@@ -13,8 +14,8 @@ pub mod contact;
 pub mod eigenmodes;
 pub mod elasticity;
 pub mod fracture;
-pub mod mindlin_plate;
 pub mod joints;
+pub mod mindlin_plate;
 pub mod mixed_up;
 pub mod nonlinear_solid;
 pub mod plasticity;

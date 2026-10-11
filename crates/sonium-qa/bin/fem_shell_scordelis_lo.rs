@@ -39,11 +39,7 @@ fn build_quarter_model(n_theta: usize, n_z: usize) -> (Vec<Point>, Vec<[usize; 4
         let z = LENGTH / 2.0 * iz as f64 / n_z as f64;
         for it in 0..=n_theta {
             let theta = half_angle * it as f64 / n_theta as f64;
-            points.push(Point::new_3d(
-                RADIUS * theta.sin(),
-                RADIUS * theta.cos(),
-                z,
-            ));
+            points.push(Point::new_3d(RADIUS * theta.sin(), RADIUS * theta.cos(), z));
         }
     }
     let node = |iz: usize, it: usize| -> usize { iz * (n_theta + 1) + it };
@@ -68,7 +64,12 @@ fn solve_quarter(n_theta: usize, n_z: usize) -> f64 {
         .iter()
         .map(|q| {
             QuadShellElement::from_points_with_section(
-                *q, &points[q[0]], &points[q[1]], &points[q[2]], &points[q[3]], section,
+                *q,
+                &points[q[0]],
+                &points[q[1]],
+                &points[q[2]],
+                &points[q[3]],
+                section,
             )
         })
         .collect();
@@ -110,11 +111,7 @@ fn solve_quarter(n_theta: usize, n_z: usize) -> f64 {
     x[node(n_z, n_theta) * 6 + 1]
 }
 
-fn apply_dirichlet(
-    csr: &mut sonium_solvers::CsrMatrix<f64>,
-    rhs: &mut [f64],
-    fixed: &[usize],
-) {
+fn apply_dirichlet(csr: &mut sonium_solvers::CsrMatrix<f64>, rhs: &mut [f64], fixed: &[usize]) {
     use std::collections::BTreeSet;
     for dof in BTreeSet::from_iter(fixed.iter().copied()) {
         let range = csr.row_range(dof);

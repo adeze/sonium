@@ -5,6 +5,7 @@
 //!
 //! Used for loudspeaker cone, surround, and dust cap modeling.
 
+pub mod crash;
 pub mod dkt;
 pub mod elastoplastic;
 mod element;

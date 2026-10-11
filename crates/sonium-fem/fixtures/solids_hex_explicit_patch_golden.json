@@ -1,0 +1,94 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"hex_explicit_patch",
+		"units":"SI"
+	},
+	"inputs":{
+		"cube":"unit [0,1]^3",
+		"density":7800,
+		"sound_speed":4500,
+		"hg_scale":5.0e-2,
+		"youngs":2.0e11,
+		"poisson":0.3,
+		"exx":1.0e-3
+	},
+	"values":{
+		"volume":{
+			"values":[
+				"1."
+			],
+			"exact":"8 det J(0) = 1"
+		},
+		"grad_node0":{
+			"values":[
+				"-0.25",
+				"-0.25",
+				"-0.25"
+			],
+			"exact":"J^-T dN\/dxi at center = {-1\/4,-1\/4,-1\/4}"
+		},
+		"hg_mode0":{
+			"values":[
+				"1.",
+				"-1.",
+				"1.",
+				"-1.",
+				"1.",
+				"-1.",
+				"1.",
+				"-1."
+			],
+			"exact":"xi*eta base mode"
+		},
+		"char_length":{
+			"values":[
+				"1."
+			],
+			"exact":"V \/ Amax = 1"
+		},
+		"nodal_mass":{
+			"values":[
+				"975."
+			],
+			"exact":"rho V \/ 8"
+		},
+		"critical_step":{
+			"values":[
+				"0.00022222222222222222222222222222222222222222222222222"
+			],
+			"exact":"L \/ c = 1\/4500"
+		},
+		"hg_coeff":{
+			"values":[
+				"1.755e6"
+			],
+			"exact":"hg_scale rho c L^2"
+		},
+		"uniaxial_sxx":{
+			"values":[
+				"2.6923076923076923076923076923076923076923076923077e8"
+			],
+			"exact":"(K + 4G\/3) exx"
+		}
+	},
+	"tolerances":{
+		"volume_abs":1.0e-15,
+		"volume_rel":1.0e-12,
+		"grad_node0_abs":1.0e-15,
+		"grad_node0_rel":1.0e-12,
+		"hg_mode0_abs":1.0e-15,
+		"hg_mode0_rel":1.0e-12,
+		"char_length_abs":1.0e-15,
+		"char_length_rel":1.0e-12,
+		"nodal_mass_abs":1.0e-9,
+		"nodal_mass_rel":1.0e-12,
+		"critical_step_abs":1.0e-18,
+		"critical_step_rel":1.0e-12,
+		"hg_coeff_abs":1.0e-6,
+		"hg_coeff_rel":1.0e-12,
+		"uniaxial_sxx_abs":1.0e-3,
+		"uniaxial_sxx_rel":1.0e-9
+	}
+}

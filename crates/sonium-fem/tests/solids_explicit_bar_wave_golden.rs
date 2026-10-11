@@ -38,7 +38,11 @@ fn explicit_bar_wave_matches_wolfram() {
     assert_eq!(doc["meta"]["protocol"], "solids-golden-v1");
     let c = bar_wave_speed(200.0e9, 7800.0);
     check(&doc, "wave_speed", c);
-    check(&doc, "u_center", dalembert_gaussian(10.0, 0.0008, c, 10.0, 0.4, 1.0e-3));
+    check(
+        &doc,
+        "u_center",
+        dalembert_gaussian(10.0, 0.0008, c, 10.0, 0.4, 1.0e-3),
+    );
     check(
         &doc,
         "u_right",

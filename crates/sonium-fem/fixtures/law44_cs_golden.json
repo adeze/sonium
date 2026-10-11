@@ -1,0 +1,60 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law44_cs",
+		"units":"SI"
+	},
+	"inputs":{
+		"a_pa":50000000,
+		"b_pa":100000000,
+		"n":0.5,
+		"c":100,
+		"p":5,
+		"max_stress_pa":90000000
+	},
+	"values":{
+		"flow_quasi":{
+			"values":[
+				"6.e7"
+			],
+			"exact":"(50 + 100 sqrt(0.01)) MPa = 60 MPa"
+		},
+		"flow_mid":{
+			"values":[
+				"1.4e8"
+			],
+			"exact":"(50 + 100 sqrt(0.04)) 2 MPa = 140 MPa"
+		},
+		"flow_fast":{
+			"values":[
+				"1.550935915476668091121260824034904207961665280295e8"
+			],
+			"exact":"60 (1 + 10^(1\/5)) MPa"
+		},
+		"factor_100":{
+			"values":[
+				"2."
+			],
+			"exact":"1 + 1^(1\/5) = 2"
+		},
+		"factor_1000":{
+			"values":[
+				"2.584893192461113485202101373391507013269442133825"
+			],
+			"exact":"1 + 10^(1\/5)"
+		}
+	},
+	"tolerances":{
+		"flow_quasi_abs":1.0e-6,
+		"flow_quasi_rel":1.0e-12,
+		"flow_mid_abs":1.0e-6,
+		"flow_mid_rel":1.0e-12,
+		"flow_fast_abs":1.0e-6,
+		"flow_fast_rel":1.0e-12,
+		"factor_100_abs":1.0e-15,
+		"factor_100_rel":1.0e-12,
+		"factor_1000_abs":1.0e-15,
+		"factor_1000_rel":1.0e-12
+	}
+}
