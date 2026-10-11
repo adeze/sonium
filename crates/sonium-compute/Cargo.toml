@@ -23,6 +23,11 @@ rayon = { workspace = true }
 libc = { workspace = true }
 half = { workspace = true }
 sonium-fastmath = { workspace = true }
+# Explicit-dynamics restart serialization (Phase 1): versioned state
+# snapshots with checksums. Moved from dev-deps: production code owns it.
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
 # NVIDIA CUDA backend via the mature cudarc bindings.
 cudarc = { workspace = true, optional = true }
 libloading = { workspace = true, optional = true }
@@ -99,9 +104,7 @@ bench-openblas = []
 [dev-dependencies]
 approx = { workspace = true }
 rand = { workspace = true, features = ["small_rng"] }
-serde = { workspace = true }
-serde_json = { workspace = true }
-sha2 = { workspace = true }
+tempfile = { workspace = true }
 # Kept as a dev-dep so the BLAS-{1,2,3} benchmarks can compare our
 # in-house kernels against oxiblas-blas. Not in [dependencies] —
 # runtime sonium has no oxiblas-blas linkage.
@@ -138,6 +141,28 @@ harness = false
 [[bench]]
 name = "block_gmres_accelerator"
 harness = false
+
+# Phase 1 explicit-dynamics kernel benches (one per lane).
+[[bench]]
+name = "explicit_scatter"
+harness = false
+
+[[bench]]
+name = "explicit_dt"
+harness = false
+
+[[bench]]
+name = "explicit_hourglass"
+harness = false
+
+[[bench]]
+name = "explicit_restart"
+harness = false
+
+[[bench]]
+name = "explicit_cuda"
+harness = false
+required-features = ["cuda"]
 
 # CUDA-only scratch probes: `cargo test` skips them unless `--features cuda`
 # is on (without the gate, their crate-level `#![cfg(feature = "cuda")]`

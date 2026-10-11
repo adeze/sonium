@@ -388,7 +388,12 @@ fn validate_hilu_topology<T: ComplexField>(
             || coupling.leaf_base.windows(2).any(|w| w[0] >= w[1])
             || coupling.leaf_base.last().copied() != Some(coupling.leaf_global.len())
             || coupling.sep_factor.factors.n != coupling.sep_indices.len()
-            || coupling.leaf_global.len() != preconditioner.block_indices.iter().map(Vec::len).sum()
+            || coupling.leaf_global.len()
+                != preconditioner
+                    .block_indices
+                    .iter()
+                    .map(Vec::len)
+                    .sum::<usize>()
         {
             return Err(ilu_checkpoint_error(
                 "HILU Schur topology lengths are inconsistent",

@@ -2462,6 +2462,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sonium-fastmath",
+ "tempfile",
  "thiserror 2.0.21",
 ]
 

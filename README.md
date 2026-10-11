@@ -1,23 +1,31 @@
 # Sonium
 
-Sonium is a Rust workspace for multi-physics simulation, with deep roots in
-computational acoustics: boundary-element (BEM) and finite-element (FEM)
-solvers, room/loudspeaker/fan/propeller simulation applications, and the
-numerical infrastructure underneath them (vectorised math, FFTs, mesh
-generation, iterative/direct solvers, WASM deployment).
+Sonium is a Rust workspace for multi-physics simulation: boundary-element (BEM) and finite-element (FEM)
+solvers, simulation applications, and the numerical infrastructure underneath them (vectorised math, FFTs,
+mesh generation, iterative/direct solvers, WASM deployment). It can also do shape and tolopology optimation.
 
-Edition 2024, stable toolchain. Status: **pre-production** — clean forward
-changes are preferred over backward-compatible shims (see `gotchas.md`).
-
-License: GPL V3, as declared in `Cargo.toml`.
-Repository: <https://github.com/pierreaubert/sonium>
+- List of supported physics is in [PHYSICS.md](crates/sonium-fem/PHYSICS.md).
+- License: GPL V3, as declared in `Cargo.toml`.
+- Repository: <https://github.com/pierreaubert/sonium>
+- Website: <https://sonium.spinorama.org>
 
 ## This repo vs the full checkout
 
 This repository is the **open-source core**. It is developed inside a larger
 local checkout (`all_of_sonium`) that also holds closed-source / local-only
-companions which are **not** part of this repo: apps and for now all the ML
+companions which are **not** part of this repo: some apps and for now all the ML
 parts with PINN, surrogate etc.
+
+### Dependency layers
+
+```
+Layer 0 — math primitives : fastmath
+Layer 1 — foundations     : wave, xem, solvers (+ family), mesher
+Layer 1.5 — transforms    : fft, audio
+Layer 2 — PDE solvers     : bem, fem, coupling, meshlang
+Layer 3 — applications    : sim-*, roomeq, wasm
+Side    — qa, bench       : validation and performance harnesses
+```
 
 ### Math, transforms, backends
 
@@ -78,20 +86,6 @@ All solvers are generic over f32/f64/Complex32/Complex64 via `ComplexField`.
 |---|---|
 | `sonium-qa` | Standalone accuracy-validation binaries (`qa-bem-*`, `qa-fem-*`, `qa-solvers-*`, …) with Wolfram-derived goldens |
 | `sonium-bench` | Vendor-comparison and performance harnesses |
-
-Two extra directories under `crates/` (`sonium-meshlang`, `sonium-solvers-direct`
-at top level) are not workspace members.
-
-### Dependency layers
-
-```
-Layer 0 — math primitives : fastmath
-Layer 1 — foundations     : wave, xem, solvers (+ family), mesher
-Layer 1.5 — transforms    : fft, audio
-Layer 2 — PDE solvers     : bem, fem, coupling, meshlang
-Layer 3 — applications    : sim-*, roomeq, wasm
-Side    — qa, bench       : validation and performance harnesses
-```
 
 ## Requirements
 
@@ -180,7 +174,8 @@ Rayon parallelism is always on. Optional features:
    for large BEM, mixed precision where applicable. For CUDA, budget
    against free VRAM, never host RAM.
 
-Details, per-platform records, and methodology: `PERF.md` and `perf/`.
+Details, per-platform records, and methodology: `PERF.md` and `perf/`. You
+can visualise the same data at https://sonium.spinorama.org/perf/
 
 ## Key APIs
 
