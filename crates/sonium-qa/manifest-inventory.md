@@ -7,14 +7,14 @@ validated cases, not every runnable QA binary.
 
 ## Summary
 
-- Registered Cargo QA binaries: 912
-- Manifest-backed validation cases: 677
+- Registered Cargo QA binaries: 976
+- Manifest-backed validation cases: 689
 
 | Tier | Cases |
 | --- | ---: |
 | accelerator-gate | 8 |
 | contract-gate | 21 |
-| physics-gate | 334 |
+| physics-gate | 346 |
 | reference-only | 54 |
 | smoke | 155 |
 | solver-gate | 105 |
@@ -217,8 +217,10 @@ validated cases, not every runnable QA binary.
 | fem.adaptive-mpc-transfer.v1 | sonium-fem | `qa-fem-adaptive-mpc-transfer` | physics-gate | real MPC recovery and restriction around sequential H1, H(curl), RT0, and RT1 lineage transfer |
 | fem.aeroacoustics-drp-reference.v1 | fem | `qa-fem-aeroacoustics-drp` | reference-only | Tam-Webb DRP-7 periodic linearized-Euler reference |
 | fem.battery-3d.v1 | fem | `qa-fem-battery-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
+| fem.beam-validation.v1 | fem | `qa-fem-beam-validation` | physics-gate | Euler-Bernoulli static cases plus inverse-iteration free-vibration eigen-solve with independent eigen-residual |
 | fem.biharmonic-3d.v1 | fem | `qa-fem-biharmonic-3d` | physics-gate | mixed P1 q=-Laplacian(u) block-contract validation |
 | fem.biharmonic-mms-3d.v1 | fem | `qa-fem-biharmonic-mms-3d` | physics-gate | solved P1 mixed Navier biharmonic manufactured-solution refinement |
+| fem.biharmonic-validation.v1 | fem | `qa-fem-biharmonic-validation` | physics-gate | 2D mixed biharmonic solve of u = sin(pi x) sin(pi y) on n=4/8 plus uniform-load Navier plate |
 | fem.complex-dirichlet-elimination.v1 | sonium-fem | `qa-fem-complex-dirichlet-elimination` | physics-gate | transactional prescribed-value column correction and row/column elimination |
 | fem.compressible-conservation-3d.v1 | fem | `qa-fem-compressible-conservation-3d` | physics-gate | nonuniform smooth P1 DG state advanced by SSPRK3 in a closed slip-wall box |
 | fem.compressible-navier-stokes-3d.v1 | fem | `qa-fem-compressible-ns-3d` | physics-gate | P1 DG free-stream, SSPRK3 positivity, and Sutherland transport gate |
@@ -228,6 +230,8 @@ validated cases, not every runnable QA binary.
 | fem.curved-p2-assembly-reference.v1 | sonium-fem | `qa-fem-curved-p2-assembly-reference` | physics-gate | production H1 P2 Laplacian assembly on explicit isoparametric geometry |
 | fem.curved-p2-h1-geometry.v1 | sonium-fem | `qa-fem-curved-p2-geometry-reference` | physics-gate | production H1 P1/P2 fields on explicit isoparametric P2 geometry |
 | fem.dg-p3-contract.v1 | fem | `qa-fem-dg-p3-contract` | physics-gate | production DG P3 tabulation, element-local numbering, and boundary trace ownership |
+| fem.eigenphysics-wrappers.v1 | fem | `qa-fem-eigenphysics-wrappers` | physics-gate | shift-invert eigensolves with residual, self-convergence, cross-check, and Rayleigh-consistency gates |
+| fem.electroacoustics-validation.v1 | fem | `qa-fem-electroacoustics-validation` | physics-gate | 5 Hz driven coupled solve with residual, decoupled-limit, transpose-reciprocity, and power-balance gates |
 | fem.electrochemistry-3d.v1 | fem | `qa-fem-electrochemistry-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
 | fem.electrothermal-3d.v1 | fem | `qa-fem-electrothermal-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
 | fem.element-contracts.v1 | fem | `qa-fem-element-contracts` | smoke | H1 partition/unisolvence plus H(div)/H(curl) local finite-element contracts |
@@ -289,7 +293,9 @@ validated cases, not every runnable QA binary.
 | fem.higher-order-hanging-node-contract.v1 | sonium-fem | `qa-fem-higher-order-hanging-node-contract` | physics-gate | DOF-coordinate edge/face ownership, Lagrange interpolation, generic MPC recovery |
 | fem.higher-order-hexa-hanging-node-contract.v1 | sonium-fem | `qa-fem-higher-order-hexa-hanging-node-contract` | physics-gate | largest-containing-face ownership, tensor-product Lagrange interpolation, generic MPC recovery |
 | fem.higher-order-natural-boundary-contract.v1 | sonium-fem | `qa-fem-higher-order-natural-boundary-contract` | physics-gate | quadratic and cubic Lagrange trace integration with curved isoparametric edge/face Jacobians and rollback |
+| fem.magnetostatics-validation.v1 | fem | `qa-fem-magnetostatics-validation` | physics-gate | exterior-dipole BVP solve, A_z Poisson wire solve vs Biot-Savart, mu-metal shell shielding solve, and two-wire energy/inductance solve |
 | fem.maxwell-coefficient-reference.v1 | fem | `qa-fem-maxwell-coefficient-reference` | physics-gate | MaxwellForm explicit complex mass coefficient through checked H(curl) assembly |
+| fem.maxwell-validation.v1 | fem | `qa-fem-maxwell-validation` | physics-gate | 2D PEC waveguide eigen-solve with modal-shape check and 3D PEC unit-cube cavity eigen-solve with shift-invert |
 | fem.mesh-transfer-adjoint.v1 | fem | `qa-fem-mesh-transfer` | physics-gate | mass-weighted interpolation pairing identity across a uniform refinement |
 | fem.mesh-transfer-design.v1 | fem | `qa-fem-mesh-transfer` | physics-gate | centroid inheritance across a uniform refinement with area-weighted conservation |
 | fem.mhd-3d.v1 | fem | `qa-fem-mhd-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
@@ -297,6 +303,7 @@ validated cases, not every runnable QA binary.
 | fem.mixed-hdiv-conservation.v1 | sonium-fem | `qa-fem-mixed-hdiv-conservation` | physics-gate | production RT0/P1 mixed coupling row sums versus independent RT0 divergence integration |
 | fem.mpc-system-contract.v1 | sonium-fem | `qa-fem-mpc-system-contract` | physics-gate | complex Bloch and real anti-periodic prolongation condensation with typed system validation |
 | fem.natural-boundary-contract.v1 | sonium-fem | `qa-fem-natural-boundary-contract` | physics-gate | transactional edge/face natural-boundary integration with typed rejection and rollback |
+| fem.nonlinear-solid-validation.v1 | fem | `qa-fem-nonlinear-solid-validation` | physics-gate | prescribed-displacement compression and consistent-traction legs via production Newton solver from u=0 |
 | fem.nonlinear-tangent.v1 | fem | `qa-fem-nonlinear-tangent` | physics-gate | finite-difference Taylor remainder on production Neo-Hookean element |
 | fem.operator-invariants.v1 | fem | `qa-fem-operator-invariants` | physics-gate | production P1 stiffness/mass CSR invariant gate |
 | fem.p2-poisson-convergence-3d.v1 | sonium-fem | `qa-fem-p2-poisson-convergence-3d` | physics-gate | production 3-D P2 tetrahedron and Q2 hexahedron scalar FEM path |
@@ -305,6 +312,7 @@ validated cases, not every runnable QA binary.
 | fem.p3-tetra-trace-orientation.v1 | fem | `qa-fem-p3-tetra-trace-orientation` | physics-gate | cubic reproduction, global edge-direction checks, and shared-face trace continuity across reversed local ordering |
 | fem.phase-field-flow-3d.v1 | fem | `qa-fem-phase-field-flow-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
 | fem.piola-consumer-contract.v1 | sonium-fem | `qa-fem-piola-consumer-contract` | physics-gate | shared covariant/contravariant/curl/divergence Piola mappings through try_tabulate |
+| fem.plasticity-validation.v1 | fem | `qa-fem-plasticity-validation` | physics-gate | 10-step yielding with first-yield gate, yield consistency, plastic-work, hardening, unload, and reverse-yield checks |
 | fem.pml-directional-contract.v1 | sonium-fem | `qa-fem-pml-directional-contract` | physics-gate | production PmlRegion stretching, mass, and directional stiffness coefficients on all 2-D sides |
 | fem.pml-open-boundary-reference.v1 | sonium-fem | `qa-fem-pml-open-boundary-reference` | physics-gate | independent analytically continued outgoing plane wave through physical strip and x-positive PML |
 | fem.porous-flow-3d.v1 | fem | `qa-fem-porous-flow-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
@@ -313,10 +321,12 @@ validated cases, not every runnable QA binary.
 | fem.reacting-flow-3d.v1 | fem | `qa-fem-reacting-flow-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
 | fem.schwarz-pml-reflection.v1 | fem | `qa-fem-schwarz-pml-validation` | physics-gate | target-reflection sweep against the monolithic discrete Helmholtz reference |
 | fem.semiconductor-3d.v1 | fem | `qa-fem-semiconductor-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
+| fem.shell-validation.v1 | fem | `qa-fem-shell-validation` | physics-gate | solved 12x2-cell clamped cantilever with tip load plus axial-tension solve with CST stress recovery |
 | fem.solver-failure-contract.v1 | sonium-fem | `qa-fem-solver-failure-contract` | smoke | FEM SolverError implements sonium-solvers SolverFailure vocabulary |
 | fem.spatial-source-locator.v1 | sonium-fem | `qa-fem-spatial-source-locator` | physics-gate | deterministic BVH traversal with lowest-index shared-boundary ownership |
 | fem.stokes-stability.v1 | fem | `qa-fem-stokes-validation` | physics-gate | Poiseuille analytical solve plus coupling/null-block and cavity/Couette stability checks |
 | fem.thermal-dirichlet.v1 | fem | `qa-fem-thermal` | physics-gate | production P1 steady thermal bar with opposite Dirichlet walls |
+| fem.thermal-validation.v1 | fem | `qa-fem-thermal-validation` | physics-gate | nonpolynomial manufactured solution on refined unit squares with element-quadrature L2 error |
 | fem.thermoelasticity-3d.v1 | fem | `qa-fem-thermoelasticity-3d` | physics-gate | P1 tetrahedral coupling patch and dimension-reduction gate |
 | fem.thermoelectric-3d.v1 | fem | `qa-fem-thermoelectric-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
 | fem.transport-3d.v1 | fem | `qa-fem-transport-3d` | physics-gate | P1 tetrahedral linear patch and dimension-reduction gate |
@@ -461,6 +471,7 @@ validated cases, not every runnable QA binary.
 | propeller.viscous-core-reference.v1 | sim-propellers | `qa-propeller-viscous-core` | physics-gate | bounded Lamb--Oseen Gaussian-core diffusion reference |
 | propeller.vortex-lattice-reference.v1 | sim-propellers | `qa-propeller-vortex-lattice` | physics-gate | checked steady horseshoe-vortex lattice with finite discretized trailing wake |
 | qa.accelerator-fault-contract.v1 | sonium-qa | `qa-accelerator-fault-contract` | contract-gate | CPU-only injection of fallback, skip, stale-checksum, and non-finite result records |
+| room.shoebox-fem-benchmark.v1 | sim-room | `qa-room-shoebox-fem-benchmark` | physics-gate | 6-pair LOBPCG eigensolve of K u = lambda M u with zero-mode, spectrum, residual, and modal-field gates |
 | roomsim.application-reference-correlation.v1 | sim-room | `qa-room-reference-correlation` | physics-gate | production RoomSim FEM point-load path with matched admittance boundaries |
 | roomsim.backend-parity-contract.v1 | sim-room | `qa-room-backend-parity-contract` | reference-only | matching source/listener/frequency topology, solved provenance, and relative complex-pressure error budget |
 | roomsim.cross-backend-spatial-correlation.v1 | sim-room | `qa-room-cross-backend-correlation` | physics-gate | production CPU fast-hybrid and FEM RoomSim backends with shared source, boundary, and listener fixture |
@@ -652,6 +663,7 @@ validated cases, not every runnable QA binary.
 | speaker.fem-bem-rom.v1 | sim-speaker-modeling | `qa-speaker-acoustic-rom` | physics-gate | production FEM acoustic ROM with coupled FEM-BEM port path |
 | speaker.independent-magnetic-enclosure-references.v1 | sim-speaker-modeling | `qa-speaker-independent-references` | smoke | uniform magnetic-circuit coenergy/force plus rigid-cavity and Helmholtz closed forms |
 | speaker.native-x86-golden.v1 | sonium-sim-speaker | `qa-speaker-native-x86-golden` | accelerator-gate | deterministic CPU CEA/directivity/config/reduced/full/projected DriverModel artifact generation with explicit native x86 dispatch metadata and required accepted aarch64 comparison |
+| speaker.piston-directivity-benchmark.v1 | sim-speaker-modeling | `qa-speaker-piston-directivity-benchmark` | physics-gate | baffled-piston Rayleigh surface integral at ka=3,5 over 3 refinement levels against an overkill grid |
 | speaker.port-flow-promotion-contract.v1 | sim-speaker-modeling | `qa-speaker-port-flow-promotion` | smoke | deterministic accepted-trace phasor, residual, continuity, and energy gate |
 | structural.backend-capability-catalogue.v1 | structural-mechanics | `qa-structural-backend-capabilities` | reference-only | CPU-reference capability catalogue with fail-closed CUDA, Metal, and WASM declarations |
 | structural.beam-mesh-convergence.v1 | structural-mechanics | `qa-structural-beam-convergence` | physics-gate | production cantilever solves over five deterministic mesh resolutions |

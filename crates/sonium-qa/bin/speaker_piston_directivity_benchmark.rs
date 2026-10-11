@@ -1,15 +1,40 @@
 //! Baffled circular-piston radiation/directivity benchmark.
 //!
-//! This validates the analytic benchmark quantities used to check future BEM
-//! loudspeaker radiation runs: piston directivity, first null, radiated power,
-//! and low-frequency radiation impedance scaling.
+//! Two complementary legs: analytical self-consistency of the benchmark
+//! quantities (piston directivity, first null, radiated power, low-frequency
+//! radiation impedance scaling), and a numerical baffled-piston radiation
+//! computation via the Rayleigh surface integral with quadrature refinement.
+//! The numerical far-field pressure is compared against the independent
+//! closed-form `2 J1(u) / u` directivity reference, so this binary exercises
+//! real numerical radiation rather than formula evaluation alone.
 
+use num_complex::Complex64;
 use sonium_fem::physics::acoustics::electroacoustics::lumped_extraction::radiation_impedance_piston_lf;
+use sonium_qa::QaResult;
 use spec_math::Bessel;
 use std::f64::consts::PI;
 
 const RHO: f64 = 1.204;
 const C: f64 = 343.0;
+
+// Named acceptance tolerances for the analytical reference checks.
+const ON_AXIS_DIRECTIVITY_TOL: f64 = 1.0e-12;
+const FIRST_NULL_TOL: f64 = 1.0e-10;
+const POWER_SCALING_TOL: f64 = 1.0e-12;
+const RADIATION_IMPEDANCE_TOL: f64 = 1.0e-12;
+
+// Numerical Rayleigh-integral radiation leg. The piston surface is integrated
+// with a polar midpoint rule at three refinements; the far-field pressure at
+// each probe angle is normalized by the on-axis analytical amplitude so the
+// error stays meaningful through directivity nulls.
+const RAYLEIGH_FIELD_RADIUS: f64 = 20.0;
+const RAYLEIGH_PROBE_ANGLES_DEG: [f64; 7] = [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0];
+// (radial cells, angular cells) per refinement level, plus an overkill grid
+// that serves as the self-convergence reference.
+const RAYLEIGH_REFINEMENTS: [(usize, usize); 3] = [(12, 48), (24, 96), (48, 192)];
+const RAYLEIGH_OVERKILL_GRID: (usize, usize) = (96, 384);
+const RAYLEIGH_MAX_NORMALIZED_ERROR: f64 = 0.05;
+const RAYLEIGH_MAX_SELF_ERROR: f64 = 1.0e-4;
 
 #[derive(Clone, Copy, Debug)]
 struct Piston {
@@ -55,7 +80,7 @@ fn validate_directivity_shape(piston: Piston) -> Result<(), String> {
     let at_60 = piston.directivity(ka, 60.0_f64.to_radians()).abs();
     let at_90 = piston.directivity(ka, 90.0_f64.to_radians()).abs();
 
-    assert_close("on-axis directivity", on_axis, 1.0, 1.0e-12)?;
+    assert_close("on-axis directivity", on_axis, 1.0, ON_AXIS_DIRECTIVITY_TOL)?;
     if !(at_30 > at_60 && at_60 > at_90) {
         return Err(format!(
             "piston directivity should narrow monotonically over 0..90 deg for ka=3: D30={at_30:.6}, D60={at_60:.6}, D90={at_90:.6}"
@@ -74,7 +99,7 @@ fn validate_first_null(piston: Piston) -> Result<(), String> {
     let theta_null = (first_j1_zero / ka).asin();
     let directivity = piston.directivity(ka, theta_null);
 
-    assert_close("first directivity null", directivity, 0.0, 1.0e-10)?;
+    assert_close("first directivity null", directivity, 0.0, FIRST_NULL_TOL)?;
     println!(
         "  First null ka={ka:.1}: theta={:.3} deg, D={directivity:.3e}",
         theta_null.to_degrees()
@@ -92,13 +117,13 @@ fn validate_low_frequency_power_scaling(piston: Piston) -> Result<(), String> {
         "radiated power f^2 scaling 50->100",
         p100 / p50,
         4.0,
-        1.0e-12,
+        POWER_SCALING_TOL,
     )?;
     assert_close(
         "radiated power f^2 scaling 100->200",
         p200 / p100,
         4.0,
-        1.0e-12,
+        POWER_SCALING_TOL,
     )?;
 
     println!("  LF radiated power: P50={p50:.6e} W, P100={p100:.6e} W, P200={p200:.6e} W");
@@ -118,13 +143,13 @@ fn validate_radiation_impedance_limits(piston: Piston) -> Result<(), String> {
         "radiation resistance low-frequency limit",
         z.re,
         expected_re,
-        1.0e-12,
+        RADIATION_IMPEDANCE_TOL,
     )?;
     assert_close(
         "radiation reactance low-frequency limit",
         z.im,
         expected_im,
-        1.0e-12,
+        RADIATION_IMPEDANCE_TOL,
     )?;
     assert!(
         z.im > z.re,
@@ -138,7 +163,191 @@ fn validate_radiation_impedance_limits(piston: Piston) -> Result<(), String> {
     Ok(())
 }
 
-fn run() -> Result<(), String> {
+/// Closed-form far-field pressure of a baffled piston with uniform velocity.
+///
+/// With `e^{iwt}` time dependence the Rayleigh integral reduces in the far
+/// field to `p = i rho c k v A e^{-ikR} / (2 pi R) * D(theta)` with the
+/// `2 J1(u) / u` directivity factor, `u = k a sin(theta)`.
+fn analytical_far_field_pressure(
+    piston: Piston,
+    wavenumber: f64,
+    field_radius: f64,
+    theta_rad: f64,
+) -> Complex64 {
+    let ka = wavenumber * piston.radius;
+    let amplitude =
+        RHO * C * wavenumber * piston.velocity * piston.area() / (2.0 * PI * field_radius);
+    let phase = wavenumber * field_radius;
+    let propagator = Complex64::new(phase.cos(), -phase.sin());
+    Complex64::new(0.0, amplitude) * propagator * piston.directivity(ka, theta_rad)
+}
+
+/// Numerical baffled-piston pressure from the Rayleigh surface integral.
+///
+/// Integrates `(i w rho v / 2 pi) e^{-ikd} / d` over the piston disk with a
+/// polar midpoint rule (`nr` radial by `nphi` angular cells). This is a genuine
+/// numerical radiation computation: no closed-form directivity enters.
+fn rayleigh_integral_pressure(
+    piston: Piston,
+    wavenumber: f64,
+    field_radius: f64,
+    theta_rad: f64,
+    nr: usize,
+    nphi: usize,
+) -> Complex64 {
+    let omega = wavenumber * C;
+    let prefactor = Complex64::new(0.0, omega * RHO * piston.velocity / (2.0 * PI));
+    let field = [
+        field_radius * theta_rad.sin(),
+        0.0,
+        field_radius * theta_rad.cos(),
+    ];
+    let dr = piston.radius / nr as f64;
+    let dphi = 2.0 * PI / nphi as f64;
+
+    let mut integral = Complex64::new(0.0, 0.0);
+    for i in 0..nr {
+        let r = (i as f64 + 0.5) * dr;
+        for j in 0..nphi {
+            let phi = (j as f64 + 0.5) * dphi;
+            let dx = field[0] - r * phi.cos();
+            let dy = field[1] - r * phi.sin();
+            let dz = field[2];
+            let distance = (dx * dx + dy * dy + dz * dz).sqrt();
+            let phase = wavenumber * distance;
+            let green = Complex64::new(phase.cos(), -phase.sin()) / distance;
+            integral += green * (r * dr * dphi);
+        }
+    }
+    prefactor * integral
+}
+
+/// Numerical far-field pressures at every probe angle for one quadrature grid.
+fn rayleigh_probe_pressures(
+    piston: Piston,
+    wavenumber: f64,
+    nr: usize,
+    nphi: usize,
+) -> Result<Vec<Complex64>, String> {
+    let mut pressures = Vec::with_capacity(RAYLEIGH_PROBE_ANGLES_DEG.len());
+    for angle_deg in RAYLEIGH_PROBE_ANGLES_DEG {
+        let theta = angle_deg.to_radians();
+        let pressure =
+            rayleigh_integral_pressure(piston, wavenumber, RAYLEIGH_FIELD_RADIUS, theta, nr, nphi);
+        if !pressure.re.is_finite() || !pressure.im.is_finite() {
+            return Err(format!(
+                "non-finite Rayleigh pressure at {angle_deg} deg for ka={:.1}",
+                wavenumber * piston.radius
+            ));
+        }
+        pressures.push(pressure);
+    }
+    Ok(pressures)
+}
+
+/// Maximum normalized difference between two probe sweeps.
+fn max_probe_difference(
+    numerical: &[Complex64],
+    reference: &[Complex64],
+    normalization: f64,
+) -> f64 {
+    numerical
+        .iter()
+        .zip(reference.iter())
+        .map(|(a, b)| (a - b).norm() / normalization)
+        .fold(0.0, f64::max)
+}
+
+struct RayleighLegMetrics {
+    coarse_self_error: f64,
+    fine_self_error: f64,
+    fine_reference_error: f64,
+}
+
+/// Numerical piston radiation leg: Rayleigh-integral far field with refinement.
+///
+/// Quadrature convergence is measured against an overkill grid (self-error
+/// must contract across the refinement ladder), while absolute accuracy is
+/// measured against the independent closed-form far-field reference. The two
+/// comparisons stay separate because the closed form itself carries a finite
+/// field-radius approximation that no quadrature refinement can remove.
+fn validate_numerical_rayleigh_radiation(
+    piston: Piston,
+    ka: f64,
+) -> Result<RayleighLegMetrics, String> {
+    let wavenumber = ka / piston.radius;
+    let normalization =
+        analytical_far_field_pressure(piston, wavenumber, RAYLEIGH_FIELD_RADIUS, 0.0).norm();
+    if !normalization.is_finite() || normalization <= 0.0 {
+        return Err(format!(
+            "non-positive on-axis reference amplitude {normalization:.3e} for ka={ka:.1}"
+        ));
+    }
+    let overkill = rayleigh_probe_pressures(
+        piston,
+        wavenumber,
+        RAYLEIGH_OVERKILL_GRID.0,
+        RAYLEIGH_OVERKILL_GRID.1,
+    )?;
+
+    let mut self_errors = Vec::with_capacity(RAYLEIGH_REFINEMENTS.len());
+    let mut fine_pressures = Vec::new();
+    for (nr, nphi) in RAYLEIGH_REFINEMENTS {
+        let pressures = rayleigh_probe_pressures(piston, wavenumber, nr, nphi)?;
+        let self_error = max_probe_difference(&pressures, &overkill, normalization);
+        println!("  Rayleigh ka={ka:.1} grid {nr}x{nphi}: self-error {self_error:.4e}");
+        self_errors.push(self_error);
+        fine_pressures = pressures;
+    }
+    for level in 1..self_errors.len() {
+        if self_errors[level] >= self_errors[level - 1] {
+            return Err(format!(
+                "Rayleigh self-error must contract with refinement for ka={ka:.1}: {self_errors:?}"
+            ));
+        }
+    }
+    let fine_self = *self_errors.last().expect("at least one refinement level");
+    if fine_self > RAYLEIGH_MAX_SELF_ERROR {
+        return Err(format!(
+            "Rayleigh fine-grid self-error {fine_self:.4e} exceeds {RAYLEIGH_MAX_SELF_ERROR:.1e} for ka={ka:.1}"
+        ));
+    }
+
+    let reference: Vec<Complex64> = RAYLEIGH_PROBE_ANGLES_DEG
+        .iter()
+        .map(|angle_deg| {
+            analytical_far_field_pressure(
+                piston,
+                wavenumber,
+                RAYLEIGH_FIELD_RADIUS,
+                angle_deg.to_radians(),
+            )
+        })
+        .collect();
+    let fine_reference_error = max_probe_difference(&fine_pressures, &reference, normalization);
+    println!("  Rayleigh ka={ka:.1} fine grid vs closed form: {fine_reference_error:.4e}");
+    if fine_reference_error > RAYLEIGH_MAX_NORMALIZED_ERROR {
+        return Err(format!(
+            "Rayleigh fine-grid error {fine_reference_error:.4e} exceeds {RAYLEIGH_MAX_NORMALIZED_ERROR:.1e} for ka={ka:.1}"
+        ));
+    }
+    Ok(RayleighLegMetrics {
+        coarse_self_error: self_errors[0],
+        fine_self_error: fine_self,
+        fine_reference_error,
+    })
+}
+
+struct BenchmarkMetrics {
+    rayleigh_coarse_self_ka3: f64,
+    rayleigh_fine_self_ka3: f64,
+    rayleigh_fine_error_ka3: f64,
+    rayleigh_coarse_self_ka5: f64,
+    rayleigh_fine_self_ka5: f64,
+    rayleigh_fine_error_ka5: f64,
+}
+
+fn run() -> Result<BenchmarkMetrics, String> {
     let piston = Piston {
         radius: 0.085,
         velocity: 0.01,
@@ -149,17 +358,58 @@ fn run() -> Result<(), String> {
     validate_first_null(piston)?;
     validate_low_frequency_power_scaling(piston)?;
     validate_radiation_impedance_limits(piston)?;
-    Ok(())
+    println!("Numerical Rayleigh-integral radiation:");
+    let ka3 = validate_numerical_rayleigh_radiation(piston, 3.0)?;
+    let ka5 = validate_numerical_rayleigh_radiation(piston, 5.0)?;
+    Ok(BenchmarkMetrics {
+        rayleigh_coarse_self_ka3: ka3.coarse_self_error,
+        rayleigh_fine_self_ka3: ka3.fine_self_error,
+        rayleigh_fine_error_ka3: ka3.fine_reference_error,
+        rayleigh_coarse_self_ka5: ka5.coarse_self_error,
+        rayleigh_fine_self_ka5: ka5.fine_self_error,
+        rayleigh_fine_error_ka5: ka5.fine_reference_error,
+    })
 }
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("FAILED: {error}");
-        println!("FAILED");
-        std::process::exit(1);
+    match run() {
+        Err(error) => {
+            if let Ok(record) =
+                QaResult::failed("speaker.piston-directivity-benchmark.v1", error.as_str())
+                    .to_json_line()
+            {
+                println!("QA_RESULT: {record}");
+            }
+            eprintln!("FAILED: {error}");
+            println!("FAILED");
+            std::process::exit(1);
+        }
+        Ok(metrics) => {
+            let record = QaResult::passed("speaker.piston-directivity-benchmark.v1")
+                .requested_backend("cpu")
+                .actual_backend("cpu")
+                .metric("rayleigh_coarse_self_ka3", metrics.rayleigh_coarse_self_ka3)
+                .metric("rayleigh_fine_self_ka3", metrics.rayleigh_fine_self_ka3)
+                .metric("rayleigh_fine_error_ka3", metrics.rayleigh_fine_error_ka3)
+                .metric("rayleigh_coarse_self_ka5", metrics.rayleigh_coarse_self_ka5)
+                .metric("rayleigh_fine_self_ka5", metrics.rayleigh_fine_self_ka5)
+                .metric("rayleigh_fine_error_ka5", metrics.rayleigh_fine_error_ka5)
+                .maximum("rayleigh_fine_self_ka3", RAYLEIGH_MAX_SELF_ERROR)
+                .maximum("rayleigh_fine_self_ka5", RAYLEIGH_MAX_SELF_ERROR)
+                .maximum("rayleigh_fine_error_ka3", RAYLEIGH_MAX_NORMALIZED_ERROR)
+                .maximum("rayleigh_fine_error_ka5", RAYLEIGH_MAX_NORMALIZED_ERROR)
+                .seed("baffled-piston:rayleigh-midpoint:12/24/48:ka3-ka5");
+            match record.to_json_line() {
+                Ok(json) => println!("QA_RESULT: {json}"),
+                Err(error) => {
+                    eprintln!("FAILED: {error}");
+                    println!("FAILED");
+                    std::process::exit(1);
+                }
+            }
+            println!("SUCCESS");
+        }
     }
-
-    println!("SUCCESS");
 }
 
 #[cfg(test)]
@@ -169,5 +419,24 @@ mod tests {
     #[test]
     fn piston_benchmark_quantities_are_stable() {
         run().expect("baffled piston benchmark should satisfy analytic reference checks");
+    }
+
+    #[test]
+    fn rayleigh_far_field_matches_closed_form_directivity() {
+        let piston = Piston {
+            radius: 0.085,
+            velocity: 0.01,
+        };
+        let leg = validate_numerical_rayleigh_radiation(piston, 3.0)
+            .expect("Rayleigh leg should evaluate");
+        assert!(
+            leg.fine_reference_error < RAYLEIGH_MAX_NORMALIZED_ERROR,
+            "fine Rayleigh error {:.4e} should stay below the release bound",
+            leg.fine_reference_error
+        );
+        assert!(
+            leg.fine_self_error < leg.coarse_self_error,
+            "Rayleigh self-error should contract with refinement"
+        );
     }
 }

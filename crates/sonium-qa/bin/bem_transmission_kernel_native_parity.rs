@@ -8,6 +8,11 @@ use sonium_qa::{QaResult, QaStatus};
 use std::time::Instant;
 
 const CASE_ID: &str = "bem.transmission-kernel-native-parity.v1";
+/// Manifest acceptance bound for `bem.transmission-kernel-native-parity.v1`.
+///
+/// Both forward and transpose relative action errors must satisfy this bound;
+/// loosening it weakens the physics-gate parity claim.
+const ACTION_ERROR_TOLERANCE: f64 = 2.0e-7;
 
 fn run() -> Result<(usize, f64, f64), String> {
     let mesh = generate_icosphere_mesh(0.2, 0);
@@ -60,11 +65,19 @@ fn run() -> Result<(usize, f64, f64), String> {
                 .fold(0.0_f64, f64::max)
                 .max(1.0)
     };
-    Ok((
-        system.total_dofs(),
-        relative(&native_forward, &dense_forward),
-        relative(&native_transpose, &dense_transpose),
-    ))
+    let forward_error = relative(&native_forward, &dense_forward);
+    let transpose_error = relative(&native_transpose, &dense_transpose);
+    if !forward_error.is_finite() || forward_error > ACTION_ERROR_TOLERANCE {
+        return Err(format!(
+            "kernel-native forward action error {forward_error:.3e} exceeds {ACTION_ERROR_TOLERANCE:.1e}"
+        ));
+    }
+    if !transpose_error.is_finite() || transpose_error > ACTION_ERROR_TOLERANCE {
+        return Err(format!(
+            "kernel-native transpose action error {transpose_error:.3e} exceeds {ACTION_ERROR_TOLERANCE:.1e}"
+        ));
+    }
+    Ok((system.total_dofs(), forward_error, transpose_error))
 }
 
 fn main() {
@@ -74,6 +87,8 @@ fn main() {
             .metric("dimension", dimension as f64)
             .metric("forward_action_error", forward_error)
             .metric("transpose_action_error", transpose_error)
+            .maximum("forward_action_error", ACTION_ERROR_TOLERANCE)
+            .maximum("transpose_action_error", ACTION_ERROR_TOLERANCE)
             .input_checksum("bem:icosphere:subdivision-0:constant-transmission")
             .reference_checksum(
                 "analytic/deterministic-fixture:bem-transmission-kernel-native-parity-v1",

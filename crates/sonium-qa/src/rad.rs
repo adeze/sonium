@@ -39,6 +39,11 @@ use std::process::Command;
 #[path = "oc_golden.rs"]
 pub mod oc_golden;
 
+/// One-command miniqa golden regen plus offline drift check (Phase-4
+/// lane 4D).
+#[path = "oc_regen.rs"]
+pub mod oc_regen;
+
 /// Failure of a Radioss harness operation.
 #[derive(Debug)]
 pub enum RadError {
@@ -2840,6 +2845,3549 @@ pub fn perfectly_plastic_steel_law36(
     ))
 }
 
+// =====================================================================
+// Phase-4 lane 4B writer completion. Additive: nothing above this line
+// changes behavior or writer output. P4C1: `RadCase` is frozen, so every
+// new card arrives as a NEW type plus a NEW `write_*` function, bundled
+// for deck splicing through `RadExtra` (`write_starter_extra` /
+// `write_engine_extra`). Card layouts follow the Altair Radioss 2022
+// Reference Guide block format (ten 10-character fields per line, p.41);
+// each item cites its guide page plus the deck- or reader-grounded
+// layout checks recorded in the worker report.
+// =====================================================================
+
+/// Render an interface `IBC` flag triplet (columns 8-10, guide p.252).
+///
+/// The reader layout is `%7s%1d%1d%1d` (hm_cfg_files `inter_type7.cfg`,
+/// radioss2020 section), so the three axis flags sit at columns 8, 9,
+/// and 10 with seven leading blanks.
+fn field_ibc(ibc: [bool; 3]) -> String {
+    let bit = |flag: bool| if flag { '1' } else { '0' };
+    format!("       {}{}{}", bit(ibc[0]), bit(ibc[1]), bit(ibc[2]))
+}
+
+/// Render a signed flag in a 10-character integer field.
+fn field_int32(value: i32) -> String {
+    format!("{value:>10}")
+}
+
+/// Render a left-justified name clipped to 20 characters.
+///
+/// Vent and porous titles occupy the last 20 columns of their card
+/// (AIRBAG1 porous layout, hm_cfg_files radioss140 `airbag1.cfg`).
+fn field_name20(name: &str) -> String {
+    let clipped: String = name.chars().take(20).collect();
+    format!("{clipped:<20}")
+}
+
+/// Render a header/title/id-list block (ten ids per line).
+///
+/// Shared by `/SURF/PART`, `/GRNOD/SURF`, and `/LINE/SURF`, whose
+/// formats are all "any number may be input, 10 per line" (guide
+/// pp.2358, 2471, 2490).
+fn write_id_list(deck: &mut String, header: &str, title: &str, ids: &[usize]) {
+    deck.push_str(header);
+    deck.push('\n');
+    deck.push_str(title);
+    deck.push('\n');
+    for chunk in ids.chunks(10) {
+        let mut line = String::new();
+        for id in chunk {
+            line.push_str(&field_int(*id));
+        }
+        line.push('\n');
+        deck.push_str(&line);
+    }
+}
+
+/// Part surface rendered as `/SURF/PART` (guide p.2490).
+///
+/// Collects the shell faces of the listed parts into one surface for
+/// interfaces (`/INTER/TYPE2`, `/INTER/TYPE7`) and monitored volumes.
+/// All segments must belong to 2D (shell/triangle) elements.
+#[derive(Debug, Clone)]
+pub struct RadSurfParts {
+    /// Surface id written on the card.
+    pub id: usize,
+    /// Surface title written on the card.
+    pub title: String,
+    /// Part ids forming the surface (1-based, at least one).
+    pub parts: Vec<usize>,
+}
+
+/// Node group collected from surfaces (`/GRNOD/SURF`, guide p.2358).
+///
+/// Supplies secondary nodes for `/INTER/TYPE2` and `/INTER/TYPE7`
+/// from previously defined surfaces.
+#[derive(Debug, Clone)]
+pub struct RadGrnodSurfs {
+    /// Node group id written on the card.
+    pub id: usize,
+    /// Group title written on the card.
+    pub title: String,
+    /// Surface ids forming the group (at least one).
+    pub surfs: Vec<usize>,
+}
+
+/// Line group collected from surfaces (`/LINE/SURF`, guide p.2471).
+///
+/// Supplies the secondary and main lines for `/INTER/TYPE11` from
+/// previously defined surfaces.
+#[derive(Debug, Clone)]
+pub struct RadLineSurfs {
+    /// Line group id written on the card.
+    pub id: usize,
+    /// Line title written on the card.
+    pub title: String,
+    /// Surface ids forming the lines (at least one).
+    pub surfs: Vec<usize>,
+}
+
+/// Part subset rendered as `/SUBSET`.
+///
+/// The bare header-plus-title form is deck-proven (miniqa `IDEL8`,
+/// `RBPLI` decks); subsets group parts for `/TH/SUBS` output.
+#[derive(Debug, Clone)]
+pub struct RadSubset {
+    /// Subset id written on the card.
+    pub id: usize,
+    /// Subset title written on the card.
+    pub title: String,
+}
+
+/// Render one `/SURF/PART` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadSurfParts, write_surf_parts};
+/// let mut deck = String::new();
+/// write_surf_parts(&mut deck, &RadSurfParts { id: 4, title: "box skin".to_string(), parts: vec![1] });
+/// assert!(deck.contains("/SURF/PART/4\n"));
+/// ```
+pub fn write_surf_parts(deck: &mut String, surf: &RadSurfParts) {
+    write_id_list(
+        deck,
+        &format!("/SURF/PART/{}", surf.id),
+        &surf.title,
+        &surf.parts,
+    );
+}
+
+/// Render one `/GRNOD/SURF` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadGrnodSurfs, write_grnod_surfs};
+/// let mut deck = String::new();
+/// write_grnod_surfs(&mut deck, &RadGrnodSurfs { id: 32, title: "contact nodes".to_string(), surfs: vec![4] });
+/// assert!(deck.contains("/GRNOD/SURF/32\n"));
+/// ```
+pub fn write_grnod_surfs(deck: &mut String, grnod: &RadGrnodSurfs) {
+    write_id_list(
+        deck,
+        &format!("/GRNOD/SURF/{}", grnod.id),
+        &grnod.title,
+        &grnod.surfs,
+    );
+}
+
+/// Render one `/LINE/SURF` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadLineSurfs, write_line_surfs};
+/// let mut deck = String::new();
+/// write_line_surfs(&mut deck, &RadLineSurfs { id: 33, title: "contact edges".to_string(), surfs: vec![4] });
+/// assert!(deck.contains("/LINE/SURF/33\n"));
+/// ```
+pub fn write_line_surfs(deck: &mut String, line: &RadLineSurfs) {
+    write_id_list(
+        deck,
+        &format!("/LINE/SURF/{}", line.id),
+        &line.title,
+        &line.surfs,
+    );
+}
+
+/// Render one `/SUBSET` block (header plus title).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadSubset, write_subset};
+/// let mut deck = String::new();
+/// write_subset(&mut deck, &RadSubset { id: 1, title: "all parts".to_string() });
+/// assert!(deck.contains("/SUBSET/1\nall parts\n"));
+/// ```
+pub fn write_subset(deck: &mut String, subset: &RadSubset) {
+    deck.push_str(&format!("/SUBSET/{}\n", subset.id));
+    deck.push_str(&format!("{}\n", subset.title));
+}
+
+/// Tied interface rendered as `/INTER/TYPE2` (guide p.205).
+///
+/// Connects secondary nodes to a main surface (coarse/fine mesh
+/// ties, spotwelds). This writer covers the base card; the
+/// rupture/spotweld extensions (`Spotflag` 20-22/25/27/28) are out of
+/// scope and rejected by validation.
+#[derive(Debug, Clone)]
+pub struct RadInterType2 {
+    /// Interface id written on the card.
+    pub id: usize,
+    /// Interface title written on the card.
+    pub title: String,
+    /// Secondary node group id (`grnd_IDs`).
+    pub grnd_secondary: usize,
+    /// Main surface id (`surf_IDm`).
+    pub surf_main: usize,
+    /// Ignore flag (0 = starter default, keep unprojected nodes).
+    pub ignore: i32,
+    /// Spotweld flag (0 = plain tied contact).
+    pub spotflag: i32,
+    /// Search level (0 = default).
+    pub level: i32,
+    /// Search flag (0 = default).
+    pub isearch: i32,
+    /// Deletion flag (0 = default).
+    pub idel: i32,
+    /// Search distance in metres (0 = automatic).
+    pub dsearch_m: f64,
+}
+
+impl RadInterType2 {
+    /// Plain tied interface between one group and one surface.
+    pub fn basic(id: usize, title: &str, grnd_secondary: usize, surf_main: usize) -> Self {
+        Self {
+            id,
+            title: title.to_string(),
+            grnd_secondary,
+            surf_main,
+            ignore: 0,
+            spotflag: 0,
+            level: 0,
+            isearch: 0,
+            idel: 0,
+            dsearch_m: 0.0,
+        }
+    }
+}
+
+/// General contact interface (`/INTER/TYPE7`, guide p.252).
+///
+/// Multi-usage impact interface between secondary nodes and a main
+/// surface. Layout is the current (radioss2020) reader format: ten
+/// ids with a blank sixth field, gap/stiffness lines, penalty line,
+/// `IBC` line, and friction line. Curvature nodes (`Icurv` 1/2),
+/// extra friction coefficients (`Ifric` > 0), thermal (`Ithe` > 1),
+/// and admixed (`Iadm` 2) extensions are out of scope.
+#[derive(Debug, Clone)]
+pub struct RadInterType7 {
+    /// Interface id written on the card.
+    pub id: usize,
+    /// Interface title written on the card.
+    pub title: String,
+    /// Secondary node group id.
+    pub grnd_secondary: usize,
+    /// Main surface id.
+    pub surf_main: usize,
+    /// Stiffness definition flag (0 = default).
+    pub istf: i32,
+    /// Thermal flag (0 = no heat transfer).
+    pub ithe: i32,
+    /// Gap flag (0 = constant gap).
+    pub igap: i32,
+    /// Airbag flag (0 = off).
+    pub ibag: i32,
+    /// Deletion flag (0 = default).
+    pub idel: i32,
+    /// Curvature flag (0 = off).
+    pub icurv: i32,
+    /// Admixture flag (0 = off).
+    pub iadm: i32,
+    /// Gap scale factor.
+    pub fscalegap: f64,
+    /// Maximum gap in metres.
+    pub gapmax_m: f64,
+    /// Maximum penetration force in N.
+    pub fpenmax_n: f64,
+    /// Tied-contact flag (0 = sliding).
+    pub itied: i32,
+    /// Minimum interface stiffness in N/m.
+    pub stmin: f64,
+    /// Maximum interface stiffness in N/m.
+    pub stmax: f64,
+    /// Mesh-size fraction for stiffness (0 = default).
+    pub mesh_size_pct: f64,
+    /// Minimum time step in seconds (0 = default).
+    pub dtmin_s: f64,
+    /// Gap-removal flag (0 = default).
+    pub irem_gap: i32,
+    /// Secondary-removal flag (0 = default).
+    pub irem_i2: i32,
+    /// Stiffness scale factor.
+    pub stfac: f64,
+    /// Coulomb friction coefficient.
+    pub fric: f64,
+    /// Minimum gap in metres.
+    pub gapmin_m: f64,
+    /// Activation start time in seconds.
+    pub tstart_s: f64,
+    /// Activation stop time in seconds.
+    pub tstop_s: f64,
+    /// Boundary deactivation flags per axis.
+    pub ibc: [bool; 3],
+    /// Inactivation flag (0 = active).
+    pub inacti: i32,
+    /// Stiffness damping.
+    pub viss: f64,
+    /// Friction damping.
+    pub visf: f64,
+    /// Sorting multiplier.
+    pub bumult: f64,
+    /// Friction model flag (0 = Coulomb).
+    pub ifric: i32,
+    /// Friction filter flag (0 = off).
+    pub ifiltr: i32,
+    /// Friction cutoff frequency in Hz.
+    pub xfreq_hz: f64,
+    /// Friction formulation flag (0 = default).
+    pub iform: i32,
+    /// Activation sensor id (0 = none).
+    pub sens_id: usize,
+    /// Friction function id (0 = none).
+    pub fct_idf: usize,
+    /// Friction function scale.
+    pub ascalef: f64,
+    /// Friction identifier (0 = none).
+    pub fric_id: usize,
+}
+
+impl RadInterType7 {
+    /// Frictionless sliding contact with default stiffness.
+    ///
+    /// Mirrors the deck-proven miniqa `TRITUBV4` values (`Stfac`
+    /// 0.2, open stop time); the stop default `1e30` keeps the
+    /// interface active through any run.
+    pub fn basic(id: usize, title: &str, grnd_secondary: usize, surf_main: usize) -> Self {
+        Self {
+            id,
+            title: title.to_string(),
+            grnd_secondary,
+            surf_main,
+            istf: 0,
+            ithe: 0,
+            igap: 0,
+            ibag: 0,
+            idel: 0,
+            icurv: 0,
+            iadm: 0,
+            fscalegap: 0.0,
+            gapmax_m: 0.0,
+            fpenmax_n: 0.0,
+            itied: 0,
+            stmin: 0.0,
+            stmax: 0.0,
+            mesh_size_pct: 0.0,
+            dtmin_s: 0.0,
+            irem_gap: 0,
+            irem_i2: 0,
+            stfac: 0.2,
+            fric: 0.0,
+            gapmin_m: 0.0,
+            tstart_s: 0.0,
+            tstop_s: 1.0e30,
+            ibc: [false; 3],
+            inacti: 0,
+            viss: 0.0,
+            visf: 0.0,
+            bumult: 0.0,
+            ifric: 0,
+            ifiltr: 0,
+            xfreq_hz: 0.0,
+            iform: 0,
+            sens_id: 0,
+            fct_idf: 0,
+            ascalef: 0.0,
+            fric_id: 0,
+        }
+    }
+}
+
+/// Edge-to-edge contact interface (`/INTER/TYPE11`, guide p.281).
+///
+/// Impact between a secondary and a main line (shell edges, beams,
+/// trusses, springs). Complements `/INTER/TYPE7`, which misses edge
+/// contact. The thermal extension (`Ithe` > 0) is out of scope.
+#[derive(Debug, Clone)]
+pub struct RadInterType11 {
+    /// Interface id written on the card.
+    pub id: usize,
+    /// Interface title written on the card.
+    pub title: String,
+    /// Secondary line group id.
+    pub line_secondary: usize,
+    /// Main line group id.
+    pub line_main: usize,
+    /// Stiffness definition flag (0 = default series stiffness).
+    pub istf: i32,
+    /// Thermal flag (0 = no heat transfer).
+    pub ithe: i32,
+    /// Gap flag (0 = constant gap).
+    pub igap: i32,
+    /// Gap-removal flag (0 = default).
+    pub irem_gap: i32,
+    /// Deletion flag (0 = default).
+    pub idel: i32,
+    /// Minimum interface stiffness in N/m.
+    pub stmin: f64,
+    /// Maximum interface stiffness in N/m.
+    pub stmax: f64,
+    /// Mesh-size fraction for stiffness (0 = default).
+    pub mesh_size_pct: f64,
+    /// Minimum time step in seconds (0 = default).
+    pub dtmin_s: f64,
+    /// Friction formulation flag (0 = default).
+    pub iform: i32,
+    /// Activation sensor id (0 = none).
+    pub sens_id: usize,
+    /// Stiffness scale factor.
+    pub stfac: f64,
+    /// Coulomb friction coefficient.
+    pub fric: f64,
+    /// Minimum gap in metres.
+    pub gapmin_m: f64,
+    /// Activation start time in seconds.
+    pub tstart_s: f64,
+    /// Activation stop time in seconds.
+    pub tstop_s: f64,
+    /// Boundary deactivation flags per axis.
+    pub ibc: [bool; 3],
+    /// Inactivation flag (0 = active).
+    pub inacti: i32,
+    /// Stiffness damping.
+    pub viss: f64,
+    /// Friction damping.
+    pub visf: f64,
+    /// Sorting multiplier.
+    pub bumult: f64,
+    /// Friction identifier (0 = none).
+    pub fric_id: usize,
+}
+
+impl RadInterType11 {
+    /// Frictionless edge contact with unit stiffness scale.
+    ///
+    /// Mirrors the deck-proven miniqa `TEST_002` values (`Stfac`
+    /// 1, open stop time) without friction.
+    pub fn basic(id: usize, title: &str, line_secondary: usize, line_main: usize) -> Self {
+        Self {
+            id,
+            title: title.to_string(),
+            line_secondary,
+            line_main,
+            istf: 0,
+            ithe: 0,
+            igap: 0,
+            irem_gap: 0,
+            idel: 0,
+            stmin: 0.0,
+            stmax: 0.0,
+            mesh_size_pct: 0.0,
+            dtmin_s: 0.0,
+            iform: 0,
+            sens_id: 0,
+            stfac: 1.0,
+            fric: 0.0,
+            gapmin_m: 0.0,
+            tstart_s: 0.0,
+            tstop_s: 1.0e30,
+            ibc: [false; 3],
+            inacti: 0,
+            viss: 0.0,
+            visf: 0.0,
+            bumult: 0.0,
+            fric_id: 0,
+        }
+    }
+}
+
+/// Contact interface selected for a deck.
+#[derive(Debug, Clone)]
+pub enum RadInterface {
+    /// Tied contact (`/INTER/TYPE2`).
+    Type2(RadInterType2),
+    /// General sliding contact (`/INTER/TYPE7`).
+    Type7(RadInterType7),
+    /// Edge-to-edge contact (`/INTER/TYPE11`).
+    Type11(RadInterType11),
+}
+
+impl RadInterface {
+    /// Interface id carried on the card header.
+    pub fn id(&self) -> usize {
+        match self {
+            Self::Type2(inter) => inter.id,
+            Self::Type7(inter) => inter.id,
+            Self::Type11(inter) => inter.id,
+        }
+    }
+}
+
+/// Render one `/INTER/TYPE2` block.
+///
+/// The data line is `grnd surf Ignore Spotflag Level Isearch Idel`
+/// plus a blank field and `Dsearch` (hm_cfg_files radioss2025
+/// `inter_type2.cfg`: `%10d%10d%10s%10d%10d%10d%10d%10s%20lg`).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadInterType2, write_inter_type2};
+/// let mut deck = String::new();
+/// write_inter_type2(&mut deck, &RadInterType2::basic(1, "tie", 4, 5));
+/// assert!(deck.contains("/INTER/TYPE2/1\n"));
+/// ```
+pub fn write_inter_type2(deck: &mut String, inter: &RadInterType2) {
+    deck.push_str(&format!("/INTER/TYPE2/{}\n", inter.id));
+    deck.push_str(&format!("{}\n", inter.title));
+    deck.push_str(&format!(
+        "{}{}{:>10}{:>10}{:>10}{:>10}{:>10}{}{}\n",
+        field_int(inter.grnd_secondary),
+        field_int(inter.surf_main),
+        inter.ignore,
+        inter.spotflag,
+        inter.level,
+        inter.isearch,
+        inter.idel,
+        field_blank(),
+        field_float(inter.dsearch_m),
+    ));
+}
+
+/// Render one `/INTER/TYPE7` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadInterType7, write_inter_type7};
+/// let mut deck = String::new();
+/// write_inter_type7(&mut deck, &RadInterType7::basic(1, "contact", 2, 3));
+/// assert!(deck.contains("/INTER/TYPE7/1\n"));
+/// assert!(deck.contains("2.000000000000E-1"));
+/// ```
+pub fn write_inter_type7(deck: &mut String, inter: &RadInterType7) {
+    deck.push_str(&format!("/INTER/TYPE7/{}\n", inter.id));
+    deck.push_str(&format!("{}\n", inter.title));
+    // Line 1: the sixth field (legacy Multimp) stays blank in the
+    // current format (hm_cfg_files radioss2020 section).
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}{}{}{}\n",
+        field_int(inter.grnd_secondary),
+        field_int(inter.surf_main),
+        field_int32(inter.istf),
+        field_int32(inter.ithe),
+        field_int32(inter.igap),
+        field_blank(),
+        field_int32(inter.ibag),
+        field_int32(inter.idel),
+        field_int32(inter.icurv),
+        field_int32(inter.iadm),
+    ));
+    // Line 2: `Itied` sits in field 9 per the radioss2020
+    // `%20lg%20lg%20lg%20s%10d` layout.
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(inter.fscalegap),
+        field_float(inter.gapmax_m),
+        field_float(inter.fpenmax_n),
+        field_blank(),
+        field_blank(),
+        field_int32(inter.itied),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(inter.stmin),
+        field_float(inter.stmax),
+        field_float(inter.mesh_size_pct),
+        field_float(inter.dtmin_s),
+        field_int32(inter.irem_gap),
+        field_int32(inter.irem_i2),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}\n",
+        field_float(inter.stfac),
+        field_float(inter.fric),
+        field_float(inter.gapmin_m),
+        field_float(inter.tstart_s),
+        field_float(inter.tstop_s),
+    ));
+    // IBC line: `%7s%1d%1d%1d%20s%10d%20lg%20lg%20lg`.
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_ibc(inter.ibc),
+        field_blank(),
+        field_blank(),
+        field_int32(inter.inacti),
+        field_float(inter.viss),
+        field_float(inter.visf),
+        field_float(inter.bumult),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}{}\n",
+        field_int32(inter.ifric),
+        field_int32(inter.ifiltr),
+        field_float(inter.xfreq_hz),
+        field_int32(inter.iform),
+        field_int(inter.sens_id),
+        field_int(inter.fct_idf),
+        field_float(inter.ascalef),
+        field_int(inter.fric_id),
+    ));
+}
+
+/// Render one `/INTER/TYPE11` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadInterType11, write_inter_type11};
+/// let mut deck = String::new();
+/// write_inter_type11(&mut deck, &RadInterType11::basic(4, "edges", 33, 33));
+/// assert!(deck.contains("/INTER/TYPE11/4\n"));
+/// ```
+pub fn write_inter_type11(deck: &mut String, inter: &RadInterType11) {
+    deck.push_str(&format!("/INTER/TYPE11/{}\n", inter.id));
+    deck.push_str(&format!("{}\n", inter.title));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}{}\n",
+        field_int(inter.line_secondary),
+        field_int(inter.line_main),
+        field_int32(inter.istf),
+        field_int32(inter.ithe),
+        field_int32(inter.igap),
+        field_blank(),
+        field_int32(inter.irem_gap),
+        field_int32(inter.idel),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(inter.stmin),
+        field_float(inter.stmax),
+        field_float(inter.mesh_size_pct),
+        field_float(inter.dtmin_s),
+        field_int32(inter.iform),
+        field_int(inter.sens_id),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}\n",
+        field_float(inter.stfac),
+        field_float(inter.fric),
+        field_float(inter.gapmin_m),
+        field_float(inter.tstart_s),
+        field_float(inter.tstop_s),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_ibc(inter.ibc),
+        field_blank(),
+        field_blank(),
+        field_int32(inter.inacti),
+        field_float(inter.viss),
+        field_float(inter.visf),
+        field_float(inter.bumult),
+    ));
+    // `fric_ID` alone in field 10 (cols 91-100): nine blanks first.
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}{}{}{}\n",
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_int(inter.fric_id),
+    ));
+}
+
+/// Render any contact interface block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadInterType2, RadInterface, write_interface};
+/// let mut deck = String::new();
+/// write_interface(&mut deck, &RadInterface::Type2(RadInterType2::basic(1, "tie", 4, 5)));
+/// assert!(deck.contains("/INTER/TYPE2/1\n"));
+/// ```
+pub fn write_interface(deck: &mut String, inter: &RadInterface) {
+    match inter {
+        RadInterface::Type2(typed) => write_inter_type2(deck, typed),
+        RadInterface::Type7(typed) => write_inter_type7(deck, typed),
+        RadInterface::Type11(typed) => write_inter_type11(deck, typed),
+    }
+}
+
+/// Predefined airbag gas name (`/MAT/GAS/PREDEF`, guide p.1046).
+#[derive(Debug, Clone)]
+pub enum RadGasKind {
+    /// Predefined air mixture.
+    Air,
+    /// Predefined nitrogen.
+    Nitrogen,
+    /// Predefined carbon dioxide.
+    CarbonDioxide,
+    /// Predefined water vapor.
+    Water,
+    /// Predefined hydrogen.
+    Hydrogen,
+    /// Any other predefined gas name from the guide table.
+    Named(String),
+}
+
+impl RadGasKind {
+    /// Gas name written on the card data line.
+    pub fn name(&self) -> String {
+        match self {
+            Self::Air => "AIR".to_string(),
+            Self::Nitrogen => "N2".to_string(),
+            Self::CarbonDioxide => "CO2".to_string(),
+            Self::Water => "H2O".to_string(),
+            Self::Hydrogen => "H2".to_string(),
+            Self::Named(name) => name.clone(),
+        }
+    }
+}
+
+/// Predefined gas rendered as `/MAT/GAS/PREDEF` (guide p.1046).
+///
+/// Supplies the initial and injected gases of `/MONVOL/AIRBAG1`
+/// by predefined name (deck-proven miniqa `RBPLI` values).
+#[derive(Debug, Clone)]
+pub struct RadGasPredef {
+    /// Material id written on the card.
+    pub id: usize,
+    /// Material title written on the card.
+    pub title: String,
+    /// Predefined gas selected.
+    pub gas: RadGasKind,
+}
+
+/// Render one `/MAT/GAS/PREDEF` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadGasKind, RadGasPredef, write_gas_predef};
+/// let mut deck = String::new();
+/// write_gas_predef(&mut deck, &RadGasPredef { id: 4, title: "bag gas".to_string(), gas: RadGasKind::Air });
+/// assert!(deck.contains("/MAT/GAS/PREDEF/4\n"));
+/// assert!(deck.contains("\nAIR\n"));
+/// ```
+pub fn write_gas_predef(deck: &mut String, gas: &RadGasPredef) {
+    deck.push_str(&format!("/MAT/GAS/PREDEF/{}\n", gas.id));
+    deck.push_str(&format!("{}\n", gas.title));
+    deck.push_str(&format!("{}\n", gas.gas.name()));
+}
+
+/// One gas of a `/PROP/INJECT2` mixture.
+#[derive(Debug, Clone)]
+pub struct RadInjectGas {
+    /// Gas material id (`/MAT/GAS` card).
+    pub mat: usize,
+    /// Molar fraction in the mixture.
+    pub molar_fraction: f64,
+    /// Mass-flow function id (0 = none).
+    pub function: usize,
+}
+
+/// Gas injector rendered as `/PROP/INJECT2` (guide p.1867).
+///
+/// Feeds a `/MONVOL/AIRBAG1` injector with a gas mixture; the mass
+/// and temperature histories come from `/FUNCT` curves.
+#[derive(Debug, Clone)]
+pub struct RadInject2 {
+    /// Injector property id written on the card.
+    pub id: usize,
+    /// Injector title written on the card.
+    pub title: String,
+    /// Flow flag (0 = default).
+    pub iflow: i32,
+    /// Injected-mass function id.
+    pub mass_function: usize,
+    /// Injected-temperature function id.
+    pub temp_function: usize,
+    /// Injected-mass scale (kg).
+    pub scal_m: f64,
+    /// Temperature scale (K).
+    pub scal_t: f64,
+    /// Time scale applied to both curves.
+    pub ascal_t: f64,
+    /// Mixture gases (at least one).
+    pub gases: Vec<RadInjectGas>,
+}
+
+/// Render one `/PROP/INJECT2` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadInject2, RadInjectGas, write_inject2};
+/// let mut deck = String::new();
+/// write_inject2(&mut deck, &RadInject2 {
+///     id: 10, title: "injector".to_string(), iflow: 0,
+///     mass_function: 1, temp_function: 2,
+///     scal_m: 1.0, scal_t: 0.0, ascal_t: 0.0,
+///     gases: vec![RadInjectGas { mat: 4, molar_fraction: 1.0, function: 0 }],
+/// });
+/// assert!(deck.contains("/PROP/INJECT2/10\n"));
+/// ```
+pub fn write_inject2(deck: &mut String, inject: &RadInject2) {
+    deck.push_str(&format!("/PROP/INJECT2/{}\n", inject.id));
+    deck.push_str(&format!("{}\n", inject.title));
+    deck.push_str(&format!(
+        "{}{}\n",
+        field_int(inject.gases.len()),
+        field_int32(inject.iflow),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}\n",
+        field_int(inject.mass_function),
+        field_int(inject.temp_function),
+        field_float(inject.scal_m),
+        field_float(inject.scal_t),
+        field_float(inject.ascal_t),
+    ));
+    for gas in &inject.gases {
+        // `%10d %20lg%10d` with a blank second field (hm_cfg_files
+        // radioss110 `prop_inject2.cfg`).
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_int(gas.mat),
+            field_blank(),
+            field_float(gas.molar_fraction),
+            field_int(gas.function),
+        ));
+    }
+}
+
+/// Jetting direction functions of an airbag injector.
+///
+/// Read only when the injector sets `Ijet` to 1; the 100-column
+/// shape (three function ids, one blank, three scales) mirrors the
+/// deck-proven `JETV41B` jetting line read by the same starter
+/// field names (`hm_read_monvol_type7.F`).
+#[derive(Debug, Clone)]
+pub struct RadJetting {
+    /// Pressure function id.
+    pub fct_pt: usize,
+    /// Theta function id.
+    pub fct_theta: usize,
+    /// Delta function id.
+    pub fct_delta: usize,
+    /// Pressure scale.
+    pub fscale_pt: f64,
+    /// Theta scale.
+    pub fscale_ptheta: f64,
+    /// Delta scale.
+    pub fscale_pdelta: f64,
+}
+
+fn write_jetting(deck: &mut String, jet: &RadJetting) {
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_int(jet.fct_pt),
+        field_int(jet.fct_theta),
+        field_int(jet.fct_delta),
+        field_blank(),
+        field_float(jet.fscale_pt),
+        field_float(jet.fscale_ptheta),
+        field_float(jet.fscale_pdelta),
+    ));
+}
+
+/// Injector of a `/MONVOL/AIRBAG1` volume (guide p.1790).
+#[derive(Debug, Clone)]
+pub struct RadAirbagInjector {
+    /// Injector property id (`/PROP/INJECT2` card).
+    pub inject_id: usize,
+    /// Fire sensor id (0 = none).
+    pub sens_id: usize,
+    /// Jetting flag (1 = read a [`RadJetting`] line).
+    pub ijet: i32,
+    /// Jetting direction node ids (0 = unused).
+    pub nodes: [usize; 3],
+    /// Jetting functions (required when `ijet` is 1).
+    pub jetting: Option<RadJetting>,
+}
+
+/// Vent hole of a `/MONVOL/AIRBAG1` volume (guide p.1791).
+#[derive(Debug, Clone)]
+pub struct RadAirbagVent {
+    /// Vent surface id.
+    pub surf: usize,
+    /// Vent formulation flag (2 = read the Chemkin line).
+    pub iform: i32,
+    /// Vent area in m^2.
+    pub avent_m2: f64,
+    /// Vent coefficient.
+    pub bvent: f64,
+    /// Vent title (clipped to 20 characters).
+    pub title: String,
+    /// Vent start time in seconds.
+    pub tstart_s: f64,
+    /// Vent stop time in seconds.
+    pub tstop_s: f64,
+    /// Pressure-deficit flag value.
+    pub dpdef: f64,
+    /// Pressure-deficit time in seconds.
+    pub dtpdef_s: f64,
+    /// Pressure-deficit flag id.
+    pub idtpdef: usize,
+    /// Vent area function ids (time, pressure, area).
+    pub fcts: [usize; 3],
+    /// Vent area function scales.
+    pub fscales: [f64; 3],
+    /// Second vent area function ids (primed row).
+    pub fcts_p: [usize; 3],
+    /// Second vent area function scales.
+    pub fscales_p: [f64; 3],
+    /// Chemkin vent function (read only when `iform` is 2).
+    pub chemkin: Option<(usize, f64)>,
+}
+
+/// Porous fabric surface of `/MONVOL/AIRBAG1` (guide p.1791).
+///
+/// The card shapes are the hm_cfg_files radioss140 `airbag1.cfg`
+/// layouts; `Iformps` 1 (as in the deck-proven miniqa `RBPLI`
+/// volume) skips the leakage-coefficient line.
+#[derive(Debug, Clone)]
+pub struct RadAirbagPorous {
+    /// Porous surface id.
+    pub surf: usize,
+    /// Porous formulation flag (0/1/2).
+    pub iformps: i32,
+    /// Blockage flag (0 = none).
+    pub iblockage: i32,
+    /// Surface title (clipped to 20 characters).
+    pub title: String,
+    /// Porosity start time in seconds.
+    pub tstart_s: f64,
+    /// Porosity stop time in seconds.
+    pub tstop_s: f64,
+    /// Pressure-deficit value.
+    pub dpdef: f64,
+    /// Pressure-deficit time in seconds.
+    pub dtpdef_s: f64,
+    /// Pressure-deficit flag id.
+    pub idtpdef: usize,
+    /// Leakage line `(Cps, Areaps, fct_cps, fct_aps, Fscale_cps,
+    /// Fscale_aps)`; read only when `iformps` is 0.
+    pub leakage: Option<(f64, f64, usize, usize, f64, f64)>,
+    /// Chemkin line `(fct, Fscale)`; read only when `iformps` is 2.
+    pub chemkin: Option<(usize, f64)>,
+}
+
+/// One-chamber airbag (`/MONVOL/AIRBAG1`, guide pp.1790-1792).
+///
+/// The leading lines are the hm_cfg_files radioss140 `airbag1.cfg`
+/// layout: external surface plus heat coefficient, five area
+/// scales, then `mat_ID Mu Pext T0 Iequi Ittf` (the guide
+/// extraction drops the `Mu` column; the reader and the miniqa
+/// `RBPLI` deck carry it).
+#[derive(Debug, Clone)]
+pub struct RadMonvolAirbag1 {
+    /// Monitored-volume id written on the card.
+    pub id: usize,
+    /// Volume title written on the card.
+    pub title: String,
+    /// External surface id.
+    pub surf_external: usize,
+    /// Heat transfer coefficient.
+    pub hconv: f64,
+    /// Area scales (time, pressure, surface, area, deficit).
+    pub ascale: [f64; 5],
+    /// Initial-gas material id (`/MAT/GAS` card).
+    pub mat_gas: usize,
+    /// Gas viscosity.
+    pub gas_mu: f64,
+    /// External pressure in Pa.
+    pub pext_pa: f64,
+    /// Initial temperature in K.
+    pub t0_k: f64,
+    /// Equilibrium flag (0 = default).
+    pub iequi: i32,
+    /// Time-temperature flag (0 = default).
+    pub ittf: i32,
+    /// Gas injectors.
+    pub injectors: Vec<RadAirbagInjector>,
+    /// Vent holes.
+    pub vents: Vec<RadAirbagVent>,
+    /// Porous fabric surfaces.
+    pub porous: Vec<RadAirbagPorous>,
+}
+
+fn write_airbag_vent(deck: &mut String, vent: &RadAirbagVent) {
+    // Title in columns 81-100, mirroring the porous layout below.
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_int(vent.surf),
+        field_int32(vent.iform),
+        field_float(vent.avent_m2),
+        field_float(vent.bvent),
+        field_blank(),
+        field_blank(),
+        field_name20(&vent.title),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(vent.tstart_s),
+        field_float(vent.tstop_s),
+        field_float(vent.dpdef),
+        field_float(vent.dtpdef_s),
+        field_blank(),
+        field_int(vent.idtpdef),
+    ));
+    for (fcts, scales) in [(&vent.fcts, &vent.fscales), (&vent.fcts_p, &vent.fscales_p)] {
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}{}\n",
+            field_int(fcts[0]),
+            field_int(fcts[1]),
+            field_int(fcts[2]),
+            field_blank(),
+            field_float(scales[0]),
+            field_float(scales[1]),
+            field_float(scales[2]),
+        ));
+    }
+    if let Some((fct, fscale)) = vent.chemkin {
+        deck.push_str(&format!(
+            "{}{}{}\n",
+            field_int(fct),
+            field_blank(),
+            field_float(fscale),
+        ));
+    }
+}
+
+fn write_airbag_porous(deck: &mut String, porous: &RadAirbagPorous) {
+    // Title in columns 81-100 (hm_cfg_files radioss140 airbag1.cfg:
+    // `%10d%10d%10d` + 50 blanks + `%20s`).
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}{}{}\n",
+        field_int(porous.surf),
+        field_int32(porous.iformps),
+        field_int32(porous.iblockage),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_blank(),
+        field_name20(&porous.title),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(porous.tstart_s),
+        field_float(porous.tstop_s),
+        field_float(porous.dpdef),
+        field_float(porous.dtpdef_s),
+        field_blank(),
+        field_int(porous.idtpdef),
+    ));
+    if let Some((cps, area, fct_c, fct_a, fscale_c, fscale_a)) = porous.leakage {
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}\n",
+            field_float(cps),
+            field_float(area),
+            field_int(fct_c),
+            field_int(fct_a),
+            field_float(fscale_c),
+            field_float(fscale_a),
+        ));
+    }
+    if let Some((fct, fscale)) = porous.chemkin {
+        deck.push_str(&format!(
+            "{}{}{}\n",
+            field_int(fct),
+            field_blank(),
+            field_float(fscale),
+        ));
+    }
+}
+
+/// Render one `/MONVOL/AIRBAG1` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadMonvolAirbag1, write_monvol_airbag1};
+/// let mut deck = String::new();
+/// write_monvol_airbag1(&mut deck, &RadMonvolAirbag1 {
+///     id: 1, title: "bag".to_string(), surf_external: 4, hconv: 0.0,
+///     ascale: [0.0; 5], mat_gas: 2, gas_mu: 0.1, pext_pa: 101_325.0,
+///     t0_k: 0.0, iequi: 0, ittf: 0,
+///     injectors: Vec::new(), vents: Vec::new(), porous: Vec::new(),
+/// });
+/// assert!(deck.contains("/MONVOL/AIRBAG1/1\n"));
+/// ```
+pub fn write_monvol_airbag1(deck: &mut String, bag: &RadMonvolAirbag1) {
+    deck.push_str(&format!("/MONVOL/AIRBAG1/{}\n", bag.id));
+    deck.push_str(&format!("{}\n", bag.title));
+    deck.push_str(&format!(
+        "{}{}{}\n",
+        field_int(bag.surf_external),
+        field_blank(),
+        field_float(bag.hconv),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}\n",
+        field_float(bag.ascale[0]),
+        field_float(bag.ascale[1]),
+        field_float(bag.ascale[2]),
+        field_float(bag.ascale[3]),
+        field_float(bag.ascale[4]),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_int(bag.mat_gas),
+        field_blank(),
+        field_float(bag.gas_mu),
+        field_float(bag.pext_pa),
+        field_float(bag.t0_k),
+        field_int32(bag.iequi),
+        field_int32(bag.ittf),
+    ));
+    deck.push_str(&format!("{}\n", field_int(bag.injectors.len())));
+    for injector in &bag.injectors {
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}\n",
+            field_int(injector.inject_id),
+            field_int(injector.sens_id),
+            field_int32(injector.ijet),
+            field_int(injector.nodes[0]),
+            field_int(injector.nodes[1]),
+            field_int(injector.nodes[2]),
+        ));
+        if let Some(jetting) = &injector.jetting {
+            write_jetting(deck, jetting);
+        }
+    }
+    deck.push_str(&format!(
+        "{}{}\n",
+        field_int(bag.vents.len()),
+        field_int(bag.porous.len()),
+    ));
+    for vent in &bag.vents {
+        write_airbag_vent(deck, vent);
+    }
+    for porous in &bag.porous {
+        write_airbag_porous(deck, porous);
+    }
+}
+
+/// Injector jet of a `/MONVOL/COMMU` volume.
+///
+/// The obsolete-COMMU layout below mirrors the deck-proven miniqa
+/// `JETV41B` volumes byte for byte (field widths measured from the
+/// deck); the starter still reads this shape (`read_monvol.F`
+/// `ITYPE = 5`).
+#[derive(Debug, Clone)]
+pub struct RadCommuJet {
+    /// Injected-gas ratio of specific heats.
+    pub gamma: f64,
+    /// Injected-gas heat-capacity coefficients.
+    pub cp: [f64; 3],
+    /// Injected-mass function id (0 = none).
+    pub fct_mass: usize,
+    /// Flow flag (0 = default).
+    pub iflow: i32,
+    /// Injected-mass scale.
+    pub fscale_mass: f64,
+    /// Injected-temperature function id (0 = none).
+    pub fct_temp: usize,
+    /// Injected-temperature scale.
+    pub fscale_temp: f64,
+    /// Fire sensor id (0 = none).
+    pub sens_id: usize,
+    /// Jetting flag (1 = read a [`RadJetting`] line).
+    pub ijet: i32,
+    /// Jetting direction node ids (0 = unused).
+    pub nodes: [usize; 3],
+    /// Jetting functions (required when `ijet` is 1).
+    pub jetting: Option<RadJetting>,
+}
+
+/// Vent hole of a `/MONVOL/COMMU` volume.
+#[derive(Debug, Clone)]
+pub struct RadCommuVent {
+    /// Vent surface id (0 = none).
+    pub surf: usize,
+    /// Vent area in m^2.
+    pub avent_m2: f64,
+    /// Vent coefficient.
+    pub bvent: f64,
+    /// Vent stop time in seconds.
+    pub tstop_s: f64,
+    /// Vent start time in seconds.
+    pub tvent_s: f64,
+    /// Pressure-deficit value.
+    pub dpdef: f64,
+    /// Pressure-deficit time in seconds.
+    pub dtpdef_s: f64,
+    /// Vent function id (0 = none).
+    pub fct_v: usize,
+    /// Vent function scale.
+    pub fscale_v: f64,
+    /// Pressure-deficit flag id.
+    pub idtpdef: usize,
+    /// Vent area function ids (time, pressure, area).
+    pub fcts: [usize; 3],
+    /// Vent area function scales.
+    pub fscales: [f64; 3],
+    /// Second vent area function ids (primed row).
+    pub fcts_p: [usize; 3],
+    /// Second vent area function scales.
+    pub fscales_p: [f64; 3],
+}
+
+/// Chamber communication of a `/MONVOL/COMMU` volume.
+#[derive(Debug, Clone)]
+pub struct RadCommuBag {
+    /// Connected volume id.
+    pub bag: usize,
+    /// Communication surface id (0 = none).
+    pub surf_c: usize,
+    /// Communication pressure deficit in Pa.
+    pub dpcdef_pa: f64,
+    /// Communication area in m^2.
+    pub acom_m2: f64,
+    /// Communication stop time in seconds.
+    pub tcom_s: f64,
+    /// Communication pressure-deficit time in seconds.
+    pub dtpcdef_s: f64,
+}
+
+/// Multi-chamber airbag (`/MONVOL/COMMU`, miniqa header).
+///
+/// This is the obsolete inline-gas COMMU shape the miniqa corpus
+/// actually contains (`JETV41B`, `Invers` 2019, still accepted by
+/// the current starter); the modern `/MONVOL/COMMU1` with `/MAT/GAS`
+/// is documented at guide p.1806.
+#[derive(Debug, Clone)]
+pub struct RadMonvolCommu {
+    /// Monitored-volume id written on the card.
+    pub id: usize,
+    /// Volume title written on the card.
+    pub title: String,
+    /// External surface id.
+    pub surf_external: usize,
+    /// Area scales (time, pressure, surface, area, deficit).
+    pub ascale: [f64; 5],
+    /// Gas viscosity.
+    pub gas_mu: f64,
+    /// External pressure in Pa.
+    pub pext_pa: f64,
+    /// Initial temperature in K.
+    pub t0_k: f64,
+    /// Equilibrium flag (0 = default).
+    pub iequi: i32,
+    /// Time-temperature flag (0 = default).
+    pub ittf: i32,
+    /// Initial-gas ratio of specific heats.
+    pub gamma_i: f64,
+    /// Initial-gas heat-capacity coefficients.
+    pub cp_i: [f64; 3],
+    /// Injector jets.
+    pub jets: Vec<RadCommuJet>,
+    /// Vent holes.
+    pub vents: Vec<RadCommuVent>,
+    /// Connected chambers.
+    pub bags: Vec<RadCommuBag>,
+}
+
+/// Monitored volume selected for a deck.
+#[derive(Debug, Clone)]
+pub enum RadMonvol {
+    /// One-chamber airbag (`/MONVOL/AIRBAG1`).
+    Airbag1(RadMonvolAirbag1),
+    /// Multi-chamber airbag (`/MONVOL/COMMU`).
+    Commu(RadMonvolCommu),
+}
+
+impl RadMonvol {
+    /// Volume id carried on the card header.
+    pub fn id(&self) -> usize {
+        match self {
+            Self::Airbag1(bag) => bag.id,
+            Self::Commu(bag) => bag.id,
+        }
+    }
+}
+
+/// Render one `/MONVOL/COMMU` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadMonvolCommu, write_monvol_commu};
+/// let mut deck = String::new();
+/// write_monvol_commu(&mut deck, &RadMonvolCommu {
+///     id: 1, title: "chamber".to_string(), surf_external: 3,
+///     ascale: [0.0; 5], gas_mu: 0.1, pext_pa: 101.35, t0_k: 0.0,
+///     iequi: 0, ittf: 0, gamma_i: 1.667, cp_i: [520.275, 0.0, 0.0],
+///     jets: Vec::new(), vents: Vec::new(), bags: Vec::new(),
+/// });
+/// assert!(deck.contains("/MONVOL/COMMU/1\n"));
+/// ```
+pub fn write_monvol_commu(deck: &mut String, bag: &RadMonvolCommu) {
+    deck.push_str(&format!("/MONVOL/COMMU/{}\n", bag.id));
+    deck.push_str(&format!("{}\n", bag.title));
+    deck.push_str(&format!("{}\n", field_int(bag.surf_external)));
+    deck.push_str(&format!(
+        "{}{}{}{}{}\n",
+        field_float(bag.ascale[0]),
+        field_float(bag.ascale[1]),
+        field_float(bag.ascale[2]),
+        field_float(bag.ascale[3]),
+        field_float(bag.ascale[4]),
+    ));
+    // Obsolete layout has no `mat_ID`: one blank field, then
+    // `Mu Pext T0 Iequi Ittf` (measured `JETV41B` bytes).
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_blank(),
+        field_blank(),
+        field_float(bag.gas_mu),
+        field_float(bag.pext_pa),
+        field_float(bag.t0_k),
+        field_int32(bag.iequi),
+        field_int32(bag.ittf),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}\n",
+        field_float(bag.gamma_i),
+        field_float(bag.cp_i[0]),
+        field_float(bag.cp_i[1]),
+        field_float(bag.cp_i[2]),
+    ));
+    deck.push_str(&format!("{}\n", field_int(bag.jets.len())));
+    for jet in &bag.jets {
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_float(jet.gamma),
+            field_float(jet.cp[0]),
+            field_float(jet.cp[1]),
+            field_float(jet.cp[2]),
+        ));
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}\n",
+            field_int(jet.fct_mass),
+            field_int32(jet.iflow),
+            field_float(jet.fscale_mass),
+            field_int(jet.fct_temp),
+            field_float(jet.fscale_temp),
+            field_int(jet.sens_id),
+        ));
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_int32(jet.ijet),
+            field_int(jet.nodes[0]),
+            field_int(jet.nodes[1]),
+            field_int(jet.nodes[2]),
+        ));
+        if let Some(jetting) = &jet.jetting {
+            write_jetting(deck, jetting);
+        }
+    }
+    deck.push_str(&format!("{}\n", field_int(bag.vents.len())));
+    for vent in &bag.vents {
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_int(vent.surf),
+            field_float(vent.avent_m2),
+            field_float(vent.bvent),
+            field_float(vent.tstop_s),
+        ));
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}\n",
+            field_float(vent.tvent_s),
+            field_float(vent.dpdef),
+            field_float(vent.dtpdef_s),
+            field_int(vent.fct_v),
+            field_float(vent.fscale_v),
+            field_int(vent.idtpdef),
+        ));
+        for (fcts, scales) in [(&vent.fcts, &vent.fscales), (&vent.fcts_p, &vent.fscales_p)] {
+            deck.push_str(&format!(
+                "{}{}{}{}{}{}{}\n",
+                field_int(fcts[0]),
+                field_int(fcts[1]),
+                field_int(fcts[2]),
+                field_blank(),
+                field_float(scales[0]),
+                field_float(scales[1]),
+                field_float(scales[2]),
+            ));
+        }
+    }
+    deck.push_str(&format!("{}\n", field_int(bag.bags.len())));
+    for link in &bag.bags {
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}\n",
+            field_int(link.bag),
+            field_int(link.surf_c),
+            field_float(link.dpcdef_pa),
+            field_float(link.acom_m2),
+            field_float(link.tcom_s),
+            field_float(link.dtpcdef_s),
+        ));
+    }
+}
+
+/// Render any monitored-volume block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadMonvol, RadMonvolCommu, write_monvol};
+/// let mut deck = String::new();
+/// write_monvol(&mut deck, &RadMonvol::Commu(RadMonvolCommu {
+///     id: 2, title: "chamber 2".to_string(), surf_external: 4,
+///     ascale: [0.0; 5], gas_mu: 0.1, pext_pa: 101.35, t0_k: 0.0,
+///     iequi: 0, ittf: 0, gamma_i: 1.667, cp_i: [520.275, 0.0, 0.0],
+///     jets: Vec::new(), vents: Vec::new(), bags: Vec::new(),
+/// }));
+/// assert!(deck.contains("/MONVOL/COMMU/2\n"));
+/// ```
+pub fn write_monvol(deck: &mut String, bag: &RadMonvol) {
+    match bag {
+        RadMonvol::Airbag1(typed) => write_monvol_airbag1(deck, typed),
+        RadMonvol::Commu(typed) => write_monvol_commu(deck, typed),
+    }
+}
+
+/// Rayleigh damping rendered as `/DAMP` short format (guide p.131).
+///
+/// Applies mass (`alpha`) and stiffness (`beta`) damping to every
+/// degree of freedom of a node group. Stiffness damping is a time
+/// and must stay below the model time step (guide p.133).
+#[derive(Debug, Clone)]
+pub struct RadDamping {
+    /// Damping id written on the card.
+    pub id: usize,
+    /// Damping title written on the card.
+    pub title: String,
+    /// Mass damping coefficient in 1/s.
+    pub alpha: f64,
+    /// Stiffness damping coefficient in seconds.
+    pub beta_s: f64,
+    /// Damped node group id.
+    pub grnd: usize,
+    /// Skew system id (0 = global frame).
+    pub skew: usize,
+    /// Damping start time in seconds.
+    pub tstart_s: f64,
+    /// Damping stop time in seconds.
+    pub tstop_s: f64,
+}
+
+/// Per-degree damping (`/DAMP` full format, guide p.131).
+///
+/// Non-isotropic Rayleigh damping with one mass/stiffness pair per
+/// translational (`x/y/z`) and rotational (`xx/yy/zz`) axis.
+#[derive(Debug, Clone)]
+pub struct RadDampingFull {
+    /// Damping id written on the card.
+    pub id: usize,
+    /// Damping title written on the card.
+    pub title: String,
+    /// Mass coefficients per axis in 1/s.
+    pub alpha: [f64; 6],
+    /// Stiffness coefficients per axis in seconds.
+    pub beta_s: [f64; 6],
+    /// Damped node group id.
+    pub grnd: usize,
+    /// Skew system id (0 = global frame).
+    pub skew: usize,
+    /// Damping start time in seconds.
+    pub tstart_s: f64,
+    /// Damping stop time in seconds.
+    pub tstop_s: f64,
+}
+
+/// Engine damping override (`/DAMP`, guide p.2780).
+///
+/// Replaces the starter `/DAMP` coefficients of one damping id;
+/// engine options use free format, so plain spacing applies.
+#[derive(Debug, Clone)]
+pub struct RadEngineDamping {
+    /// Starter damping id to override.
+    pub damp_id: usize,
+    /// Mass damping coefficient in 1/s.
+    pub alpha: f64,
+    /// Stiffness damping coefficient in seconds.
+    pub beta_s: f64,
+}
+
+/// Render one short-format `/DAMP` block.
+///
+/// The data line is `alpha beta grnd skew Tstart Tstop`
+/// (`F20 F20 I10 I10 F20 F20`, deck-proven miniqa `DAMPC`).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadDamping, write_damping};
+/// let mut deck = String::new();
+/// write_damping(&mut deck, &RadDamping {
+///     id: 1, title: "bulk damping".to_string(), alpha: 1.0, beta_s: 0.0,
+///     grnd: 2, skew: 0, tstart_s: 0.0, tstop_s: 1.0e30,
+/// });
+/// assert!(deck.contains("/DAMP/1\n"));
+/// ```
+pub fn write_damping(deck: &mut String, damp: &RadDamping) {
+    deck.push_str(&format!("/DAMP/{}\n", damp.id));
+    deck.push_str(&format!("{}\n", damp.title));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(damp.alpha),
+        field_float(damp.beta_s),
+        field_int(damp.grnd),
+        field_int(damp.skew),
+        field_float(damp.tstart_s),
+        field_float(damp.tstop_s),
+    ));
+}
+
+/// Render one full-format `/DAMP` block.
+///
+/// Six coefficient lines follow the title; the group, skew, and
+/// time window ride on the first (`x`) line (guide p.131).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadDampingFull, write_damping_full};
+/// let mut deck = String::new();
+/// write_damping_full(&mut deck, &RadDampingFull {
+///     id: 2, title: "axis damping".to_string(),
+///     alpha: [1.0; 6], beta_s: [0.0; 6],
+///     grnd: 3, skew: 0, tstart_s: 0.0, tstop_s: 1.0e30,
+/// });
+/// assert!(deck.contains("/DAMP/2\n"));
+/// ```
+pub fn write_damping_full(deck: &mut String, damp: &RadDampingFull) {
+    deck.push_str(&format!("/DAMP/{}\n", damp.id));
+    deck.push_str(&format!("{}\n", damp.title));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}\n",
+        field_float(damp.alpha[0]),
+        field_float(damp.beta_s[0]),
+        field_int(damp.grnd),
+        field_int(damp.skew),
+        field_float(damp.tstart_s),
+        field_float(damp.tstop_s),
+    ));
+    for axis in 1..6 {
+        deck.push_str(&format!(
+            "{}{}\n",
+            field_float(damp.alpha[axis]),
+            field_float(damp.beta_s[axis]),
+        ));
+    }
+}
+
+/// Render one engine `/DAMP` override block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadEngineDamping, write_engine_damping};
+/// let mut deck = String::new();
+/// write_engine_damping(&mut deck, &RadEngineDamping { damp_id: 1, alpha: 40.0, beta_s: 0.0 });
+/// assert!(deck.contains("/DAMP/1\n40"));
+/// ```
+pub fn write_engine_damping(deck: &mut String, damp: &RadEngineDamping) {
+    deck.push_str(&format!("/DAMP/{}\n", damp.damp_id));
+    deck.push_str(&format!("{} {}\n", damp.alpha, damp.beta_s));
+}
+
+/// Activation sensor (`/SENSOR/*`, guide pp.2274-2304).
+///
+/// Sensors fire airbags, imposed loads, and `/ACTIV` element sets.
+/// Headers are `/SENSOR/TIME`, `/SENSOR/SENS`, `/SENSOR/DIST`,
+/// `/SENSOR/AND`, and `/SENSOR/OR` (starter `hm_read_sensors.F`
+/// accepts exactly these keys).
+#[derive(Debug, Clone)]
+pub enum RadSensor {
+    /// Time-delay sensor (guide p.2304).
+    Time {
+        /// Sensor id written on the card.
+        id: usize,
+        /// Sensor title written on the card.
+        title: String,
+        /// Firing delay in seconds.
+        tdelay_s: f64,
+    },
+    /// Sensor-driven sensor (guide p.2302).
+    Sens {
+        /// Sensor id written on the card.
+        id: usize,
+        /// Sensor title written on the card.
+        title: String,
+        /// Minimum activation duration in seconds.
+        tdelay_s: f64,
+        /// Activation sensor id.
+        sens_on: usize,
+        /// Deactivation sensor id (0 = none).
+        sens_off: usize,
+    },
+    /// Distance sensor (guide p.2277).
+    Dist {
+        /// Sensor id written on the card.
+        id: usize,
+        /// Sensor title written on the card.
+        title: String,
+        /// Time delay in seconds.
+        tdelay_s: f64,
+        /// First node id.
+        node_a: usize,
+        /// Second node id.
+        node_b: usize,
+        /// Minimum distance in metres.
+        dmin_m: f64,
+        /// Maximum distance in metres.
+        dmax_m: f64,
+    },
+    /// Boolean sensor over two sensors (guide p.2274).
+    AndOr {
+        /// Sensor id written on the card.
+        id: usize,
+        /// Sensor title written on the card.
+        title: String,
+        /// Time delay in seconds.
+        tdelay_s: f64,
+        /// First input sensor id.
+        sens_a: usize,
+        /// Second input sensor id.
+        sens_b: usize,
+        /// True for AND, false for OR.
+        is_and: bool,
+    },
+}
+
+impl RadSensor {
+    /// Sensor id carried on the card header.
+    pub fn id(&self) -> usize {
+        match self {
+            Self::Time { id, .. }
+            | Self::Sens { id, .. }
+            | Self::Dist { id, .. }
+            | Self::AndOr { id, .. } => *id,
+        }
+    }
+}
+
+/// Render one `/SENSOR/*` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadSensor, write_sensor};
+/// let mut deck = String::new();
+/// write_sensor(&mut deck, &RadSensor::Time { id: 1, title: "fire".to_string(), tdelay_s: 0.0 });
+/// assert!(deck.contains("/SENSOR/TIME/1\n"));
+/// ```
+pub fn write_sensor(deck: &mut String, sensor: &RadSensor) {
+    match sensor {
+        RadSensor::Time {
+            id,
+            title,
+            tdelay_s,
+        } => {
+            deck.push_str(&format!("/SENSOR/TIME/{id}\n"));
+            deck.push_str(&format!("{title}\n"));
+            deck.push_str(&format!("{}\n", field_float(*tdelay_s)));
+        }
+        RadSensor::Sens {
+            id,
+            title,
+            tdelay_s,
+            sens_on,
+            sens_off,
+        } => {
+            deck.push_str(&format!("/SENSOR/SENS/{id}\n"));
+            deck.push_str(&format!("{title}\n"));
+            deck.push_str(&format!("{}\n", field_float(*tdelay_s)));
+            deck.push_str(&format!(
+                "{}{}\n",
+                field_int(*sens_on),
+                field_int(*sens_off)
+            ));
+        }
+        RadSensor::Dist {
+            id,
+            title,
+            tdelay_s,
+            node_a,
+            node_b,
+            dmin_m,
+            dmax_m,
+        } => {
+            deck.push_str(&format!("/SENSOR/DIST/{id}\n"));
+            deck.push_str(&format!("{title}\n"));
+            deck.push_str(&format!("{}\n", field_float(*tdelay_s)));
+            deck.push_str(&format!(
+                "{}{}{}{}\n",
+                field_int(*node_a),
+                field_int(*node_b),
+                field_float(*dmin_m),
+                field_float(*dmax_m),
+            ));
+        }
+        RadSensor::AndOr {
+            id,
+            title,
+            tdelay_s,
+            sens_a,
+            sens_b,
+            is_and,
+        } => {
+            let kind = if *is_and { "AND" } else { "OR" };
+            deck.push_str(&format!("/SENSOR/{kind}/{id}\n"));
+            deck.push_str(&format!("{title}\n"));
+            deck.push_str(&format!("{}\n", field_float(*tdelay_s)));
+            deck.push_str(&format!("{}{}\n", field_int(*sens_a), field_int(*sens_b)));
+        }
+    }
+}
+
+/// Submodel wrapper (`//SUBMODEL`, guide p.198).
+///
+/// Groups starter options under one id with numbering offsets;
+/// zero offsets keep global numbering (deck-proven miniqa
+/// `BOXBEAM_SUB` shape `//SUBMODEL/1` .. `//ENDSUB`).
+#[derive(Debug, Clone)]
+pub struct RadSubmodel {
+    /// Submodel id written on the card.
+    pub id: usize,
+    /// Submodel title written on the card.
+    pub title: String,
+    /// Default offset for every option.
+    pub off_def: i32,
+    /// Node offset (defaults to `off_def`).
+    pub off_nod: i32,
+    /// Element offset (defaults to `off_def`).
+    pub off_ele: i32,
+    /// Part offset (defaults to `off_def`).
+    pub off_part: i32,
+    /// Material offset (defaults to `off_def`).
+    pub off_mat: i32,
+    /// Type offset (defaults to `off_def`).
+    pub off_type: i32,
+    /// Subset offset (defaults to `off_def`).
+    pub off_sub: i32,
+}
+
+impl RadSubmodel {
+    /// Transparent submodel with zero offsets.
+    pub fn plain(id: usize, title: &str) -> Self {
+        Self {
+            id,
+            title: title.to_string(),
+            off_def: 0,
+            off_nod: 0,
+            off_ele: 0,
+            off_part: 0,
+            off_mat: 0,
+            off_type: 0,
+            off_sub: 0,
+        }
+    }
+}
+
+/// Open a `//SUBMODEL` section.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadSubmodel, write_submodel_open};
+/// let mut deck = String::new();
+/// write_submodel_open(&mut deck, &RadSubmodel::plain(1, "extra cards"));
+/// assert!(deck.contains("//SUBMODEL/1\n"));
+/// ```
+pub fn write_submodel_open(deck: &mut String, sub: &RadSubmodel) {
+    deck.push_str(&format!("//SUBMODEL/{}\n", sub.id));
+    deck.push_str(&format!("{}\n", sub.title));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}\n",
+        field_int32(sub.off_def),
+        field_int32(sub.off_nod),
+        field_int32(sub.off_ele),
+        field_int32(sub.off_part),
+        field_int32(sub.off_mat),
+        field_int32(sub.off_type),
+        field_int32(sub.off_sub),
+    ));
+}
+
+/// Close a `//SUBMODEL` section (guide p.41).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::write_submodel_close;
+/// let mut deck = String::new();
+/// write_submodel_close(&mut deck);
+/// assert!(deck.contains("//ENDSUB\n"));
+/// ```
+pub fn write_submodel_close(deck: &mut String) {
+    deck.push_str("//ENDSUB\n");
+}
+
+/// Element time-history family (`/TH/*`, guide p.2557).
+///
+/// Covers every element-object `/TH` header in the miniqa
+/// inventory, including the `/TH/SHEL` and `/TH/BRIC` spellings
+/// the base writer already emits (re-emitting them here under a
+/// fresh group id is legal).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadThElemFamily {
+    /// Nodal output (`/TH/NODE`).
+    Node,
+    /// Four-node shells, short spelling (`/TH/SHEL`).
+    Shel,
+    /// Three-node shells (`/TH/SH3N`).
+    Sh3n,
+    /// Four-node shells, long spelling (`/TH/SHELL`).
+    Shell,
+    /// Bricks, short spelling (`/TH/BRIC`).
+    Bric,
+    /// Bricks, long spelling (`/TH/BRICK`).
+    Brick,
+    /// Two-dimensional solids (`/TH/QUAD`).
+    Quad,
+    /// Trusses (`/TH/TRUSS`).
+    Truss,
+    /// Beams (`/TH/BEAM`).
+    Beam,
+    /// Springs (`/TH/SPRING`).
+    Spring,
+    /// SPH cells (`/TH/SPHCEL`).
+    Sphcel,
+}
+
+impl RadThElemFamily {
+    /// Header keyword of the family.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Node => "NODE",
+            Self::Shel => "SHEL",
+            Self::Sh3n => "SH3N",
+            Self::Shell => "SHELL",
+            Self::Bric => "BRIC",
+            Self::Brick => "BRICK",
+            Self::Quad => "QUAD",
+            Self::Truss => "TRUSS",
+            Self::Beam => "BEAM",
+            Self::Spring => "SPRING",
+            Self::Sphcel => "SPHCEL",
+        }
+    }
+
+    /// Whether id lines carry a skew column.
+    ///
+    /// `NODE`, `SHEL`/`SHELL`, and `SH3N` use `Elid Skew_ID`
+    /// lines; the remaining families use bare `Elid` lines (the
+    /// second field is a name, and a zero there trips starter
+    /// warning 100214, proven by spike against the vendor starter).
+    pub fn has_skew(self) -> bool {
+        matches!(self, Self::Node | Self::Shel | Self::Sh3n | Self::Shell)
+    }
+}
+
+/// Element time-history request for one `/TH` family.
+#[derive(Debug, Clone)]
+pub struct RadThElemRequest {
+    /// Output family selected.
+    pub family: RadThElemFamily,
+    /// Group title written on the card.
+    pub title: String,
+    /// Variable names (`DEF` selects the default set).
+    pub vars: Vec<String>,
+    /// Element ids recorded (1-based).
+    pub elems: Vec<usize>,
+}
+
+/// Object time-history family (`/TH/*`, guide p.2557).
+///
+/// Covers every non-element `/TH` header in the miniqa inventory.
+/// `/TH/MONV` is the short spelling of `/TH/MONVOL`; both appear
+/// in the corpus and both are accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadThObjKind {
+    /// Parts (`/TH/PART`).
+    Part,
+    /// Interfaces (`/TH/INTER`).
+    Inter,
+    /// Monitored volumes, short spelling (`/TH/MONV`).
+    Monv,
+    /// Monitored volumes (`/TH/MONVOL`).
+    Monvol,
+    /// Subsets (`/TH/SUBS`).
+    Subs,
+    /// Accelerometers (`/TH/ACCEL`).
+    Accel,
+    /// Rigid bodies (`/TH/RBODY`).
+    Rbody,
+    /// Sections (`/TH/SECTIO`).
+    Sectio,
+    /// Rigid walls (`/TH/RWALL`).
+    Rwall,
+}
+
+impl RadThObjKind {
+    /// Header keyword of the family.
+    pub fn keyword(self) -> &'static str {
+        match self {
+            Self::Part => "PART",
+            Self::Inter => "INTER",
+            Self::Monv => "MONV",
+            Self::Monvol => "MONVOL",
+            Self::Subs => "SUBS",
+            Self::Accel => "ACCEL",
+            Self::Rbody => "RBODY",
+            Self::Sectio => "SECTIO",
+            Self::Rwall => "RWALL",
+        }
+    }
+}
+
+/// Object time-history request for one `/TH` family.
+#[derive(Debug, Clone)]
+pub struct RadThObjRequest {
+    /// Output family selected.
+    pub kind: RadThObjKind,
+    /// Group title written on the card.
+    pub title: String,
+    /// Variable names (`DEF` selects the default set).
+    pub vars: Vec<String>,
+    /// Object ids recorded (1-based).
+    pub ids: Vec<usize>,
+}
+
+/// Render element time-history blocks for one request.
+///
+/// Variables chunk into cards of ten; each card opens a fresh TH
+/// group id from `next_group` (TH groups share one deck-global
+/// namespace). Skew families emit `Elid Skew_ID` lines, name
+/// families emit bare `Elid` lines.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadThElemFamily, RadThElemRequest, write_th_elems};
+/// let mut deck = String::new();
+/// let mut group = 4;
+/// write_th_elems(&mut deck, &mut group, &RadThElemRequest {
+///     family: RadThElemFamily::Truss, title: "truss".to_string(),
+///     vars: vec!["DEF".to_string()], elems: vec![1],
+/// });
+/// assert!(deck.contains("/TH/TRUSS/5\n"));
+/// assert_eq!(group, 5);
+/// ```
+pub fn write_th_elems(deck: &mut String, next_group: &mut usize, req: &RadThElemRequest) {
+    if req.vars.is_empty() || req.elems.is_empty() {
+        return;
+    }
+    for var_card in req.vars.chunks(10) {
+        *next_group += 1;
+        deck.push_str(&format!("/TH/{}/{}\n", req.family.keyword(), *next_group));
+        deck.push_str(&format!("{}\n", req.title));
+        let mut line = String::new();
+        for var in var_card {
+            line.push_str(&field_var(var));
+        }
+        line.push('\n');
+        deck.push_str(&line);
+        for elem in &req.elems {
+            if req.family.has_skew() {
+                deck.push_str(&format!("{}{}\n", field_int(*elem), field_int(0)));
+            } else {
+                deck.push_str(&format!("{}\n", field_int(*elem)));
+            }
+        }
+    }
+}
+
+/// Render object time-history blocks for one request.
+///
+/// Id lines pack ten `Obj` ids per line (deck-proven miniqa
+/// `/TH/PART`, `/TH/RWALL`, `/TH/MONVOL` shapes).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadThObjKind, RadThObjRequest, write_th_objects};
+/// let mut deck = String::new();
+/// let mut group = 1;
+/// write_th_objects(&mut deck, &mut group, &RadThObjRequest {
+///     kind: RadThObjKind::Part, title: "parts".to_string(),
+///     vars: vec!["DEF".to_string()], ids: vec![1, 2],
+/// });
+/// assert!(deck.contains("/TH/PART/2\n"));
+/// assert_eq!(group, 2);
+/// ```
+pub fn write_th_objects(deck: &mut String, next_group: &mut usize, req: &RadThObjRequest) {
+    if req.vars.is_empty() || req.ids.is_empty() {
+        return;
+    }
+    for var_card in req.vars.chunks(10) {
+        *next_group += 1;
+        deck.push_str(&format!("/TH/{}/{}\n", req.kind.keyword(), *next_group));
+        deck.push_str(&format!("{}\n", req.title));
+        let mut line = String::new();
+        for var in var_card {
+            line.push_str(&field_var(var));
+        }
+        line.push('\n');
+        deck.push_str(&line);
+        for chunk in req.ids.chunks(10) {
+            let mut id_line = String::new();
+            for id in chunk {
+                id_line.push_str(&field_int(*id));
+            }
+            id_line.push('\n');
+            deck.push_str(&id_line);
+        }
+    }
+}
+
+/// Truss elements rendered as `/TRUSS/part_ID`.
+///
+/// Support card so `/TH/TRUSS` acceptance can reference a real
+/// element; the two-node shape mirrors miniqa `BESHV44`.
+#[derive(Debug, Clone)]
+pub struct RadTrussElems {
+    /// Part id written on the header.
+    pub part: usize,
+    /// Two-node connectivity per element (1-based node ids).
+    pub elems: Vec<[usize; 2]>,
+}
+
+/// Truss property rendered as `/PROP/TRUSS` (miniqa `BESHV44`).
+#[derive(Debug, Clone)]
+pub struct RadTrussProp {
+    /// Property id written on the card.
+    pub id: usize,
+    /// Property title written on the card.
+    pub title: String,
+    /// Cross-section area in m^2.
+    pub area_m2: f64,
+    /// Initial gap in metres (0 = none).
+    pub gap_init_m: f64,
+}
+
+/// Beam elements rendered as `/BEAM/part_ID`.
+///
+/// Support card so `/TH/BEAM` acceptance can reference a real
+/// element; the three-node shape mirrors miniqa `BESHV44`.
+#[derive(Debug, Clone)]
+pub struct RadBeamElems {
+    /// Part id written on the header.
+    pub part: usize,
+    /// Three-node connectivity per element (1-based node ids).
+    pub elems: Vec<[usize; 3]>,
+}
+
+/// Beam property rendered as `/PROP/BEAM` (miniqa `BESHV44`).
+#[derive(Debug, Clone)]
+pub struct RadBeamProp {
+    /// Property id written on the card.
+    pub id: usize,
+    /// Property title written on the card.
+    pub title: String,
+    /// Small-strain flag (0 = default).
+    pub ismstr: i32,
+    /// Membrane damping factor.
+    pub dm: f64,
+    /// Flexural damping factor.
+    pub df: f64,
+    /// Cross-section area in m^2.
+    pub area_m2: f64,
+    /// Second moments of area in m^4 (`Iyy Izz Ixx`).
+    pub inertia_m4: [f64; 3],
+    /// Shear flag (0 = default).
+    pub ishear: i32,
+}
+
+/// Spring elements rendered as `/SPRING/part_ID`.
+///
+/// Support card so `/TH/SPRING` acceptance can reference a real
+/// element; the two-node shape mirrors miniqa `PLREG41B`.
+#[derive(Debug, Clone)]
+pub struct RadSpringElems {
+    /// Part id written on the header.
+    pub part: usize,
+    /// Two-node connectivity per element (1-based node ids).
+    pub elems: Vec<[usize; 2]>,
+}
+
+/// General spring property (`/PROP/TYPE13`, guide p.1490).
+///
+/// Support card for spring acceptance. Translational stiffness
+/// applies to all three axes and rotational stiffness to all
+/// three moments; every other coefficient is zero (linear
+/// springs, no functions, SI units). Travel limits are +/-0.01 m
+/// per axis, zero for rotations.
+#[derive(Debug, Clone)]
+pub struct RadSpringProp {
+    /// Property id written on the card.
+    pub id: usize,
+    /// Property title written on the card.
+    pub title: String,
+    /// Spring mass in kg.
+    pub mass_kg: f64,
+    /// Spring inertia in kg m^2.
+    pub inertia: f64,
+    /// Translational stiffness in N/m.
+    pub k_trans: f64,
+    /// Rotational stiffness in N m/rad.
+    pub k_rot: f64,
+}
+
+/// Extra part rendered as `/PART`.
+///
+/// The base writers own parts 1..N; this covers additional parts
+/// (1D elements) with ids above the base range.
+#[derive(Debug, Clone)]
+pub struct RadExtraPart {
+    /// Part id written on the card.
+    pub id: usize,
+    /// Part title written on the card.
+    pub title: String,
+    /// Property id referenced.
+    pub prop: usize,
+    /// Material id referenced (0 = none, for springs).
+    pub mat: usize,
+}
+
+/// Render one `/TRUSS/part_ID` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadTrussElems, write_truss};
+/// let mut deck = String::new();
+/// write_truss(&mut deck, &RadTrussElems { part: 3, elems: vec![[1, 2]] });
+/// assert!(deck.contains("/TRUSS/3\n"));
+/// ```
+pub fn write_truss(deck: &mut String, truss: &RadTrussElems) {
+    deck.push_str(&format!("/TRUSS/{}\n", truss.part));
+    for (index, elem) in truss.elems.iter().enumerate() {
+        deck.push_str(&format!(
+            "{}{}{}\n",
+            field_int(index + 1),
+            field_int(elem[0]),
+            field_int(elem[1]),
+        ));
+    }
+}
+
+/// Render one `/PROP/TRUSS` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadTrussProp, write_truss_prop};
+/// let mut deck = String::new();
+/// write_truss_prop(&mut deck, &RadTrussProp { id: 3, title: "rod".to_string(), area_m2: 1.0e-4, gap_init_m: 0.0 });
+/// assert!(deck.contains("/PROP/TRUSS/3\n"));
+/// ```
+pub fn write_truss_prop(deck: &mut String, prop: &RadTrussProp) {
+    deck.push_str(&format!("/PROP/TRUSS/{}\n", prop.id));
+    deck.push_str(&format!("{}\n", prop.title));
+    deck.push_str(&format!(
+        "{}{}\n",
+        field_float(prop.area_m2),
+        field_float(prop.gap_init_m),
+    ));
+}
+
+/// Render one `/BEAM/part_ID` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadBeamElems, write_beam};
+/// let mut deck = String::new();
+/// write_beam(&mut deck, &RadBeamElems { part: 4, elems: vec![[1, 2, 3]] });
+/// assert!(deck.contains("/BEAM/4\n"));
+/// ```
+pub fn write_beam(deck: &mut String, beam: &RadBeamElems) {
+    deck.push_str(&format!("/BEAM/{}\n", beam.part));
+    for (index, elem) in beam.elems.iter().enumerate() {
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_int(index + 1),
+            field_int(elem[0]),
+            field_int(elem[1]),
+            field_int(elem[2]),
+        ));
+    }
+}
+
+/// Render one `/PROP/BEAM` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadBeamProp, write_beam_prop};
+/// let mut deck = String::new();
+/// write_beam_prop(&mut deck, &RadBeamProp {
+///     id: 4, title: "beam".to_string(), ismstr: 0, dm: 0.0, df: 0.0,
+///     area_m2: 1.0e-4, inertia_m4: [1.0e-9, 1.0e-9, 2.0e-9], ishear: 0,
+/// });
+/// assert!(deck.contains("/PROP/BEAM/4\n"));
+/// ```
+pub fn write_beam_prop(deck: &mut String, prop: &RadBeamProp) {
+    deck.push_str(&format!("/PROP/BEAM/{}\n", prop.id));
+    deck.push_str(&format!("{}\n", prop.title));
+    // `Ismstr` sits in field 2 (`"          %10d"`, hm_cfg_files
+    // radioss110 `prop_p3_beam.cfg`).
+    deck.push_str(&format!("{}{}\n", field_blank(), field_int32(prop.ismstr)));
+    deck.push_str(&format!(
+        "{}{}\n",
+        field_float(prop.dm),
+        field_float(prop.df),
+    ));
+    deck.push_str(&format!(
+        "{}{}{}{}\n",
+        field_float(prop.area_m2),
+        field_float(prop.inertia_m4[0]),
+        field_float(prop.inertia_m4[1]),
+        field_float(prop.inertia_m4[2]),
+    ));
+    // `OmegaDof` triplet (unused) plus `Ishear`, mirroring `BESHV44`.
+    deck.push_str(&format!("   000 000{}\n", field_int32(prop.ishear)));
+}
+
+/// Render one `/SPRING/part_ID` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadSpringElems, write_spring};
+/// let mut deck = String::new();
+/// write_spring(&mut deck, &RadSpringElems { part: 5, elems: vec![[1, 2]] });
+/// assert!(deck.contains("/SPRING/5\n"));
+/// ```
+pub fn write_spring(deck: &mut String, spring: &RadSpringElems) {
+    deck.push_str(&format!("/SPRING/{}\n", spring.part));
+    for (index, elem) in spring.elems.iter().enumerate() {
+        deck.push_str(&format!(
+            "{}{}{}\n",
+            field_int(index + 1),
+            field_int(elem[0]),
+            field_int(elem[1]),
+        ));
+    }
+}
+
+/// Render one `/PROP/TYPE13` spring property block.
+///
+/// Twenty-six data lines per the newest reader layout
+/// (hm_cfg_files radioss2018 `prop_p13_spr_beam.cfg`): mass and
+/// inertia flags, six three-line loading indices (stiffness,
+/// function ids plus travel limits, scaling), one rate-velocity
+/// line, and six rate-coefficient lines.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadSpringProp, write_spring_prop};
+/// let mut deck = String::new();
+/// write_spring_prop(&mut deck, &RadSpringProp {
+///     id: 5, title: "spring".to_string(), mass_kg: 1.0e-3,
+///     inertia: 1.0e-3, k_trans: 10000.0, k_rot: 100000.0,
+/// });
+/// assert!(deck.contains("/PROP/TYPE13/5\n"));
+/// ```
+pub fn write_spring_prop(deck: &mut String, prop: &RadSpringProp) {
+    deck.push_str(&format!("/PROP/TYPE13/{}\n", prop.id));
+    deck.push_str(&format!("{}\n", prop.title));
+    deck.push_str(&format!(
+        "{}{}{}{}{}{}{}{}\n",
+        field_float(prop.mass_kg),
+        field_float(prop.inertia),
+        field_int(0),
+        field_int(0),
+        field_int(0),
+        field_int(0),
+        field_int(0),
+        field_int(0),
+    ));
+    // Function lines carry five ids, one blank field, then the
+    // travel limits (`%10d%10d%10d%10d%10d %20lg%20lg`).
+    for (stiffness, limits) in [
+        (prop.k_trans, (-0.01, 0.01)),
+        (prop.k_trans, (-0.01, 0.01)),
+        (prop.k_trans, (-0.01, 0.01)),
+        (prop.k_rot, (0.0, 0.0)),
+        (prop.k_rot, (0.0, 0.0)),
+        (prop.k_rot, (0.0, 0.0)),
+    ] {
+        deck.push_str(&format!(
+            "{}{}{}{}{}\n",
+            field_float(stiffness),
+            field_float(0.0),
+            field_float(0.0),
+            field_float(0.0),
+            field_float(0.0),
+        ));
+        deck.push_str(&format!(
+            "{}{}{}{}{}{}{}{}\n",
+            field_int(0),
+            field_int(0),
+            field_int(0),
+            field_int(0),
+            field_int(0),
+            field_blank(),
+            field_float(limits.0),
+            field_float(limits.1),
+        ));
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_float(0.0),
+            field_float(0.0),
+            field_float(0.0),
+            field_float(0.0),
+        ));
+    }
+    // Rate-velocity line plus six rate-coefficient lines.
+    deck.push_str(&format!(
+        "{}{}{}{}\n",
+        field_float(0.0),
+        field_float(0.0),
+        field_float(0.0),
+        field_int(0),
+    ));
+    for _ in 0..6 {
+        deck.push_str(&format!(
+            "{}{}{}{}\n",
+            field_float(0.0),
+            field_float(0.0),
+            field_float(0.0),
+            field_float(0.0),
+        ));
+    }
+}
+
+/// Render one extra `/PART` block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadExtraPart, write_extra_part};
+/// let mut deck = String::new();
+/// write_extra_part(&mut deck, &RadExtraPart { id: 3, title: "rod".to_string(), prop: 3, mat: 1 });
+/// assert!(deck.contains("/PART/3\n"));
+/// ```
+pub fn write_extra_part(deck: &mut String, part: &RadExtraPart) {
+    deck.push_str(&format!("/PART/{}\n", part.id));
+    deck.push_str(&format!("{}\n", part.title));
+    deck.push_str(&format!(
+        "{}{}\n",
+        field_int(part.prop),
+        field_int(part.mat),
+    ));
+}
+
+/// State-file output (`/STATE/DT`, guide p.3051).
+///
+/// Engine option: writes `.sta` state files every `tfreq_s`
+/// starting at `tstart_s` for the listed parts (empty with
+/// `all_parts` selects `Keyword3 = ALL`).
+#[derive(Debug, Clone)]
+pub struct RadStateOutput {
+    /// First state output time in seconds.
+    pub tstart_s: f64,
+    /// State output period in seconds.
+    pub tfreq_s: f64,
+    /// True for `ALL` parts, false for the part list.
+    pub all_parts: bool,
+    /// Part ids written (ignored when `all_parts` is set).
+    pub parts: Vec<usize>,
+}
+
+/// State-file content flag (`/STATE/*`, guide pp.3046-3052).
+///
+/// Bare-header engine options selecting which blocks land in each
+/// `.sta` file for the `/STATE/DT` parts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RadStateFlag {
+    /// Beam internal variables (`/STATE/BEAM/AUX`).
+    BeamAux,
+    /// Beam full state (`/STATE/BEAM/FULL`).
+    BeamFull,
+    /// Solid internal variables (`/STATE/BRICK/AUX/FULL`).
+    BrickAux,
+    /// Solid reference strain (`/STATE/BRICK/EREF`).
+    BrickEref,
+    /// Solid failure state (`/STATE/BRICK/FAIL`).
+    BrickFail,
+    /// Solid orthotropy (`/STATE/BRICK/ORTHO`).
+    BrickOrtho,
+    /// Solid strain (`/STATE/BRICK/STRAIN/FULL`).
+    BrickStrain,
+    /// Solid stress (`/STATE/BRICK/STRES/FULL`).
+    BrickStress,
+    /// Nodal boundary conditions (`/STATE/NODE/BCS`).
+    NodeBcs,
+    /// Nodal temperatures (`/STATE/NODE/TEMP`).
+    NodeTemp,
+    /// Nodal velocities (`/STATE/NODE/VEL`).
+    NodeVel,
+    /// Shell internal variables (`/STATE/SHELL/AUX/FULL`).
+    ShellAux,
+    /// Shell plastic strain (`/STATE/SHELL/EPSP/FULL`).
+    ShellEpsp,
+    /// Shell failure state (`/STATE/SHELL/FAIL`).
+    ShellFail,
+    /// Shell orthotropy (`/STATE/SHELL/ORTHL`).
+    ShellOrthl,
+    /// Shell strain (`/STATE/SHELL/STRAIN/FULL`).
+    ShellStrain,
+    /// Shell stress (`/STATE/SHELL/STRESS/FULL`).
+    ShellStress,
+    /// Spring state (`/STATE/SPRING/FULL`).
+    SpringFull,
+    /// Truss state (`/STATE/TRUSS/FULL`).
+    TrussFull,
+}
+
+impl RadStateFlag {
+    /// Engine header of the flag.
+    pub fn header(self) -> &'static str {
+        match self {
+            Self::BeamAux => "/STATE/BEAM/AUX",
+            Self::BeamFull => "/STATE/BEAM/FULL",
+            Self::BrickAux => "/STATE/BRICK/AUX/FULL",
+            Self::BrickEref => "/STATE/BRICK/EREF",
+            Self::BrickFail => "/STATE/BRICK/FAIL",
+            Self::BrickOrtho => "/STATE/BRICK/ORTHO",
+            Self::BrickStrain => "/STATE/BRICK/STRAIN/FULL",
+            Self::BrickStress => "/STATE/BRICK/STRES/FULL",
+            Self::NodeBcs => "/STATE/NODE/BCS",
+            Self::NodeTemp => "/STATE/NODE/TEMP",
+            Self::NodeVel => "/STATE/NODE/VEL",
+            Self::ShellAux => "/STATE/SHELL/AUX/FULL",
+            Self::ShellEpsp => "/STATE/SHELL/EPSP/FULL",
+            Self::ShellFail => "/STATE/SHELL/FAIL",
+            Self::ShellOrthl => "/STATE/SHELL/ORTHL",
+            Self::ShellStrain => "/STATE/SHELL/STRAIN/FULL",
+            Self::ShellStress => "/STATE/SHELL/STRESS/FULL",
+            Self::SpringFull => "/STATE/SPRING/FULL",
+            Self::TrussFull => "/STATE/TRUSS/FULL",
+        }
+    }
+}
+
+/// Render one `/STATE/DT` engine block.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadStateOutput, write_state_dt};
+/// let mut deck = String::new();
+/// write_state_dt(&mut deck, &RadStateOutput { tstart_s: 0.0, tfreq_s: 0.1, all_parts: false, parts: vec![1, 2] });
+/// assert!(deck.contains("/STATE/DT\n"));
+/// ```
+pub fn write_state_dt(deck: &mut String, state: &RadStateOutput) {
+    if state.all_parts {
+        deck.push_str("/STATE/DT/ALL\n");
+    } else {
+        deck.push_str("/STATE/DT\n");
+    }
+    deck.push_str(&format!("{} {}\n", state.tstart_s, state.tfreq_s));
+    if !state.all_parts {
+        let mut line = String::new();
+        for part in &state.parts {
+            if !line.is_empty() {
+                line.push(' ');
+            }
+            line.push_str(&part.to_string());
+        }
+        line.push('\n');
+        deck.push_str(&line);
+    }
+}
+
+/// Render one `/STATE/*` flag header.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadStateFlag, write_state_flag};
+/// let mut deck = String::new();
+/// write_state_flag(&mut deck, RadStateFlag::BrickStress);
+/// assert!(deck.contains("/STATE/BRICK/STRES/FULL\n"));
+/// ```
+pub fn write_state_flag(deck: &mut String, flag: RadStateFlag) {
+    deck.push_str(flag.header());
+    deck.push('\n');
+}
+
+/// Extra starter and engine cards (Phase-4 lane 4B bundle).
+///
+/// P4C1 keeps `RadCase` frozen, so every 4B card family lives here
+/// and renders through [`write_starter_extra`] (spliced before the
+/// terminal `/END`) and [`write_engine_extra`] (appended to the
+/// engine deck). All ids are absolute: extra ids must not collide
+/// with base-writer ids (see [`RadExtraContext`]).
+#[derive(Debug, Clone, Default)]
+pub struct RadExtra {
+    /// Part surfaces (`/SURF/PART`).
+    pub surfs: Vec<RadSurfParts>,
+    /// Surface node groups (`/GRNOD/SURF`).
+    pub grnods: Vec<RadGrnodSurfs>,
+    /// Surface line groups (`/LINE/SURF`).
+    pub lines: Vec<RadLineSurfs>,
+    /// Part subsets (`/SUBSET`).
+    pub subsets: Vec<RadSubset>,
+    /// Contact interfaces (`/INTER/TYPE*`).
+    pub interfaces: Vec<RadInterface>,
+    /// Airbag gases (`/MAT/GAS/PREDEF`).
+    pub gases: Vec<RadGasPredef>,
+    /// Airbag injectors (`/PROP/INJECT2`).
+    pub injectors: Vec<RadInject2>,
+    /// Monitored volumes (`/MONVOL/*`).
+    pub monvols: Vec<RadMonvol>,
+    /// Rayleigh damping cards (`/DAMP` short format).
+    pub damps: Vec<RadDamping>,
+    /// Rayleigh damping cards (`/DAMP` full format).
+    pub full_damps: Vec<RadDampingFull>,
+    /// Activation sensors (`/SENSOR/*`).
+    pub sensors: Vec<RadSensor>,
+    /// Optional submodel wrapping the whole extra block.
+    pub submodel: Option<RadSubmodel>,
+    /// Element time-history requests (`/TH/*`).
+    pub th_elems: Vec<RadThElemRequest>,
+    /// Object time-history requests (`/TH/*`).
+    pub th_objs: Vec<RadThObjRequest>,
+    /// Truss properties (`/PROP/TRUSS`).
+    pub truss_props: Vec<RadTrussProp>,
+    /// Beam properties (`/PROP/BEAM`).
+    pub beam_props: Vec<RadBeamProp>,
+    /// Spring properties (`/PROP/TYPE13`).
+    pub spring_props: Vec<RadSpringProp>,
+    /// Truss elements (`/TRUSS`).
+    pub truss: Vec<RadTrussElems>,
+    /// Beam elements (`/BEAM`).
+    pub beams: Vec<RadBeamElems>,
+    /// Spring elements (`/SPRING`).
+    pub springs: Vec<RadSpringElems>,
+    /// Extra parts (`/PART`, ids above the base range).
+    pub parts: Vec<RadExtraPart>,
+    /// State-file output (`/STATE/DT`, engine side).
+    pub state: Option<RadStateOutput>,
+    /// State-file content flags (`/STATE/*`, engine side).
+    pub state_flags: Vec<RadStateFlag>,
+    /// Engine damping overrides (`/DAMP`, engine side).
+    pub engine_damps: Vec<RadEngineDamping>,
+    /// Time-history format (`/TH/VERS/*`, engine side).
+    pub th_vers: Option<u32>,
+}
+
+/// Base-deck counts validating a [`RadExtra`].
+///
+/// The base writers own `/GRNOD/NODE` ids `1..=num_node_sets`,
+/// `/FUNCT` ids `1..=num_functions`, parts `1..=num_parts`, and
+/// material id 1; extra cards reference or extend these ranges.
+#[derive(Debug, Clone)]
+pub struct RadExtraContext {
+    /// Node count of the base mesh.
+    pub num_nodes: usize,
+    /// Node-set count (`/GRNOD/NODE` ids `1..=N`).
+    pub num_node_sets: usize,
+    /// Load-curve count (`/FUNCT` ids `1..=N`).
+    pub num_functions: usize,
+    /// Base part count (`/PART` ids `1..=N`).
+    pub num_parts: usize,
+    /// Base material count (always id 1).
+    pub num_materials: usize,
+    /// Wall count (`/RWALL` ids `1..=N`).
+    pub num_walls: usize,
+    /// Shell quad count.
+    pub num_shells: usize,
+    /// Shell triangle count.
+    pub num_tris: usize,
+    /// Brick count.
+    pub num_bricks: usize,
+}
+
+impl RadExtraContext {
+    /// Context of a basic [`RadCase`] deck.
+    pub fn of_case(case: &RadCase) -> Self {
+        Self {
+            num_nodes: case.mesh.num_nodes(),
+            num_node_sets: case.node_sets.len(),
+            num_functions: case.functions.len(),
+            num_parts: 1,
+            num_materials: 1,
+            num_walls: case.walls.len(),
+            num_shells: 0,
+            num_tris: 0,
+            num_bricks: case.mesh.num_bricks(),
+        }
+    }
+
+    /// Context of an extended [`RadExtendedCase`] deck.
+    pub fn of_extended(case: &RadExtendedCase) -> Self {
+        let mut parts = 0;
+        if case.shell_part().is_some() {
+            parts += 1;
+        }
+        if case.solid_part().is_some() {
+            parts += 1;
+        }
+        let mut ctx = Self::of_case(&case.base);
+        ctx.num_parts = parts;
+        ctx.num_shells = case.shells.num_quads();
+        ctx.num_tris = case.shells.num_tris();
+        ctx
+    }
+}
+
+fn check_ids_unique(ids: &[usize], what: &str) -> Result<(), RadError> {
+    let mut seen = std::collections::BTreeSet::new();
+    for id in ids {
+        if *id == 0 || !seen.insert(*id) {
+            return Err(RadError::Parse(format!(
+                "{what} has a zero or duplicate id {id}"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn check_th_vars(vars: &[String], what: &str) -> Result<(), RadError> {
+    if vars.is_empty() {
+        return Err(RadError::Parse(format!(
+            "{what} needs at least one variable"
+        )));
+    }
+    for var in vars {
+        if var.is_empty() || var.len() > 10 {
+            return Err(RadError::Parse(format!(
+                "{what} variable {var} must use 1..=10 characters"
+            )));
+        }
+    }
+    Ok(())
+}
+
+impl RadExtra {
+    /// Node-group ids defined by this bundle (`/GRNOD/SURF`).
+    fn extra_grnods(&self) -> Vec<usize> {
+        self.grnods.iter().map(|group| group.id).collect()
+    }
+
+    /// Whether a node group id exists (base sets or extra).
+    fn has_grnod(&self, ctx: &RadExtraContext, id: usize) -> bool {
+        (1..=ctx.num_node_sets).contains(&id) || self.extra_grnods().contains(&id)
+    }
+
+    /// Whether a part id exists (base parts or extra).
+    fn has_part(&self, ctx: &RadExtraContext, id: usize) -> bool {
+        (1..=ctx.num_parts).contains(&id) || self.parts.iter().any(|part| part.id == id)
+    }
+
+    /// Whether a property id exists (base props or extra).
+    fn has_prop(&self, ctx: &RadExtraContext, id: usize) -> bool {
+        (1..=ctx.num_parts).contains(&id)
+            || self.truss_props.iter().any(|prop| prop.id == id)
+            || self.beam_props.iter().any(|prop| prop.id == id)
+            || self.spring_props.iter().any(|prop| prop.id == id)
+            || self.injectors.iter().any(|inject| inject.id == id)
+    }
+
+    /// Check every id, reference, and card range of the bundle.
+    ///
+    /// References resolve against `ctx` (base deck) plus this
+    /// bundle. Dangling `/TH/SECTIO`, `/TH/RBODY`, and `/TH/ACCEL`
+    /// ids pass: the starter only warns (id 257) on those, proven
+    /// by spike, since sections, rigid bodies, and accelerometers
+    /// belong to other lanes.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RadError::Parse`] for the first inconsistency found.
+    pub fn validate(&self, ctx: &RadExtraContext) -> Result<(), RadError> {
+        check_ids_unique(
+            &self.surfs.iter().map(|surf| surf.id).collect::<Vec<_>>(),
+            "/SURF/PART",
+        )?;
+        check_ids_unique(
+            &self.grnods.iter().map(|group| group.id).collect::<Vec<_>>(),
+            "/GRNOD/SURF",
+        )?;
+        check_ids_unique(
+            &self.lines.iter().map(|line| line.id).collect::<Vec<_>>(),
+            "/LINE/SURF",
+        )?;
+        check_ids_unique(
+            &self
+                .subsets
+                .iter()
+                .map(|subset| subset.id)
+                .collect::<Vec<_>>(),
+            "/SUBSET",
+        )?;
+        check_ids_unique(
+            &self
+                .interfaces
+                .iter()
+                .map(RadInterface::id)
+                .collect::<Vec<_>>(),
+            "/INTER",
+        )?;
+        check_ids_unique(
+            &self.gases.iter().map(|gas| gas.id).collect::<Vec<_>>(),
+            "/MAT/GAS/PREDEF",
+        )?;
+        check_ids_unique(
+            &self
+                .injectors
+                .iter()
+                .map(|inject| inject.id)
+                .collect::<Vec<_>>(),
+            "/PROP/INJECT2",
+        )?;
+        check_ids_unique(
+            &self.monvols.iter().map(RadMonvol::id).collect::<Vec<_>>(),
+            "/MONVOL",
+        )?;
+        check_ids_unique(
+            &self.sensors.iter().map(RadSensor::id).collect::<Vec<_>>(),
+            "/SENSOR",
+        )?;
+        let mut damp_ids: Vec<usize> = self.damps.iter().map(|damp| damp.id).collect();
+        damp_ids.extend(self.full_damps.iter().map(|damp| damp.id));
+        check_ids_unique(&damp_ids, "/DAMP")?;
+        check_ids_unique(
+            &self.parts.iter().map(|part| part.id).collect::<Vec<_>>(),
+            "extra /PART",
+        )?;
+        let mut prop_ids: Vec<usize> = self.truss_props.iter().map(|prop| prop.id).collect();
+        prop_ids.extend(self.beam_props.iter().map(|prop| prop.id));
+        prop_ids.extend(self.spring_props.iter().map(|prop| prop.id));
+        prop_ids.extend(self.injectors.iter().map(|inject| inject.id));
+        check_ids_unique(&prop_ids, "extra /PROP")?;
+        let surf_ids: Vec<usize> = self.surfs.iter().map(|surf| surf.id).collect();
+        let line_ids: Vec<usize> = self.lines.iter().map(|line| line.id).collect();
+        let sensor_ids: Vec<usize> = self.sensors.iter().map(RadSensor::id).collect();
+        let gas_ids: Vec<usize> = self.gases.iter().map(|gas| gas.id).collect();
+        let injector_ids: Vec<usize> = self.injectors.iter().map(|inject| inject.id).collect();
+        // Extra groups must not collide with base `/GRNOD/NODE` ids.
+        for group in &self.grnods {
+            if (1..=ctx.num_node_sets).contains(&group.id) {
+                return Err(RadError::Parse(format!(
+                    "/GRNOD/SURF/{} collides with a base node set",
+                    group.id
+                )));
+            }
+            if group.surfs.is_empty() {
+                return Err(RadError::Parse(format!(
+                    "/GRNOD/SURF/{} needs at least one surface",
+                    group.id
+                )));
+            }
+            for surf in &group.surfs {
+                if !surf_ids.contains(surf) {
+                    return Err(RadError::Parse(format!(
+                        "/GRNOD/SURF/{} references missing surface {surf}",
+                        group.id
+                    )));
+                }
+            }
+        }
+        for line in &self.lines {
+            if line.surfs.is_empty() {
+                return Err(RadError::Parse(format!(
+                    "/LINE/SURF/{} needs at least one surface",
+                    line.id
+                )));
+            }
+            for surf in &line.surfs {
+                if !surf_ids.contains(surf) {
+                    return Err(RadError::Parse(format!(
+                        "/LINE/SURF/{} references missing surface {surf}",
+                        line.id
+                    )));
+                }
+            }
+        }
+        for surf in &self.surfs {
+            if surf.parts.is_empty() {
+                return Err(RadError::Parse(format!(
+                    "/SURF/PART/{} needs at least one part",
+                    surf.id
+                )));
+            }
+            for part in &surf.parts {
+                if !self.has_part(ctx, *part) {
+                    return Err(RadError::Parse(format!(
+                        "/SURF/PART/{} references missing part {part}",
+                        surf.id
+                    )));
+                }
+            }
+        }
+        for inter in &self.interfaces {
+            match inter {
+                RadInterface::Type2(typed) => {
+                    if !self.has_grnod(ctx, typed.grnd_secondary) {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE2/{} references missing group {}",
+                            typed.id, typed.grnd_secondary
+                        )));
+                    }
+                    if !surf_ids.contains(&typed.surf_main) {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE2/{} references missing surface {}",
+                            typed.id, typed.surf_main
+                        )));
+                    }
+                    if matches!(typed.spotflag, 20..=22 | 25 | 27 | 28) {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE2/{} Spotflag {} needs an extension card",
+                            typed.id, typed.spotflag
+                        )));
+                    }
+                    if !typed.dsearch_m.is_finite() {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE2/{} needs a finite search distance",
+                            typed.id
+                        )));
+                    }
+                }
+                RadInterface::Type7(typed) => {
+                    if !self.has_grnod(ctx, typed.grnd_secondary) {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE7/{} references missing group {}",
+                            typed.id, typed.grnd_secondary
+                        )));
+                    }
+                    if !surf_ids.contains(&typed.surf_main) {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE7/{} references missing surface {}",
+                            typed.id, typed.surf_main
+                        )));
+                    }
+                    if typed.icurv == 1 || typed.icurv == 2 {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE7/{} Icurv {} needs a curvature-nodes line",
+                            typed.id, typed.icurv
+                        )));
+                    }
+                    if typed.ifric > 0 || typed.ithe > 1 || typed.iadm == 2 {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE7/{} needs an out-of-scope extension card",
+                            typed.id
+                        )));
+                    }
+                }
+                RadInterface::Type11(typed) => {
+                    if !line_ids.contains(&typed.line_secondary)
+                        || !line_ids.contains(&typed.line_main)
+                    {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE11/{} references a missing line",
+                            typed.id
+                        )));
+                    }
+                    if typed.ithe > 0 {
+                        return Err(RadError::Parse(format!(
+                            "/INTER/TYPE11/{} Ithe {} needs a thermal extension",
+                            typed.id, typed.ithe
+                        )));
+                    }
+                }
+            }
+        }
+        for gas in &self.gases {
+            if gas.id <= ctx.num_materials {
+                return Err(RadError::Parse(format!(
+                    "/MAT/GAS/PREDEF/{} collides with a base material",
+                    gas.id
+                )));
+            }
+        }
+        for inject in &self.injectors {
+            if inject.gases.is_empty() {
+                return Err(RadError::Parse(format!(
+                    "/PROP/INJECT2/{} needs at least one gas",
+                    inject.id
+                )));
+            }
+            if inject.id <= ctx.num_parts {
+                return Err(RadError::Parse(format!(
+                    "/PROP/INJECT2/{} collides with a base property",
+                    inject.id
+                )));
+            }
+            for fun in [inject.mass_function, inject.temp_function] {
+                if fun == 0 || fun > ctx.num_functions {
+                    return Err(RadError::Parse(format!(
+                        "/PROP/INJECT2/{} references missing function {fun}",
+                        inject.id
+                    )));
+                }
+            }
+            for gas in &inject.gases {
+                if !gas_ids.contains(&gas.mat) {
+                    return Err(RadError::Parse(format!(
+                        "/PROP/INJECT2/{} references missing gas {}",
+                        inject.id, gas.mat
+                    )));
+                }
+                if gas.function > ctx.num_functions {
+                    return Err(RadError::Parse(format!(
+                        "/PROP/INJECT2/{} references missing function {}",
+                        inject.id, gas.function
+                    )));
+                }
+            }
+        }
+        self.validate_monvols(&surf_ids, &gas_ids, &injector_ids, &sensor_ids, ctx)?;
+        for damp in &self.damps {
+            if !self.has_grnod(ctx, damp.grnd) {
+                return Err(RadError::Parse(format!(
+                    "/DAMP/{} references missing group {}",
+                    damp.id, damp.grnd
+                )));
+            }
+        }
+        for damp in &self.full_damps {
+            if !self.has_grnod(ctx, damp.grnd) {
+                return Err(RadError::Parse(format!(
+                    "/DAMP/{} references missing group {}",
+                    damp.id, damp.grnd
+                )));
+            }
+        }
+        for sensor in &self.sensors {
+            match sensor {
+                RadSensor::Time { .. } => {}
+                RadSensor::Sens {
+                    id,
+                    sens_on,
+                    sens_off,
+                    ..
+                } => {
+                    if !sensor_ids.contains(sens_on) {
+                        return Err(RadError::Parse(format!(
+                            "/SENSOR/SENS/{id} references missing sensor {sens_on}"
+                        )));
+                    }
+                    if *sens_off > 0 && !sensor_ids.contains(sens_off) {
+                        return Err(RadError::Parse(format!(
+                            "/SENSOR/SENS/{id} references missing sensor {sens_off}"
+                        )));
+                    }
+                }
+                RadSensor::Dist {
+                    id, node_a, node_b, ..
+                } => {
+                    for node in [node_a, node_b] {
+                        if *node == 0 || *node > ctx.num_nodes {
+                            return Err(RadError::Parse(format!(
+                                "/SENSOR/DIST/{id} references missing node {node}"
+                            )));
+                        }
+                    }
+                }
+                RadSensor::AndOr {
+                    id, sens_a, sens_b, ..
+                } => {
+                    for sens in [sens_a, sens_b] {
+                        if !sensor_ids.contains(sens) {
+                            return Err(RadError::Parse(format!(
+                                "/SENSOR/{id} references missing sensor {sens}"
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+        self.validate_1d(ctx)?;
+        self.validate_th(ctx)?;
+        if self.submodel.as_ref().is_some_and(|sub| sub.id == 0) {
+            return Err(RadError::Parse("//SUBMODEL needs a nonzero id".to_string()));
+        }
+        if let Some(state) = &self.state {
+            if !state.tstart_s.is_finite() || !state.tfreq_s.is_finite() || state.tfreq_s <= 0.0 {
+                return Err(RadError::Parse(
+                    "/STATE/DT needs a finite start and positive period".to_string(),
+                ));
+            }
+            if !state.all_parts {
+                if state.parts.is_empty() {
+                    return Err(RadError::Parse("/STATE/DT needs parts or ALL".to_string()));
+                }
+                for part in &state.parts {
+                    if !self.has_part(ctx, *part) {
+                        return Err(RadError::Parse(format!(
+                            "/STATE/DT references missing part {part}"
+                        )));
+                    }
+                }
+            }
+        }
+        for damp in &self.engine_damps {
+            if !damp_ids.contains(&damp.damp_id) {
+                return Err(RadError::Parse(format!(
+                    "engine /DAMP/{} has no starter card",
+                    damp.damp_id
+                )));
+            }
+        }
+        if let Some(vers) = self.th_vers
+            && !matches!(vers, 41 | 51 | 2021)
+        {
+            return Err(RadError::Parse(format!(
+                "/TH/VERS/{vers} must be 41, 51, or 2021"
+            )));
+        }
+        Ok(())
+    }
+}
+
+impl RadExtra {
+    /// Validate monitored-volume references.
+    fn validate_monvols(
+        &self,
+        surf_ids: &[usize],
+        gas_ids: &[usize],
+        injector_ids: &[usize],
+        sensor_ids: &[usize],
+        ctx: &RadExtraContext,
+    ) -> Result<(), RadError> {
+        for bag in &self.monvols {
+            match bag {
+                RadMonvol::Airbag1(typed) => {
+                    if !surf_ids.contains(&typed.surf_external) {
+                        return Err(RadError::Parse(format!(
+                            "/MONVOL/AIRBAG1/{} references missing surface {}",
+                            typed.id, typed.surf_external
+                        )));
+                    }
+                    if !gas_ids.contains(&typed.mat_gas) {
+                        return Err(RadError::Parse(format!(
+                            "/MONVOL/AIRBAG1/{} references missing gas {}",
+                            typed.id, typed.mat_gas
+                        )));
+                    }
+                    for injector in &typed.injectors {
+                        if !injector_ids.contains(&injector.inject_id) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} references missing injector {}",
+                                typed.id, injector.inject_id
+                            )));
+                        }
+                        if injector.sens_id > 0 && !sensor_ids.contains(&injector.sens_id) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} references missing sensor {}",
+                                typed.id, injector.sens_id
+                            )));
+                        }
+                        if (injector.ijet == 1) != injector.jetting.is_some() {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} injector needs jetting exactly when Ijet is 1",
+                                typed.id
+                            )));
+                        }
+                        for node in injector.nodes {
+                            if node > ctx.num_nodes {
+                                return Err(RadError::Parse(format!(
+                                    "/MONVOL/AIRBAG1/{} references missing node {node}",
+                                    typed.id
+                                )));
+                            }
+                        }
+                    }
+                    for vent in &typed.vents {
+                        if !surf_ids.contains(&vent.surf) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} references missing vent surface {}",
+                                typed.id, vent.surf
+                            )));
+                        }
+                        if (vent.iform == 2) != vent.chemkin.is_some() {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} vent needs a Chemkin line exactly when Iform is 2",
+                                typed.id
+                            )));
+                        }
+                        for fun in vent.fcts.iter().chain(vent.fcts_p.iter()) {
+                            if *fun > ctx.num_functions {
+                                return Err(RadError::Parse(format!(
+                                    "/MONVOL/AIRBAG1/{} references missing function {fun}",
+                                    typed.id
+                                )));
+                            }
+                        }
+                    }
+                    for porous in &typed.porous {
+                        if !surf_ids.contains(&porous.surf) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} references missing porous surface {}",
+                                typed.id, porous.surf
+                            )));
+                        }
+                        if (porous.iformps == 0) != porous.leakage.is_some() {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} porous needs a leakage line exactly when Iformps is 0",
+                                typed.id
+                            )));
+                        }
+                        if (porous.iformps == 2) != porous.chemkin.is_some() {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/AIRBAG1/{} porous needs a Chemkin line exactly when Iformps is 2",
+                                typed.id
+                            )));
+                        }
+                    }
+                }
+                RadMonvol::Commu(typed) => {
+                    if !surf_ids.contains(&typed.surf_external) {
+                        return Err(RadError::Parse(format!(
+                            "/MONVOL/COMMU/{} references missing surface {}",
+                            typed.id, typed.surf_external
+                        )));
+                    }
+                    for jet in &typed.jets {
+                        for fun in [jet.fct_mass, jet.fct_temp] {
+                            if fun > ctx.num_functions {
+                                return Err(RadError::Parse(format!(
+                                    "/MONVOL/COMMU/{} references missing function {fun}",
+                                    typed.id
+                                )));
+                            }
+                        }
+                        if jet.sens_id > 0 && !sensor_ids.contains(&jet.sens_id) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/COMMU/{} references missing sensor {}",
+                                typed.id, jet.sens_id
+                            )));
+                        }
+                        if (jet.ijet == 1) != jet.jetting.is_some() {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/COMMU/{} jet needs jetting exactly when Ijet is 1",
+                                typed.id
+                            )));
+                        }
+                        for node in jet.nodes {
+                            if node > ctx.num_nodes {
+                                return Err(RadError::Parse(format!(
+                                    "/MONVOL/COMMU/{} references missing node {node}",
+                                    typed.id
+                                )));
+                            }
+                        }
+                    }
+                    for vent in &typed.vents {
+                        if vent.surf > 0 && !surf_ids.contains(&vent.surf) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/COMMU/{} references missing vent surface {}",
+                                typed.id, vent.surf
+                            )));
+                        }
+                        for fun in vent.fcts.iter().chain(vent.fcts_p.iter()) {
+                            if *fun > ctx.num_functions {
+                                return Err(RadError::Parse(format!(
+                                    "/MONVOL/COMMU/{} references missing function {fun}",
+                                    typed.id
+                                )));
+                            }
+                        }
+                    }
+                    for link in &typed.bags {
+                        if !self.monvols.iter().any(|bag| bag.id() == link.bag) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/COMMU/{} references missing volume {}",
+                                typed.id, link.bag
+                            )));
+                        }
+                        if link.surf_c > 0 && !surf_ids.contains(&link.surf_c) {
+                            return Err(RadError::Parse(format!(
+                                "/MONVOL/COMMU/{} references missing surface {}",
+                                typed.id, link.surf_c
+                            )));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate 1D support cards and extra parts.
+    fn validate_1d(&self, ctx: &RadExtraContext) -> Result<(), RadError> {
+        for part in &self.parts {
+            if part.id <= ctx.num_parts {
+                return Err(RadError::Parse(format!(
+                    "extra /PART/{} collides with a base part",
+                    part.id
+                )));
+            }
+            if !self.has_prop(ctx, part.prop) {
+                return Err(RadError::Parse(format!(
+                    "extra /PART/{} references missing property {}",
+                    part.id, part.prop
+                )));
+            }
+            if part.mat > ctx.num_materials {
+                return Err(RadError::Parse(format!(
+                    "extra /PART/{} references missing material {}",
+                    part.id, part.mat
+                )));
+            }
+        }
+        for prop in self
+            .truss_props
+            .iter()
+            .map(|prop| prop.id)
+            .chain(self.beam_props.iter().map(|prop| prop.id))
+            .chain(self.spring_props.iter().map(|prop| prop.id))
+        {
+            if prop <= ctx.num_parts {
+                return Err(RadError::Parse(format!(
+                    "extra property {prop} collides with a base property"
+                )));
+            }
+        }
+        for truss in &self.truss {
+            if !self.has_part(ctx, truss.part) {
+                return Err(RadError::Parse(format!(
+                    "/TRUSS/{} references missing part",
+                    truss.part
+                )));
+            }
+            for elem in &truss.elems {
+                for node in elem {
+                    if *node == 0 || *node > ctx.num_nodes {
+                        return Err(RadError::Parse(format!(
+                            "/TRUSS/{} references missing node {node}",
+                            truss.part
+                        )));
+                    }
+                }
+            }
+        }
+        for beam in &self.beams {
+            if !self.has_part(ctx, beam.part) {
+                return Err(RadError::Parse(format!(
+                    "/BEAM/{} references missing part",
+                    beam.part
+                )));
+            }
+            for elem in &beam.elems {
+                for node in elem {
+                    if *node == 0 || *node > ctx.num_nodes {
+                        return Err(RadError::Parse(format!(
+                            "/BEAM/{} references missing node {node}",
+                            beam.part
+                        )));
+                    }
+                }
+            }
+        }
+        for spring in &self.springs {
+            if !self.has_part(ctx, spring.part) {
+                return Err(RadError::Parse(format!(
+                    "/SPRING/{} references missing part",
+                    spring.part
+                )));
+            }
+            for elem in &spring.elems {
+                for node in elem {
+                    if *node == 0 || *node > ctx.num_nodes {
+                        return Err(RadError::Parse(format!(
+                            "/SPRING/{} references missing node {node}",
+                            spring.part
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate time-history requests against entity counts.
+    fn validate_th(&self, ctx: &RadExtraContext) -> Result<(), RadError> {
+        let num_truss: usize = self.truss.iter().map(|group| group.elems.len()).sum();
+        let num_beams: usize = self.beams.iter().map(|group| group.elems.len()).sum();
+        let num_springs: usize = self.springs.iter().map(|group| group.elems.len()).sum();
+        for req in &self.th_elems {
+            let what = format!("/TH/{}", req.family.keyword());
+            check_th_vars(&req.vars, &what)?;
+            if req.elems.is_empty() {
+                return Err(RadError::Parse(format!(
+                    "{what} needs at least one element"
+                )));
+            }
+            // The starter errors (id 69) on missing TH elements, so
+            // every request resolves against a real entity count.
+            // `/QUAD` and `/SPHCEL` have no writers in this lane,
+            // hence any request for them fails here by design.
+            let count = match req.family {
+                RadThElemFamily::Node => ctx.num_nodes,
+                RadThElemFamily::Shel | RadThElemFamily::Shell => ctx.num_shells,
+                RadThElemFamily::Sh3n => ctx.num_tris,
+                RadThElemFamily::Bric | RadThElemFamily::Brick => ctx.num_bricks,
+                RadThElemFamily::Quad | RadThElemFamily::Sphcel => 0,
+                RadThElemFamily::Truss => num_truss,
+                RadThElemFamily::Beam => num_beams,
+                RadThElemFamily::Spring => num_springs,
+            };
+            for elem in &req.elems {
+                if *elem == 0 || *elem > count {
+                    return Err(RadError::Parse(format!(
+                        "{what} references missing element {elem}"
+                    )));
+                }
+            }
+        }
+        for req in &self.th_objs {
+            let what = format!("/TH/{}", req.kind.keyword());
+            check_th_vars(&req.vars, &what)?;
+            if req.ids.is_empty() {
+                return Err(RadError::Parse(format!("{what} needs at least one id")));
+            }
+            match req.kind {
+                RadThObjKind::Part => {
+                    for id in &req.ids {
+                        if !self.has_part(ctx, *id) {
+                            return Err(RadError::Parse(format!(
+                                "{what} references missing part {id}"
+                            )));
+                        }
+                    }
+                }
+                RadThObjKind::Inter => {
+                    for id in &req.ids {
+                        if !self.interfaces.iter().any(|inter| inter.id() == *id) {
+                            return Err(RadError::Parse(format!(
+                                "{what} references missing interface {id}"
+                            )));
+                        }
+                    }
+                }
+                RadThObjKind::Monv | RadThObjKind::Monvol => {
+                    for id in &req.ids {
+                        if !self.monvols.iter().any(|bag| bag.id() == *id) {
+                            return Err(RadError::Parse(format!(
+                                "{what} references missing volume {id}"
+                            )));
+                        }
+                    }
+                }
+                RadThObjKind::Subs => {
+                    for id in &req.ids {
+                        if !self.subsets.iter().any(|subset| subset.id == *id) {
+                            return Err(RadError::Parse(format!(
+                                "{what} references missing subset {id}"
+                            )));
+                        }
+                    }
+                }
+                RadThObjKind::Rwall => {
+                    for id in &req.ids {
+                        if *id == 0 || *id > ctx.num_walls {
+                            return Err(RadError::Parse(format!(
+                                "{what} references missing wall {id}"
+                            )));
+                        }
+                    }
+                }
+                // Sections, rigid bodies, and accelerometers belong
+                // to other lanes; dangling ids only warn (id 257).
+                RadThObjKind::Sectio | RadThObjKind::Rbody | RadThObjKind::Accel => {}
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Count `/TH` groups emitted by [`write_starter`].
+///
+/// Mirrors the base writer exactly (one group per ten-variable
+/// card): node output plus one wall group when walls exist.
+pub fn starter_th_groups(case: &RadCase) -> usize {
+    let mut groups = 0;
+    if !case.th_nodes.is_empty() {
+        groups += 1;
+    }
+    if !case.walls.is_empty() {
+        groups += 1;
+    }
+    groups
+}
+
+/// Count `/TH` groups emitted by [`write_extended_starter`].
+///
+/// Mirrors the extended writer exactly: node, shell, brick, and
+/// wall requests, one group per ten-variable card.
+pub fn extended_starter_th_groups(case: &RadExtendedCase) -> usize {
+    let mut groups = 0;
+    if !case.th_node_vars.is_empty() && !case.base.th_nodes.is_empty() {
+        groups += case.th_node_vars.chunks(10).len();
+    }
+    if !case.th_shell.vars.is_empty() && !case.th_shell.elems.is_empty() {
+        groups += case.th_shell.vars.chunks(10).len();
+    }
+    if !case.th_brick.vars.is_empty() && !case.th_brick.elems.is_empty() {
+        groups += case.th_brick.vars.chunks(10).len();
+    }
+    if !case.base.walls.is_empty() {
+        groups += 1;
+    }
+    groups
+}
+
+/// Render the starter side of a [`RadExtra`] bundle.
+///
+/// Splice the result before the terminal `/END` of a base starter
+/// deck; `first_th_group` continues the deck-global TH group
+/// namespace (see [`starter_th_groups`]). When `extra.submodel`
+/// is set, the whole block sits inside one `//SUBMODEL` section.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadDamping, RadExtra, write_starter_extra};
+/// let mut extra = RadExtra::default();
+/// extra.damps.push(RadDamping {
+///     id: 1, title: "bulk".to_string(), alpha: 1.0, beta_s: 0.0,
+///     grnd: 1, skew: 0, tstart_s: 0.0, tstop_s: 1.0e30,
+/// });
+/// let deck = write_starter_extra(&extra, 1);
+/// assert!(deck.contains("/DAMP/1\n"));
+/// ```
+pub fn write_starter_extra(extra: &RadExtra, first_th_group: usize) -> String {
+    let mut deck = String::new();
+    if let Some(sub) = &extra.submodel {
+        write_submodel_open(&mut deck, sub);
+    }
+    for surf in &extra.surfs {
+        write_surf_parts(&mut deck, surf);
+    }
+    for grnod in &extra.grnods {
+        write_grnod_surfs(&mut deck, grnod);
+    }
+    for line in &extra.lines {
+        write_line_surfs(&mut deck, line);
+    }
+    for subset in &extra.subsets {
+        write_subset(&mut deck, subset);
+    }
+    for inter in &extra.interfaces {
+        write_interface(&mut deck, inter);
+    }
+    for gas in &extra.gases {
+        write_gas_predef(&mut deck, gas);
+    }
+    for inject in &extra.injectors {
+        write_inject2(&mut deck, inject);
+    }
+    for bag in &extra.monvols {
+        write_monvol(&mut deck, bag);
+    }
+    for damp in &extra.damps {
+        write_damping(&mut deck, damp);
+    }
+    for damp in &extra.full_damps {
+        write_damping_full(&mut deck, damp);
+    }
+    for sensor in &extra.sensors {
+        write_sensor(&mut deck, sensor);
+    }
+    for prop in &extra.truss_props {
+        write_truss_prop(&mut deck, prop);
+    }
+    for prop in &extra.beam_props {
+        write_beam_prop(&mut deck, prop);
+    }
+    for prop in &extra.spring_props {
+        write_spring_prop(&mut deck, prop);
+    }
+    for part in &extra.parts {
+        write_extra_part(&mut deck, part);
+    }
+    for truss in &extra.truss {
+        write_truss(&mut deck, truss);
+    }
+    for beam in &extra.beams {
+        write_beam(&mut deck, beam);
+    }
+    for spring in &extra.springs {
+        write_spring(&mut deck, spring);
+    }
+    let mut group = first_th_group;
+    for req in &extra.th_elems {
+        write_th_elems(&mut deck, &mut group, req);
+    }
+    for req in &extra.th_objs {
+        write_th_objects(&mut deck, &mut group, req);
+    }
+    if extra.submodel.is_some() {
+        write_submodel_close(&mut deck);
+    }
+    deck
+}
+
+/// Render the engine side of a [`RadExtra`] bundle.
+///
+/// Appends `/STATE/DT`, `/STATE/*` flags, engine `/DAMP`
+/// overrides, and `/TH/VERS/*` to an engine deck.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::{RadExtra, RadStateFlag, RadStateOutput, write_engine_extra};
+/// let mut extra = RadExtra::default();
+/// extra.state = Some(RadStateOutput { tstart_s: 0.0, tfreq_s: 0.1, all_parts: true, parts: Vec::new() });
+/// extra.state_flags.push(RadStateFlag::NodeVel);
+/// extra.th_vers = Some(41);
+/// let deck = write_engine_extra(&extra);
+/// assert!(deck.contains("/STATE/DT/ALL\n"));
+/// assert!(deck.contains("/STATE/NODE/VEL\n"));
+/// assert!(deck.contains("/TH/VERS/41\n"));
+/// ```
+pub fn write_engine_extra(extra: &RadExtra) -> String {
+    let mut deck = String::new();
+    if let Some(state) = &extra.state {
+        write_state_dt(&mut deck, state);
+    }
+    for flag in &extra.state_flags {
+        write_state_flag(&mut deck, *flag);
+    }
+    for damp in &extra.engine_damps {
+        write_engine_damping(&mut deck, damp);
+    }
+    if let Some(vers) = extra.th_vers {
+        deck.push_str(&format!("/TH/VERS/{vers}\n"));
+    }
+    deck
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2955,7 +6503,7 @@ mod tests {
                 .unwrap_or_else(|| panic!("{starter} lacks {header}"));
             // Title, node_ID/Slide/grnds, Dsearch/fric, then M (fixed) or
             // Mass/V (moving), then M1. Six lines per wall block.
-            assert_eq!(lines.len() > at + 5, true, "truncated {header}");
+            assert!(lines.len() > at + 5, "truncated {header}");
             let node_slide: Vec<&str> = lines[at + 2].split_whitespace().collect();
             let mass_or_m: Vec<&str> = lines[at + 4].split_whitespace().collect();
             if wall_id == 1 {
@@ -3320,5 +6868,763 @@ mod tests {
         case.probes[0].expected += 1.0;
         let drifted = probes_json(&case, "none (prove-out deferred)");
         assert_probes_payload_eq(&stamped, &drifted, "drifted");
+    }
+
+    // Phase-4 lane 4B tests: writer completion cards.
+
+    fn block_lines(deck: &str, header: &str) -> Vec<String> {
+        let lines: Vec<&str> = deck.lines().collect();
+        let at = lines
+            .iter()
+            .position(|line| *line == header)
+            .unwrap_or_else(|| panic!("deck lacks {header}"));
+        lines[at..].iter().map(ToString::to_string).collect()
+    }
+
+    #[test]
+    fn extra_groups_emit_ten_ids_per_line() {
+        let mut deck = String::new();
+        write_surf_parts(
+            &mut deck,
+            &RadSurfParts {
+                id: 4,
+                title: "skin".to_string(),
+                parts: (1..=11).collect(),
+            },
+        );
+        let lines = block_lines(&deck, "/SURF/PART/4");
+        assert_eq!(lines[1], "skin");
+        assert_eq!(lines[2].len(), 100);
+        assert_eq!(lines[3].trim(), "11");
+        let mut deck = String::new();
+        write_grnod_surfs(
+            &mut deck,
+            &RadGrnodSurfs {
+                id: 32,
+                title: "nodes".to_string(),
+                surfs: vec![4],
+            },
+        );
+        assert!(deck.contains("/GRNOD/SURF/32\nnodes\n"));
+        let mut deck = String::new();
+        write_line_surfs(
+            &mut deck,
+            &RadLineSurfs {
+                id: 33,
+                title: "edges".to_string(),
+                surfs: vec![4],
+            },
+        );
+        assert!(deck.contains("/LINE/SURF/33\nedges\n"));
+        let mut deck = String::new();
+        write_subset(
+            &mut deck,
+            &RadSubset {
+                id: 1,
+                title: "all".to_string(),
+            },
+        );
+        assert_eq!(deck, "/SUBSET/1\nall\n");
+    }
+
+    #[test]
+    fn inter_type2_line_is_100_columns() {
+        let mut deck = String::new();
+        write_inter_type2(&mut deck, &RadInterType2::basic(1, "tie", 4, 5));
+        let lines = block_lines(&deck, "/INTER/TYPE2/1");
+        assert_eq!(lines.len(), 3);
+        let data = &lines[2];
+        assert_eq!(data.len(), 100);
+        assert_eq!(&data[0..10], "         4");
+        assert_eq!(&data[10..20], "         5");
+        // `Dsearch` occupies the trailing F20 field (cols 81-100).
+        assert_eq!(&data[80..100].trim().parse::<f64>().unwrap(), &0.0);
+    }
+
+    #[test]
+    fn inter_type7_matches_reader_layout() {
+        let mut deck = String::new();
+        let mut inter = RadInterType7::basic(1, "contact", 2, 3);
+        inter.ibc = [true, false, true];
+        inter.itied = 1;
+        inter.fric_id = 7;
+        write_inter_type7(&mut deck, &inter);
+        let lines = block_lines(&deck, "/INTER/TYPE7/1");
+        assert_eq!(lines.len(), 8);
+        // Line 1: ten ids, sixth (legacy Multimp) blank.
+        assert_eq!(lines[2].len(), 100);
+        assert_eq!(&lines[2][50..60], "          ");
+        assert_eq!(&lines[2][60..70], "         0");
+        // Line 2: Itied in field 9 (cols 81-90).
+        assert_eq!(lines[3].len(), 90);
+        assert_eq!(&lines[3][80..90], "         1");
+        // Line 3: stiffness + removal flags.
+        assert_eq!(lines[4].len(), 100);
+        // Line 4: penalty window carries Stfac 0.2.
+        assert!((lines[5][0..20].trim().parse::<f64>().unwrap() - 0.2).abs() < 1e-15);
+        // Line 5: IBC digits at columns 8-10.
+        assert_eq!(&lines[6][0..10], "       101");
+        assert_eq!(lines[6].len(), 100);
+        // Line 6: friction tail with fric_ID in field 10.
+        assert_eq!(lines[7].len(), 100);
+        assert_eq!(&lines[7][90..100], "         7");
+    }
+
+    #[test]
+    fn inter_type11_fric_id_in_field_10() {
+        let mut deck = String::new();
+        let mut inter = RadInterType11::basic(4, "edges", 33, 33);
+        inter.fric_id = 9;
+        write_inter_type11(&mut deck, &inter);
+        let lines = block_lines(&deck, "/INTER/TYPE11/4");
+        assert_eq!(lines.len(), 7);
+        assert_eq!(lines[2].len(), 80);
+        assert_eq!(&lines[2][50..60], "          ");
+        let last = &lines[6];
+        assert_eq!(last.len(), 100);
+        assert_eq!(&last[0..90], " ".repeat(90));
+        assert_eq!(&last[90..100], "         9");
+    }
+
+    #[test]
+    fn monvol_airbag1_matches_cfg_layout() {
+        let mut deck = String::new();
+        write_monvol_airbag1(
+            &mut deck,
+            &RadMonvolAirbag1 {
+                id: 1,
+                title: "bag".to_string(),
+                surf_external: 4,
+                hconv: 0.0,
+                ascale: [0.0; 5],
+                mat_gas: 2,
+                gas_mu: 0.1,
+                pext_pa: 101_325.0,
+                t0_k: 293.0,
+                iequi: 0,
+                ittf: 0,
+                injectors: vec![RadAirbagInjector {
+                    inject_id: 10,
+                    sens_id: 1,
+                    ijet: 0,
+                    nodes: [0; 3],
+                    jetting: None,
+                }],
+                vents: Vec::new(),
+                porous: vec![RadAirbagPorous {
+                    surf: 4,
+                    iformps: 1,
+                    iblockage: 0,
+                    title: "fabric".to_string(),
+                    tstart_s: 0.0,
+                    tstop_s: 1.0e30,
+                    dpdef: 0.0,
+                    dtpdef_s: 0.0,
+                    idtpdef: 0,
+                    leakage: None,
+                    chemkin: None,
+                }],
+            },
+        );
+        let lines = block_lines(&deck, "/MONVOL/AIRBAG1/1");
+        // surf line: I10 + blank + F20.
+        assert_eq!(lines[2].len(), 40);
+        // mat line: mat blank Mu Pext T0 Iequi Ittf.
+        assert_eq!(lines[4].len(), 100);
+        assert_eq!(&lines[4][0..10], "         2");
+        assert!((lines[4][20..40].trim().parse::<f64>().unwrap() - 0.1).abs() < 1e-15);
+        // Njet, injector, Nvent/Nps, porous pair.
+        assert_eq!(lines[5].trim(), "1");
+        assert_eq!(lines[6].len(), 60);
+        assert_eq!(lines[7].len(), 20);
+        assert_eq!(lines[8].len(), 100);
+        assert_eq!(&lines[8][80..100], "fabric              ");
+        assert_eq!(lines[9].len(), 100);
+    }
+
+    #[test]
+    fn monvol_commu_mirrors_jetv41b() {
+        let mut deck = String::new();
+        write_monvol_commu(
+            &mut deck,
+            &RadMonvolCommu {
+                id: 1,
+                title: "chamber".to_string(),
+                surf_external: 3,
+                ascale: [0.0; 5],
+                gas_mu: 0.1,
+                pext_pa: 101.35,
+                t0_k: 0.0,
+                iequi: 0,
+                ittf: 0,
+                gamma_i: 1.667,
+                cp_i: [520.275, 0.0, 0.0],
+                jets: vec![RadCommuJet {
+                    gamma: 1.667,
+                    cp: [520.275, 0.0, 0.0],
+                    fct_mass: 1,
+                    iflow: 0,
+                    fscale_mass: 1.0,
+                    fct_temp: 2,
+                    fscale_temp: 1.0,
+                    sens_id: 0,
+                    ijet: 1,
+                    nodes: [4, 5, 0],
+                    jetting: Some(RadJetting {
+                        fct_pt: 6,
+                        fct_theta: 7,
+                        fct_delta: 8,
+                        fscale_pt: 0.0,
+                        fscale_ptheta: 0.0,
+                        fscale_pdelta: 0.0,
+                    }),
+                }],
+                vents: vec![RadCommuVent {
+                    surf: 0,
+                    avent_m2: 840.0,
+                    bvent: 0.0,
+                    tstop_s: 0.0,
+                    tvent_s: 1.0e30,
+                    dpdef: 0.0,
+                    dtpdef_s: 0.0,
+                    fct_v: 0,
+                    fscale_v: 0.0,
+                    idtpdef: 0,
+                    fcts: [0; 3],
+                    fscales: [0.0; 3],
+                    fcts_p: [0; 3],
+                    fscales_p: [0.0; 3],
+                }],
+                bags: vec![RadCommuBag {
+                    bag: 2,
+                    surf_c: 0,
+                    dpcdef_pa: 0.0,
+                    acom_m2: 3958.5,
+                    tcom_s: 1.0e30,
+                    dtpcdef_s: 0.0,
+                }],
+            },
+        );
+        let lines = block_lines(&deck, "/MONVOL/COMMU/1");
+        // Mu line: blank mat field, then Mu/Pext/T0/Iequi/Ittf.
+        assert_eq!(lines[4].len(), 100);
+        assert_eq!(&lines[4][0..20], " ".repeat(20));
+        assert!((lines[4][20..40].trim().parse::<f64>().unwrap() - 0.1).abs() < 1e-15);
+        // Jetting line: three ids, one blank, three scales.
+        assert_eq!(lines[10].len(), 100);
+        assert_eq!(&lines[10][0..10], "         6");
+        assert_eq!(&lines[10][30..40], "          ");
+        // Vent function rows share the jetting shape.
+        assert_eq!(lines[lines.len() - 5].len(), 100);
+        // Bag link: two ids plus four floats.
+        assert_eq!(lines[lines.len() - 1].len(), 100);
+        let bag = &lines[lines.len() - 1];
+        assert!((bag[40..60].trim().parse::<f64>().unwrap() - 3958.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn damping_cards_match_guide_shapes() {
+        let mut deck = String::new();
+        write_damping(
+            &mut deck,
+            &RadDamping {
+                id: 1,
+                title: "bulk".to_string(),
+                alpha: 1.0,
+                beta_s: 0.0,
+                grnd: 2,
+                skew: 0,
+                tstart_s: 0.0,
+                tstop_s: 1.0e30,
+            },
+        );
+        let lines = block_lines(&deck, "/DAMP/1");
+        assert_eq!(lines.len(), 3);
+        assert_eq!(lines[2].len(), 100);
+        let mut deck = String::new();
+        write_damping_full(
+            &mut deck,
+            &RadDampingFull {
+                id: 2,
+                title: "axes".to_string(),
+                alpha: [1.0; 6],
+                beta_s: [0.0; 6],
+                grnd: 3,
+                skew: 0,
+                tstart_s: 0.0,
+                tstop_s: 1.0e30,
+            },
+        );
+        let lines = block_lines(&deck, "/DAMP/2");
+        assert_eq!(lines.len(), 8);
+        assert_eq!(lines[2].len(), 100);
+        for line in &lines[3..] {
+            assert_eq!(line.len(), 40);
+        }
+    }
+
+    #[test]
+    fn sensors_emit_all_guide_headers() {
+        let sensors = vec![
+            RadSensor::Time {
+                id: 1,
+                title: "fire".to_string(),
+                tdelay_s: 0.5,
+            },
+            RadSensor::Sens {
+                id: 3,
+                title: "follow".to_string(),
+                tdelay_s: 0.5,
+                sens_on: 1,
+                sens_off: 0,
+            },
+            RadSensor::Dist {
+                id: 6,
+                title: "gap".to_string(),
+                tdelay_s: 0.0,
+                node_a: 1,
+                node_b: 2,
+                dmin_m: -1.0e30,
+                dmax_m: 1.0e30,
+            },
+            RadSensor::AndOr {
+                id: 7,
+                title: "both".to_string(),
+                tdelay_s: 0.0,
+                sens_a: 1,
+                sens_b: 3,
+                is_and: true,
+            },
+            RadSensor::AndOr {
+                id: 8,
+                title: "either".to_string(),
+                tdelay_s: 0.0,
+                sens_a: 1,
+                sens_b: 3,
+                is_and: false,
+            },
+        ];
+        let mut deck = String::new();
+        for sensor in &sensors {
+            write_sensor(&mut deck, sensor);
+        }
+        for header in [
+            "/SENSOR/TIME/1",
+            "/SENSOR/SENS/3",
+            "/SENSOR/DIST/6",
+            "/SENSOR/AND/7",
+            "/SENSOR/OR/8",
+        ] {
+            assert!(deck.contains(&format!("{header}\n")), "deck lacks {header}");
+        }
+        let dist = block_lines(&deck, "/SENSOR/DIST/6");
+        assert_eq!(dist[3].len(), 60);
+    }
+
+    #[test]
+    fn submodel_wraps_with_offsets() {
+        let mut deck = String::new();
+        let mut sub = RadSubmodel::plain(1, "extra");
+        sub.off_nod = 100;
+        write_submodel_open(&mut deck, &sub);
+        deck.push_str("/SENSOR/TIME/1\n");
+        write_submodel_close(&mut deck);
+        let lines: Vec<&str> = deck.lines().collect();
+        assert_eq!(lines[0], "//SUBMODEL/1");
+        assert_eq!(lines[2].len(), 70);
+        assert!(lines[2].contains("100"));
+        assert_eq!(lines[4], "//ENDSUB");
+    }
+
+    #[test]
+    fn th_completion_covers_every_family() {
+        let elem_families = [
+            RadThElemFamily::Node,
+            RadThElemFamily::Shel,
+            RadThElemFamily::Sh3n,
+            RadThElemFamily::Shell,
+            RadThElemFamily::Bric,
+            RadThElemFamily::Brick,
+            RadThElemFamily::Quad,
+            RadThElemFamily::Truss,
+            RadThElemFamily::Beam,
+            RadThElemFamily::Spring,
+            RadThElemFamily::Sphcel,
+        ];
+        let mut deck = String::new();
+        let mut group = 0;
+        for family in elem_families {
+            write_th_elems(
+                &mut deck,
+                &mut group,
+                &RadThElemRequest {
+                    family,
+                    title: "probe".to_string(),
+                    vars: vec!["DEF".to_string()],
+                    elems: vec![1],
+                },
+            );
+        }
+        assert_eq!(group, elem_families.len());
+        for family in elem_families {
+            let header = format!("/TH/{}", family.keyword());
+            assert!(deck.contains(&header), "deck lacks {header}");
+        }
+        // Skew families carry a zero skew column; name families use
+        // bare ids (a zero there trips starter warning 100214).
+        let node = block_lines(&deck, "/TH/NODE/1");
+        assert_eq!(node[3].len(), 20);
+        let spring = block_lines(&deck, "/TH/SPRING/10");
+        assert_eq!(spring[3].len(), 10);
+        let obj_kinds = [
+            RadThObjKind::Part,
+            RadThObjKind::Inter,
+            RadThObjKind::Monv,
+            RadThObjKind::Monvol,
+            RadThObjKind::Subs,
+            RadThObjKind::Accel,
+            RadThObjKind::Rbody,
+            RadThObjKind::Sectio,
+            RadThObjKind::Rwall,
+        ];
+        for kind in obj_kinds {
+            write_th_objects(
+                &mut deck,
+                &mut group,
+                &RadThObjRequest {
+                    kind,
+                    title: "probe".to_string(),
+                    vars: vec!["DEF".to_string()],
+                    ids: (1..=11).collect(),
+                },
+            );
+        }
+        for kind in obj_kinds {
+            let header = format!("/TH/{}", kind.keyword());
+            assert!(deck.contains(&header), "deck lacks {header}");
+        }
+        // Eleven object ids wrap ten plus one.
+        let part = block_lines(&deck, "/TH/PART/12");
+        assert_eq!(part[3].len(), 100);
+        assert_eq!(part[4].trim(), "11");
+        // Eleven variables open a second group for the same request.
+        let before = group;
+        write_th_elems(
+            &mut deck,
+            &mut group,
+            &RadThElemRequest {
+                family: RadThElemFamily::Node,
+                title: "wide".to_string(),
+                vars: (0..11).map(|n| format!("V{n}")).collect(),
+                elems: vec![1],
+            },
+        );
+        assert_eq!(group, before + 2);
+    }
+
+    #[test]
+    fn spring_prop_has_26_data_lines() {
+        let mut deck = String::new();
+        write_spring_prop(
+            &mut deck,
+            &RadSpringProp {
+                id: 5,
+                title: "spring".to_string(),
+                mass_kg: 1.0e-3,
+                inertia: 1.0e-3,
+                k_trans: 10000.0,
+                k_rot: 100000.0,
+            },
+        );
+        let lines = block_lines(&deck, "/PROP/TYPE13/5");
+        assert_eq!(lines.len(), 28);
+        assert!((lines[3][0..20].trim().parse::<f64>().unwrap() - 10000.0).abs() < 1e-9);
+        assert!((lines[12][0..20].trim().parse::<f64>().unwrap() - 100000.0).abs() < 1e-9);
+        // Function lines carry a blank field before the limits.
+        assert_eq!(lines[4].len(), 100);
+        assert_eq!(&lines[4][50..60], "          ");
+        assert_eq!(&lines[4][60..80].trim().parse::<f64>().unwrap(), &-0.01);
+    }
+
+    #[test]
+    fn th_group_counters_mirror_writers() {
+        for case in [cantilever_case(), hertz_sphere_case()] {
+            let starter = write_starter(&case);
+            let groups = starter
+                .lines()
+                .filter(|line| line.starts_with("/TH/"))
+                .count();
+            assert_eq!(starter_th_groups(&case), groups, "{}", case.name);
+        }
+        for case in [shell_scordelis_lo_case(), shell_clamped_plate_case()] {
+            let starter = write_extended_starter(&case);
+            let groups = starter
+                .lines()
+                .filter(|line| line.starts_with("/TH/"))
+                .count();
+            assert_eq!(
+                extended_starter_th_groups(&case),
+                groups,
+                "{}",
+                case.base.name
+            );
+        }
+        let mut law2 = RadExtendedCase::wrap_elastic(cantilever_case());
+        law2.th_brick = RadThRequest::brick_stress(vec![1]);
+        let starter = write_extended_starter(&law2);
+        let groups = starter
+            .lines()
+            .filter(|line| line.starts_with("/TH/"))
+            .count();
+        assert_eq!(extended_starter_th_groups(&law2), groups);
+    }
+
+    fn consistent_extra() -> (RadExtra, RadExtraContext) {
+        let ctx = RadExtraContext {
+            num_nodes: 20,
+            num_node_sets: 2,
+            num_functions: 2,
+            num_parts: 2,
+            num_materials: 1,
+            num_walls: 1,
+            num_shells: 6,
+            num_tris: 1,
+            num_bricks: 1,
+        };
+        let mut extra = RadExtra::default();
+        extra.surfs.push(RadSurfParts {
+            id: 4,
+            title: "skin".to_string(),
+            parts: vec![1],
+        });
+        extra.grnods.push(RadGrnodSurfs {
+            id: 5,
+            title: "contact".to_string(),
+            surfs: vec![4],
+        });
+        extra.lines.push(RadLineSurfs {
+            id: 6,
+            title: "edges".to_string(),
+            surfs: vec![4],
+        });
+        extra.subsets.push(RadSubset {
+            id: 1,
+            title: "all".to_string(),
+        });
+        extra
+            .interfaces
+            .push(RadInterface::Type2(RadInterType2::basic(1, "tie", 5, 4)));
+        extra
+            .interfaces
+            .push(RadInterface::Type7(RadInterType7::basic(
+                2, "contact", 5, 4,
+            )));
+        extra
+            .interfaces
+            .push(RadInterface::Type11(RadInterType11::basic(
+                3, "edges", 6, 6,
+            )));
+        extra.gases.push(RadGasPredef {
+            id: 2,
+            title: "air".to_string(),
+            gas: RadGasKind::Air,
+        });
+        extra.injectors.push(RadInject2 {
+            id: 6,
+            title: "injector".to_string(),
+            iflow: 0,
+            mass_function: 1,
+            temp_function: 2,
+            scal_m: 1.0,
+            scal_t: 0.0,
+            ascal_t: 0.0,
+            gases: vec![RadInjectGas {
+                mat: 2,
+                molar_fraction: 1.0,
+                function: 0,
+            }],
+        });
+        extra.sensors.push(RadSensor::Time {
+            id: 1,
+            title: "fire".to_string(),
+            tdelay_s: 0.0,
+        });
+        extra.monvols.push(RadMonvol::Airbag1(RadMonvolAirbag1 {
+            id: 1,
+            title: "bag".to_string(),
+            surf_external: 4,
+            hconv: 0.0,
+            ascale: [0.0; 5],
+            mat_gas: 2,
+            gas_mu: 0.1,
+            pext_pa: 101_325.0,
+            t0_k: 0.0,
+            iequi: 0,
+            ittf: 0,
+            injectors: vec![RadAirbagInjector {
+                inject_id: 6,
+                sens_id: 1,
+                ijet: 0,
+                nodes: [0; 3],
+                jetting: None,
+            }],
+            vents: Vec::new(),
+            porous: Vec::new(),
+        }));
+        extra.damps.push(RadDamping {
+            id: 1,
+            title: "bulk".to_string(),
+            alpha: 1.0,
+            beta_s: 0.0,
+            grnd: 1,
+            skew: 0,
+            tstart_s: 0.0,
+            tstop_s: 1.0e30,
+        });
+        extra.truss_props.push(RadTrussProp {
+            id: 3,
+            title: "rod".to_string(),
+            area_m2: 1.0e-4,
+            gap_init_m: 0.0,
+        });
+        extra.parts.push(RadExtraPart {
+            id: 3,
+            title: "rod".to_string(),
+            prop: 3,
+            mat: 1,
+        });
+        extra.truss.push(RadTrussElems {
+            part: 3,
+            elems: vec![[9, 10]],
+        });
+        extra.th_elems.push(RadThElemRequest {
+            family: RadThElemFamily::Truss,
+            title: "rod".to_string(),
+            vars: vec!["DEF".to_string()],
+            elems: vec![1],
+        });
+        extra.th_objs.push(RadThObjRequest {
+            kind: RadThObjKind::Part,
+            title: "parts".to_string(),
+            vars: vec!["DEF".to_string()],
+            ids: vec![1, 2, 3],
+        });
+        extra.state = Some(RadStateOutput {
+            tstart_s: 0.0,
+            tfreq_s: 0.1,
+            all_parts: false,
+            parts: vec![1, 2],
+        });
+        extra.state_flags.push(RadStateFlag::NodeVel);
+        extra.engine_damps.push(RadEngineDamping {
+            damp_id: 1,
+            alpha: 2.0,
+            beta_s: 0.0,
+        });
+        extra.th_vers = Some(41);
+        (extra, ctx)
+    }
+
+    #[test]
+    fn extra_validate_accepts_consistent_bundle() {
+        let (extra, ctx) = consistent_extra();
+        extra.validate(&ctx).unwrap();
+        let deck = write_starter_extra(&extra, 4);
+        for header in [
+            "/SURF/PART/4",
+            "/GRNOD/SURF/5",
+            "/LINE/SURF/6",
+            "/SUBSET/1",
+            "/INTER/TYPE2/1",
+            "/INTER/TYPE7/2",
+            "/INTER/TYPE11/3",
+            "/MAT/GAS/PREDEF/2",
+            "/PROP/INJECT2/6",
+            "/MONVOL/AIRBAG1/1",
+            "/DAMP/1",
+            "/SENSOR/TIME/1",
+            "/PROP/TRUSS/3",
+            "/PART/3",
+            "/TRUSS/3",
+            "/TH/TRUSS/5",
+            "/TH/PART/6",
+        ] {
+            assert!(deck.contains(header), "extra deck lacks {header}");
+        }
+        let engine = write_engine_extra(&extra);
+        for header in ["/STATE/DT\n", "/STATE/NODE/VEL", "/DAMP/1", "/TH/VERS/41"] {
+            assert!(engine.contains(header), "engine extra lacks {header}");
+        }
+    }
+
+    #[test]
+    fn extra_validate_catches_gaps() {
+        let (extra, ctx) = consistent_extra();
+        let mut bad = extra.clone();
+        bad.interfaces
+            .push(RadInterface::Type2(RadInterType2::basic(
+                9, "dangling", 5, 99,
+            )));
+        assert!(bad.validate(&ctx).is_err());
+        let mut bad = extra.clone();
+        bad.sensors.push(RadSensor::Dist {
+            id: 9,
+            title: "gap".to_string(),
+            tdelay_s: 0.0,
+            node_a: 1,
+            node_b: 999,
+            dmin_m: 0.0,
+            dmax_m: 1.0,
+        });
+        assert!(bad.validate(&ctx).is_err());
+        let mut bad = extra.clone();
+        bad.th_elems.push(RadThElemRequest {
+            family: RadThElemFamily::Quad,
+            title: "quad".to_string(),
+            vars: vec!["DEF".to_string()],
+            elems: vec![1],
+        });
+        assert!(bad.validate(&ctx).is_err());
+        let mut bad = extra.clone();
+        bad.grnods.push(RadGrnodSurfs {
+            id: 1,
+            title: "collision".to_string(),
+            surfs: vec![4],
+        });
+        assert!(bad.validate(&ctx).is_err());
+        let mut bad = extra.clone();
+        bad.th_vers = Some(44);
+        assert!(bad.validate(&ctx).is_err());
+        let mut bad = extra.clone();
+        bad.state.as_mut().unwrap().parts = vec![99];
+        assert!(bad.validate(&ctx).is_err());
+        let mut bad = extra.clone();
+        bad.engine_damps[0].damp_id = 99;
+        assert!(bad.validate(&ctx).is_err());
+        // Dangling section/rbody/accel TH ids only warn, so they pass.
+        let mut ok = extra.clone();
+        for kind in [
+            RadThObjKind::Sectio,
+            RadThObjKind::Rbody,
+            RadThObjKind::Accel,
+        ] {
+            ok.th_objs.push(RadThObjRequest {
+                kind,
+                title: "dangling".to_string(),
+                vars: vec!["DEF".to_string()],
+                ids: vec![9],
+            });
+        }
+        ok.validate(&ctx).unwrap();
+    }
+
+    #[test]
+    fn starter_extra_honors_submodel_wrap() {
+        let (mut extra, ctx) = consistent_extra();
+        extra.validate(&ctx).unwrap();
+        extra.submodel = Some(RadSubmodel::plain(1, "extra"));
+        let deck = write_starter_extra(&extra, 4);
+        assert!(deck.starts_with("//SUBMODEL/1\n"));
+        assert!(deck.ends_with("//ENDSUB\n"));
     }
 }

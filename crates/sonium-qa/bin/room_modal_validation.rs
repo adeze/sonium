@@ -1,9 +1,18 @@
-//! Rigid rectangular-room modal-frequency validation.
+//! Analytical-reference check of rigid rectangular-room modal frequencies.
 //!
-//! This benchmark anchors the low-frequency room-acoustics path against the
-//! closed-form Neumann eigenfrequencies of a shoebox room:
+//! SCOPE: analytical reference only. This binary verifies the closed-form
+//! Neumann eigenfrequency formula of a shoebox room, the axial/tangential/
+//! oblique family classification, mode ordering, and cube degeneracy:
 //!
 //!     f_mnp = c / 2 * sqrt((m / Lx)^2 + (n / Ly)^2 + (p / Lz)^2)
+//!
+//! It assembles no FEM operators and solves no numerical eigenproblem, so it
+//! is not evidence of Sonium solver accuracy. Numerical room eigenmodes
+//! (solved frequencies, eigen-residuals, modal fields) are covered by
+//! `qa-room-shoebox-fem-benchmark`; do not cite this binary for that claim.
+
+// Named acceptance tolerances for the analytical reference checks below.
+const MODE_FREQUENCY_TOLERANCE_HZ: f64 = 5.0e-7;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ModeIndex {
@@ -129,7 +138,7 @@ fn assert_mode(
         &format!("mode ({}, {}, {})", index.nx, index.ny, index.nz),
         mode.frequency_hz,
         expected_hz,
-        5.0e-7,
+        MODE_FREQUENCY_TOLERANCE_HZ,
     )?;
 
     if mode.family != expected_family {
@@ -264,7 +273,12 @@ fn validate_cube_degeneracy() -> Result<(), String> {
     println!("Cube degeneracy, 3.0 x 3.0 x 3.0 m:");
     for (i, frequency) in axial.into_iter().enumerate() {
         println!("  axial mode {}: {:.6} Hz", i + 1, frequency);
-        assert_close("cube axial degeneracy", frequency, 57.1666666667, 5.0e-7)?;
+        assert_close(
+            "cube axial degeneracy",
+            frequency,
+            57.1666666667,
+            MODE_FREQUENCY_TOLERANCE_HZ,
+        )?;
     }
 
     let tangential = room.frequency(ModeIndex {
@@ -272,7 +286,12 @@ fn validate_cube_degeneracy() -> Result<(), String> {
         ny: 1,
         nz: 0,
     });
-    assert_close("cube tangential mode", tangential, 80.8458753157, 5.0e-7)?;
+    assert_close(
+        "cube tangential mode",
+        tangential,
+        80.8458753157,
+        MODE_FREQUENCY_TOLERANCE_HZ,
+    )?;
     Ok(())
 }
 

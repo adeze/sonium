@@ -1,6 +1,14 @@
 //! Release-mode QA gates for the M1 resolved nonlinear speaker-port model.
+//!
+//! The default path always executes the 2D subcase (plane Poiseuille plus the
+//! coupled slot-port sweep) and executes the nightly 3D subcase (round-port
+//! Poiseuille plus the exact resolved-FEM reference ladder) only when
+//! `SPEAKER_PORT_3D=1`. Each subcase emits an independent `QA_RESULT` record
+//! with per-branch executed flags so a whole-binary SUCCESS never implies 3D
+//! coverage when the 3D leg did not run.
 
 use std::f64::consts::{LN_2, PI, TAU};
+use std::time::Instant;
 
 use num_complex::Complex64;
 use rayon::prelude::*;
@@ -16,9 +24,10 @@ use sonium_fem::physics::fluid::stokes::time_stepping::{BdfConfig, BdfState};
 use sonium_fem::physics::fluid::stokes::traction::PressureTraction;
 use sonium_fem::physics::fluid::stokes::workspace::{BdfLinearSolverKind, BdfWorkspace};
 use sonium_fem::spaces::{FunctionSpace, H1Space, VectorH1Space};
+use sonium_qa::QaResult;
 use sonium_sim_speaker_modeling::port_flow::analysis::{
     CoupledComplexObservables, LinearReferenceGateConfig, LinearReferenceGateInput,
-    coupled_complex_observables, dft_amplitude, thd_fraction,
+    LinearReferenceGateReport, coupled_complex_observables, dft_amplitude, thd_fraction,
     validate_coupled_against_linear_reference,
 };
 use sonium_sim_speaker_modeling::port_flow::box_driver::BoxDriverModel;
@@ -26,7 +35,7 @@ use sonium_sim_speaker_modeling::port_flow::coupled::{
     CoupledEnergySummary, CoupledPortConfig, CoupledPortResult, run_coupled_port,
 };
 use sonium_sim_speaker_modeling::port_flow::{
-    MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL, RoundPortGeometry,
+    ComplexPortTransfer, MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL, RoundPortGeometry,
     RoundPortLinearReferenceConfig, SlotPortGeometry, build_round_port_mesh, build_slot_port_mesh,
     solve_round_port_linear_reference,
 };
@@ -53,6 +62,197 @@ const EXACT_TAIL_CYCLES: usize = 16;
 const EXACT_DISCARDED_CYCLES: usize = 12;
 const EXACT_SAMPLES_PER_CYCLE: usize = 128;
 const EXACT_VOLTAGE_PEAK_V: f64 = 1.0e-4;
+
+/// Machine-readable subcase identifiers. The 2D and 3D legs report independent
+/// statuses so a whole-binary SUCCESS never implies 3D coverage when the
+/// optional 3D branch did not run.
+const CASE_ID_2D: &str = "speaker.port-nonlinear-2d.v1";
+const CASE_ID_3D: &str = "speaker.port-nonlinear-3d.v1";
+
+/// Environment switch for the nightly 3D leg. Any value other than "1" leaves
+/// the 3D subcase skipped with explicit non-coverage evidence.
+const ENV_SPEAKER_PORT_3D: &str = "SPEAKER_PORT_3D";
+
+// Named acceptance tolerances for the 2D leg. Values match the historically
+// enforced bounds; they are centralized here so the printed gates and the
+// structured thresholds cannot drift apart.
+const PLANE_POISEUILLE_MAX_RELATIVE_ERROR: f64 = 0.04;
+const LUMPED_LIMIT_MAX_RELATIVE_ERROR: f64 = 0.10;
+const LINEAR_THD_MAX_FRACTION: f64 = 0.01;
+const COUPLED_ENERGY_PHYSICAL_CLOSURE_MAX: f64 = 0.04;
+const COUPLED_ENERGY_ALGEBRAIC_CLOSURE_MAX: f64 = 1.0e-8;
+const COUPLED_ENERGY_INTERFACE_RESIDUAL_MAX: f64 = 1.0e-8;
+/// Relative scale below which a negative dissipation channel counts as
+/// roundoff rather than an energy audit failure.
+const DISSIPATION_NEGATIVITY_RELATIVE_TOLERANCE: f64 = 1.0e-12;
+
+// Named acceptance tolerances for the 3D leg.
+const ROUND_PORT_POISEUILLE_MAX_RELATIVE_ERROR: f64 = 0.08;
+const EXACT_REFERENCE_CONVERGENCE_MAX: f64 = 0.01;
+const EXACT_NONLINEAR_MESH_DT_MAX: f64 = 0.02;
+const EXACT_HALF_DRIVE_LINEARITY_MAX: f64 = 0.01;
+const EXACT_TAIL_DELTA_MAX: f64 = 0.005;
+const EXACT_THD_MAX_FRACTION: f64 = 0.005;
+const EXACT_CAP_CONTINUITY_MAX: f64 = 1.0e-6;
+
+// Linear-reference gate bounds. These are passed explicitly to
+// `validate_coupled_against_linear_reference` (instead of relying on its
+// defaults) so the enforced gate and the structured 3D thresholds share one
+// definition. Values match `LinearReferenceGateConfig::default()`.
+const GATE_MAX_IMPEDANCE_RELATIVE_ERROR: f64 = 0.03;
+const GATE_MAX_FLOW_RATIO_RELATIVE_ERROR: f64 = 0.03;
+const GATE_MAX_TRANSFER_IDENTITY_RELATIVE_ERROR: f64 = 0.02;
+const GATE_MAX_CAP_CONTINUITY_RELATIVE_ERROR: f64 = 1.0e-6;
+const GATE_MAX_REFERENCE_RELATIVE_RESIDUAL: f64 = 1.0e-8;
+const GATE_MAX_REFERENCE_FLUX_RELATIVE_DIFFERENCE: f64 = 1.0e-6;
+const GATE_MAX_ENERGY_ALGEBRAIC_RELATIVE_CLOSURE: f64 = 1.0e-8;
+const GATE_MAX_ENERGY_PHYSICAL_RELATIVE_CLOSURE: f64 = 0.05;
+const GATE_MAX_ENERGY_INTERFACE_RELATIVE_RESIDUAL: f64 = 1.0e-8;
+const GATE_MAX_THD_FRACTION: f64 = 0.005;
+const GATE_MAX_MACH: f64 = 0.05;
+
+/// Measured 2D plane-Poiseuille gate quantities.
+struct PlanePoiseuilleMetrics {
+    relative_error: f64,
+    numerical_u_max: f64,
+    exact_u_max: f64,
+}
+
+/// Measured 3D round-port Poiseuille gate quantities.
+struct RoundPortPoiseuilleMetrics {
+    relative_error: f64,
+    numerical_u_max: f64,
+    exact_u_max: f64,
+    nodes: usize,
+}
+
+/// Measured lumped-limit gate quantities.
+struct LumpedLimitMetrics {
+    relative_error: f64,
+    coupled_flow_m3s: f64,
+    reference_flow_m3s: f64,
+}
+
+/// Worst-case compression/energy quantities across the drive sweep.
+struct CompressionEnergyMetrics {
+    max_physical_closure: f64,
+    max_algebraic_closure: f64,
+    max_interface_residual: f64,
+    max_compression_db: f64,
+    levels: usize,
+}
+
+/// Executed coarse/fine reference-convergence state shared by the full 3D leg
+/// and the bounded exact-reference diagnostic tiers.
+struct ExactReferenceConvergence {
+    coarse_mesh: Mesh,
+    fine_mesh: Mesh,
+    coarse_geometry: RoundPortGeometry,
+    fine_geometry: RoundPortGeometry,
+    reference_config: RoundPortLinearReferenceConfig,
+    fine_reference: ComplexPortTransfer,
+    frequencies: [f64; 3],
+    reference_z_delta: f64,
+    reference_h_delta: f64,
+}
+
+/// Worst-case quantities across the executed 3D reference gates. Every field
+/// must come from an executed solve; a 3D claim requires all of them.
+struct ExactReferenceMetrics {
+    reference_z_delta: f64,
+    reference_h_delta: f64,
+    nonlinear_mesh_z_delta: f64,
+    nonlinear_mesh_h_delta: f64,
+    dt_z_delta: f64,
+    dt_h_delta: f64,
+    half_drive_z_delta: f64,
+    half_drive_h_delta: f64,
+    worst_tail_z_delta: f64,
+    worst_tail_h_delta: f64,
+    gate_impedance_error: f64,
+    gate_flow_ratio_error: f64,
+    gate_identity_error: f64,
+    gate_reference_residual: f64,
+    gate_flux_difference: f64,
+    gate_cap_continuity: f64,
+    gate_energy_algebraic: f64,
+    gate_energy_physical: f64,
+    gate_energy_interface: f64,
+    gate_thd: f64,
+    gate_mach: f64,
+    frequencies_gated: usize,
+}
+
+/// Complete evidence for the always-executed 2D subcase.
+struct Nonlinear2dEvidence {
+    plane_poiseuille: PlanePoiseuilleMetrics,
+    frequency_hz: f64,
+    lumped_limit: LumpedLimitMetrics,
+    compression_energy: CompressionEnergyMetrics,
+    linear_thd: f64,
+    steps_completed_min: usize,
+    steps_expected: usize,
+}
+
+/// Complete evidence for one executed 3D leg.
+struct Nonlinear3dEvidence {
+    poiseuille: RoundPortPoiseuilleMetrics,
+    exact_reference: ExactReferenceMetrics,
+}
+
+/// Outcome of the optional 3D leg.
+enum ThreeDOutcome {
+    Executed(Nonlinear3dEvidence),
+    Skipped,
+    Failed(String),
+}
+
+/// Full default-path evidence: the 2D subcase always runs, the 3D subcase
+/// runs only when explicitly enabled.
+struct FullOutcome {
+    two_d: Nonlinear2dEvidence,
+    three_d: ThreeDOutcome,
+}
+
+/// Top-level run outcome. Diagnostic tiers keep their legacy markers and
+/// carry no subcase evidence.
+enum RunOutcome {
+    Diagnostic,
+    Full(Box<FullOutcome>),
+}
+
+/// A stage failure tagged with the subcase it belongs to.
+#[derive(Debug)]
+struct BranchError {
+    branch: &'static str,
+    message: String,
+}
+
+impl BranchError {
+    fn new(branch: &'static str, message: String) -> Self {
+        Self { branch, message }
+    }
+}
+
+fn three_d_enabled() -> bool {
+    std::env::var(ENV_SPEAKER_PORT_3D).as_deref() == Ok("1")
+}
+
+fn linear_reference_gate_config() -> LinearReferenceGateConfig {
+    LinearReferenceGateConfig {
+        max_impedance_relative_error: GATE_MAX_IMPEDANCE_RELATIVE_ERROR,
+        max_flow_ratio_relative_error: GATE_MAX_FLOW_RATIO_RELATIVE_ERROR,
+        max_transfer_identity_relative_error: GATE_MAX_TRANSFER_IDENTITY_RELATIVE_ERROR,
+        max_cap_continuity_relative_error: GATE_MAX_CAP_CONTINUITY_RELATIVE_ERROR,
+        max_reference_relative_residual: GATE_MAX_REFERENCE_RELATIVE_RESIDUAL,
+        max_reference_flux_relative_difference: GATE_MAX_REFERENCE_FLUX_RELATIVE_DIFFERENCE,
+        max_energy_algebraic_relative_closure: GATE_MAX_ENERGY_ALGEBRAIC_RELATIVE_CLOSURE,
+        max_energy_physical_relative_closure: GATE_MAX_ENERGY_PHYSICAL_RELATIVE_CLOSURE,
+        max_energy_interface_relative_residual: GATE_MAX_ENERGY_INTERFACE_RELATIVE_RESIDUAL,
+        max_thd_fraction: GATE_MAX_THD_FRACTION,
+        max_mach: GATE_MAX_MACH,
+    }
+}
 
 fn marked_channel_mesh(length: f64, height: f64, nx: usize, ny: usize) -> Mesh {
     let dx = length / nx as f64;
@@ -101,7 +301,7 @@ fn marked_channel_mesh(length: f64, height: f64, nx: usize, ny: usize) -> Mesh {
     mesh
 }
 
-fn validate_plane_poiseuille() -> Result<(), String> {
+fn validate_plane_poiseuille() -> Result<PlanePoiseuilleMetrics, String> {
     let length = 2.0;
     let height = 0.1;
     let ny = 16;
@@ -186,16 +386,23 @@ fn validate_plane_poiseuille() -> Result<(), String> {
     // This coarse P2 profile historically resolves the centerline to better
     // than 4%; leave margin for backend roundoff without treating 5% as an
     // accuracy certificate.
-    if relative_error >= 0.04 {
+    if !relative_error.is_finite() {
+        return Err("plane Poiseuille relative error is non-finite".to_string());
+    }
+    if relative_error >= PLANE_POISEUILLE_MAX_RELATIVE_ERROR {
         return Err(format!(
             "Poiseuille relative error {:.3}% exceeds the measured 4% coarse-mesh bound",
             100.0 * relative_error
         ));
     }
-    Ok(())
+    Ok(PlanePoiseuilleMetrics {
+        relative_error,
+        numerical_u_max: numerical,
+        exact_u_max: exact,
+    })
 }
 
-fn validate_round_port_poiseuille() -> Result<(), String> {
+fn validate_round_port_poiseuille() -> Result<RoundPortPoiseuilleMetrics, String> {
     let reduced = std::env::var("SPEAKER_PORT_POISEUILLE_SMALL").as_deref() == Ok("1");
     let iterative = std::env::var("SPEAKER_PORT_POISEUILLE_BACKEND").as_deref() != Ok("direct");
     let geometry = RoundPortGeometry {
@@ -315,13 +522,21 @@ fn validate_round_port_poiseuille() -> Result<(), String> {
         mesh.num_nodes(),
         100.0 * relative_error
     );
-    if relative_error >= 0.08 {
+    if !relative_error.is_finite() {
+        return Err("3D round-port Poiseuille relative error is non-finite".to_string());
+    }
+    if relative_error >= ROUND_PORT_POISEUILLE_MAX_RELATIVE_ERROR {
         return Err(format!(
             "3D round-port Poiseuille relative error {:.3}% exceeds 8%",
             100.0 * relative_error
         ));
     }
-    Ok(())
+    Ok(RoundPortPoiseuilleMetrics {
+        relative_error,
+        numerical_u_max: numerical,
+        exact_u_max: exact,
+        nodes: mesh.num_nodes(),
+    })
 }
 
 fn triangle_area(mesh: &Mesh, nodes: &[usize]) -> Result<f64, String> {
@@ -579,6 +794,7 @@ fn lumped_port_flow_amplitude(
 
 struct LevelMeasurement {
     voltage_peak_v: f64,
+    steps_completed: usize,
     port_flow_amplitude_m3s: f64,
     box_pressure_amplitude_pa: f64,
     peak_excursion_m: f64,
@@ -630,7 +846,8 @@ fn measure_coupled_levels() -> Result<(f64, Vec<LevelMeasurement>), String> {
                 "energy summary at {voltage_peak_v} V peak contains a non-finite or invalid-scale channel: {energy:?}"
             ));
         }
-        let dissipation_tolerance_j = 1.0e-12 * energy.energy_scale_j;
+        let dissipation_tolerance_j =
+            DISSIPATION_NEGATIVITY_RELATIVE_TOLERANCE * energy.energy_scale_j;
         for (offset, step) in result.energy_steps[tail_start..].iter().enumerate() {
             if !step.is_finite() {
                 return Err(format!(
@@ -682,6 +899,7 @@ fn measure_coupled_levels() -> Result<(f64, Vec<LevelMeasurement>), String> {
             .unwrap();
         Ok(LevelMeasurement {
             voltage_peak_v,
+            steps_completed: result.steps_completed,
             port_flow_amplitude_m3s: dft_amplitude(flow_tail, dt, frequency_hz),
             box_pressure_amplitude_pa: dft_amplitude(pressure_tail, dt, frequency_hz),
             peak_excursion_m: displacement_tail
@@ -701,7 +919,7 @@ fn measure_coupled_levels() -> Result<(f64, Vec<LevelMeasurement>), String> {
 fn validate_lumped_limit(
     frequency_hz: f64,
     measurements: &[LevelMeasurement],
-) -> Result<(), String> {
+) -> Result<LumpedLimitMetrics, String> {
     let small_signal = measurements
         .first()
         .ok_or_else(|| "coupled level set is empty".to_string())?;
@@ -713,16 +931,25 @@ fn validate_lumped_limit(
         small_signal.port_flow_amplitude_m3s,
         100.0 * relative_error
     );
-    if relative_error >= 0.10 {
+    if !relative_error.is_finite() {
+        return Err("lumped-limit relative error is non-finite".to_string());
+    }
+    if relative_error >= LUMPED_LIMIT_MAX_RELATIVE_ERROR {
         return Err(format!(
             "lumped-limit relative error {:.3}% exceeds 10%",
             100.0 * relative_error
         ));
     }
-    Ok(())
+    Ok(LumpedLimitMetrics {
+        relative_error,
+        coupled_flow_m3s: small_signal.port_flow_amplitude_m3s,
+        reference_flow_m3s: reference,
+    })
 }
 
-fn validate_compression_and_energy(measurements: &[LevelMeasurement]) -> Result<(), String> {
+fn validate_compression_and_energy(
+    measurements: &[LevelMeasurement],
+) -> Result<CompressionEnergyMetrics, String> {
     let reference = measurements
         .first()
         .ok_or_else(|| "coupled level set is empty".to_string())?;
@@ -746,6 +973,9 @@ fn validate_compression_and_energy(measurements: &[LevelMeasurement]) -> Result<
     println!(
         "Energy closure (J unless marked %):\n  drive | source | delta stored | copper | mechanical | viscous | exterior export | physical % | numerical % | interface %"
     );
+    let mut max_physical_closure = 0.0_f64;
+    let mut max_algebraic_closure = 0.0_f64;
+    let mut max_interface_residual = 0.0_f64;
     for measurement in measurements {
         let energy = measurement.energy;
         println!(
@@ -761,13 +991,15 @@ fn validate_compression_and_energy(measurements: &[LevelMeasurement]) -> Result<
             100.0 * energy.numerical_relative_residual,
             100.0 * energy.interface_relative_residual,
         );
+        let dissipation_tolerance_j =
+            DISSIPATION_NEGATIVITY_RELATIVE_TOLERANCE * energy.energy_scale_j;
         if !energy.is_finite()
-            || energy.copper_loss_j < -1.0e-12 * energy.energy_scale_j
-            || energy.mechanical_damping_j < -1.0e-12 * energy.energy_scale_j
-            || energy.viscous_dissipation_j < -1.0e-12 * energy.energy_scale_j
-            || energy.physical_relative_closure > 0.04
-            || energy.algebraic_relative_closure > 1.0e-8
-            || energy.interface_relative_residual > 1.0e-8
+            || energy.copper_loss_j < -dissipation_tolerance_j
+            || energy.mechanical_damping_j < -dissipation_tolerance_j
+            || energy.viscous_dissipation_j < -dissipation_tolerance_j
+            || energy.physical_relative_closure > COUPLED_ENERGY_PHYSICAL_CLOSURE_MAX
+            || energy.algebraic_relative_closure > COUPLED_ENERGY_ALGEBRAIC_CLOSURE_MAX
+            || energy.interface_relative_residual > COUPLED_ENERGY_INTERFACE_RESIDUAL_MAX
         {
             return Err(format!(
                 "energy closure failed at {} V peak: physical={:.6e}, algebraic={:.6e}, interface={:.6e}; largest per-step numerical channel {}={:.6e} J",
@@ -779,6 +1011,9 @@ fn validate_compression_and_energy(measurements: &[LevelMeasurement]) -> Result<
                 measurement.largest_numerical_channel_j,
             ));
         }
+        max_physical_closure = max_physical_closure.max(energy.physical_relative_closure);
+        max_algebraic_closure = max_algebraic_closure.max(energy.algebraic_relative_closure);
+        max_interface_residual = max_interface_residual.max(energy.interface_relative_residual);
     }
     let pressure_bound_pa = RHO * SOUND_SPEED.powi(2) * DIAPHRAGM_AREA_M2 * X_MAX_M / BOX_VOLUME_M3;
     println!(
@@ -792,22 +1027,34 @@ fn validate_compression_and_energy(measurements: &[LevelMeasurement]) -> Result<
             measurement.peak_excursion_m
         );
     }
-    Ok(())
+    Ok(CompressionEnergyMetrics {
+        max_physical_closure,
+        max_algebraic_closure,
+        max_interface_residual,
+        max_compression_db: compressions
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max),
+        levels: measurements.len(),
+    })
 }
 
-fn validate_linear_thd(measurements: &[LevelMeasurement]) -> Result<(), String> {
+fn validate_linear_thd(measurements: &[LevelMeasurement]) -> Result<f64, String> {
     let thd = measurements
         .first()
         .ok_or_else(|| "coupled level set is empty".to_string())?
         .thd;
     println!("Linear-regime THD gate: {:.4}%", 100.0 * thd);
-    if thd >= 0.01 {
+    if !thd.is_finite() {
+        return Err("linear-regime THD is non-finite".to_string());
+    }
+    if thd >= LINEAR_THD_MAX_FRACTION {
         return Err(format!(
             "linear-regime THD {:.4}% is not below 1%",
             100.0 * thd
         ));
     }
-    Ok(())
+    Ok(thd)
 }
 
 fn report_literature_comparison() {
@@ -1466,20 +1713,20 @@ fn run_exact_nonlinear_point(
         observables_8.direct_box_to_port_flow_ratio,
         observables.direct_box_to_port_flow_ratio,
     )?;
-    if tail_z_delta >= 0.005 || tail_h_delta >= 0.005 {
+    if tail_z_delta >= EXACT_TAIL_DELTA_MAX || tail_h_delta >= EXACT_TAIL_DELTA_MAX {
         return Err(format!(
             "8-to-16-cycle tail convergence failed: Z={tail_z_delta:e}, H={tail_h_delta:e}"
         ));
     }
     let start = result.port_flow_m3s.len() - observables.tail_samples;
     let thd = thd_fraction(&result.port_flow_m3s[start..], dt, frequency_hz, 5);
-    if !(thd.is_finite() && thd < 0.005) {
+    if !(thd.is_finite() && thd < EXACT_THD_MAX_FRACTION) {
         return Err(format!(
             "exact low-drive port-flow THD {:.4}% is not below 0.5%",
             100.0 * thd
         ));
     }
-    if observables.cap_continuity_relative_error >= 1.0e-6 {
+    if observables.cap_continuity_relative_error >= EXACT_CAP_CONTINUITY_MAX {
         return Err(format!(
             "exact cap-continuity error {:e} exceeds 1e-6",
             observables.cap_continuity_relative_error
@@ -1515,7 +1762,10 @@ fn run_exact_nonlinear_point(
     })
 }
 
-fn validate_against_exact_resolved_fem() -> Result<(), String> {
+/// Solve the coarse/fine linear references and gate their agreement. This is
+/// the shared prefix of the full 3D leg and the bounded exact-reference
+/// diagnostic tiers.
+fn run_exact_reference_convergence() -> Result<ExactReferenceConvergence, String> {
     // Authoritative P2 lineage: canonical Task-13 h=20 mm mesh plus a
     // physically identical h=10 mm geometry refinement also refines the
     // angular boundary segmentation, not only the volume topology.
@@ -1599,7 +1849,12 @@ fn validate_against_exact_resolved_fem() -> Result<(), String> {
         coarse_reference.box_to_port_flow_ratio_condition_number,
         fine_reference.box_to_port_flow_ratio_condition_number,
     );
-    if reference_z_delta >= 0.01 || reference_h_delta >= 0.01 {
+    if !reference_z_delta.is_finite() || !reference_h_delta.is_finite() {
+        return Err("reference mesh convergence deltas are non-finite".to_string());
+    }
+    if reference_z_delta >= EXACT_REFERENCE_CONVERGENCE_MAX
+        || reference_h_delta >= EXACT_REFERENCE_CONVERGENCE_MAX
+    {
         return Err(format!(
             "reference mesh convergence failed: Z={reference_z_delta:e}, H={reference_h_delta:e}"
         ));
@@ -1615,10 +1870,34 @@ fn validate_against_exact_resolved_fem() -> Result<(), String> {
         fine_reference.scalar_dofs,
     );
 
-    if std::env::var("SPEAKER_PORT_REFERENCE_ONLY").as_deref() == Ok("1") {
-        println!("EXACT_REFERENCE_ONLY_SUCCESS");
-        return Ok(());
-    }
+    Ok(ExactReferenceConvergence {
+        coarse_mesh,
+        fine_mesh,
+        coarse_geometry,
+        fine_geometry,
+        reference_config,
+        fine_reference,
+        frequencies,
+        reference_z_delta,
+        reference_h_delta,
+    })
+}
+
+/// Run the complete 3D exact-reference ladder: nonlinear mesh/timestep/
+/// linearity convergence plus a linear-reference gate at every sweep
+/// frequency. There are no partial returns; a 3D claim requires every gate.
+fn validate_against_exact_resolved_fem() -> Result<ExactReferenceMetrics, String> {
+    let ExactReferenceConvergence {
+        coarse_mesh,
+        fine_mesh,
+        coarse_geometry,
+        fine_geometry,
+        reference_config,
+        fine_reference,
+        frequencies,
+        reference_z_delta,
+        reference_h_delta,
+    } = run_exact_reference_convergence()?;
 
     let centre = run_exact_nonlinear_point(
         &fine_mesh,
@@ -1627,12 +1906,6 @@ fn validate_against_exact_resolved_fem() -> Result<(), String> {
         EXACT_VOLTAGE_PEAK_V,
         EXACT_SAMPLES_PER_CYCLE,
     )?;
-    // Bounded diagnostic tier: prove the first fine-geometry centre point and
-    // stop before coarse-mesh, timestep, half-drive, or off-centre solves.
-    if std::env::var("SPEAKER_PORT_EXACT_CENTER_ONLY").as_deref() == Ok("1") {
-        println!("EXACT_CENTER_ONLY_SUCCESS");
-        return Ok(());
-    }
     let centre_coarse_mesh = run_exact_nonlinear_point(
         &coarse_mesh,
         &coarse_geometry,
@@ -1654,119 +1927,155 @@ fn validate_against_exact_resolved_fem() -> Result<(), String> {
         EXACT_VOLTAGE_PEAK_V / 2.0,
         EXACT_SAMPLES_PER_CYCLE,
     )?;
-    for (name, candidate, tolerance) in [
-        (
-            "nonlinear_mesh_Z",
-            centre_coarse_mesh.observables.port_impedance_pa_s_per_m3,
-            0.02,
-        ),
-        (
-            "dt_Z",
-            centre_coarse_dt.observables.port_impedance_pa_s_per_m3,
-            0.02,
-        ),
-        (
-            "half_drive_Z",
-            half_drive.observables.port_impedance_pa_s_per_m3,
-            0.01,
-        ),
-    ] {
-        let error = exact_relative_error(candidate, centre.observables.port_impedance_pa_s_per_m3)?;
-        if error >= tolerance {
-            return Err(format!(
-                "{name} convergence/linearity error {error:e} exceeds {tolerance:e}"
-            ));
-        }
+    let nonlinear_mesh_z_delta = exact_relative_error(
+        centre_coarse_mesh.observables.port_impedance_pa_s_per_m3,
+        centre.observables.port_impedance_pa_s_per_m3,
+    )?;
+    if nonlinear_mesh_z_delta >= EXACT_NONLINEAR_MESH_DT_MAX {
+        return Err(format!(
+            "nonlinear_mesh_Z convergence/linearity error {nonlinear_mesh_z_delta:e} exceeds {EXACT_NONLINEAR_MESH_DT_MAX:e}"
+        ));
     }
+    let dt_z_delta = exact_relative_error(
+        centre_coarse_dt.observables.port_impedance_pa_s_per_m3,
+        centre.observables.port_impedance_pa_s_per_m3,
+    )?;
+    if dt_z_delta >= EXACT_NONLINEAR_MESH_DT_MAX {
+        return Err(format!(
+            "dt_Z convergence/linearity error {dt_z_delta:e} exceeds {EXACT_NONLINEAR_MESH_DT_MAX:e}"
+        ));
+    }
+    let half_drive_z_delta = exact_relative_error(
+        half_drive.observables.port_impedance_pa_s_per_m3,
+        centre.observables.port_impedance_pa_s_per_m3,
+    )?;
+    if half_drive_z_delta >= EXACT_HALF_DRIVE_LINEARITY_MAX {
+        return Err(format!(
+            "half_drive_Z convergence/linearity error {half_drive_z_delta:e} exceeds {EXACT_HALF_DRIVE_LINEARITY_MAX:e}"
+        ));
+    }
+    // The transfer-ratio deltas are computed here for the convergence report
+    // below and gated right after it, preserving the historical check order.
+    let nonlinear_mesh_h_delta = exact_relative_error(
+        centre_coarse_mesh.observables.direct_box_to_port_flow_ratio,
+        centre.observables.direct_box_to_port_flow_ratio,
+    )?;
+    let dt_h_delta = exact_relative_error(
+        centre_coarse_dt.observables.direct_box_to_port_flow_ratio,
+        centre.observables.direct_box_to_port_flow_ratio,
+    )?;
+    let half_drive_h_delta = exact_relative_error(
+        half_drive.observables.direct_box_to_port_flow_ratio,
+        centre.observables.direct_box_to_port_flow_ratio,
+    )?;
     println!(
         "EXACT_CONVERGENCE_NONLINEAR frequency_hz={:.9} coarse_mesh_nodes={} fine_mesh_nodes={} mesh_z_delta={:.9e} mesh_h_delta={:.9e} coarse_dt={:.9e} fine_dt={:.9e} dt_z_delta={:.9e} dt_h_delta={:.9e} half_drive_z_delta={:.9e} half_drive_h_delta={:.9e} tail_z_delta={:.9e} tail_h_delta={:.9e}",
         frequencies[1],
         centre_coarse_mesh.nodes,
         centre.nodes,
-        exact_relative_error(
-            centre_coarse_mesh.observables.port_impedance_pa_s_per_m3,
-            centre.observables.port_impedance_pa_s_per_m3,
-        )?,
-        exact_relative_error(
-            centre_coarse_mesh.observables.direct_box_to_port_flow_ratio,
-            centre.observables.direct_box_to_port_flow_ratio,
-        )?,
+        nonlinear_mesh_z_delta,
+        nonlinear_mesh_h_delta,
         centre_coarse_dt.dt,
         centre.dt,
-        exact_relative_error(
-            centre_coarse_dt.observables.port_impedance_pa_s_per_m3,
-            centre.observables.port_impedance_pa_s_per_m3,
-        )?,
-        exact_relative_error(
-            centre_coarse_dt.observables.direct_box_to_port_flow_ratio,
-            centre.observables.direct_box_to_port_flow_ratio,
-        )?,
-        exact_relative_error(
-            half_drive.observables.port_impedance_pa_s_per_m3,
-            centre.observables.port_impedance_pa_s_per_m3,
-        )?,
-        exact_relative_error(
-            half_drive.observables.direct_box_to_port_flow_ratio,
-            centre.observables.direct_box_to_port_flow_ratio,
-        )?,
+        dt_z_delta,
+        dt_h_delta,
+        half_drive_z_delta,
+        half_drive_h_delta,
         centre.tail_z_delta,
         centre.tail_h_delta,
     );
-    for (name, candidate, tolerance) in [
-        (
-            "nonlinear_mesh_H",
-            centre_coarse_mesh.observables.direct_box_to_port_flow_ratio,
-            0.02,
-        ),
-        (
-            "dt_H",
-            centre_coarse_dt.observables.direct_box_to_port_flow_ratio,
-            0.02,
-        ),
-        (
-            "half_drive_H",
-            half_drive.observables.direct_box_to_port_flow_ratio,
-            0.01,
-        ),
-    ] {
-        let error =
-            exact_relative_error(candidate, centre.observables.direct_box_to_port_flow_ratio)?;
-        if error >= tolerance {
-            return Err(format!(
-                "{name} convergence/linearity error {error:e} exceeds {tolerance:e}"
-            ));
-        }
+    if nonlinear_mesh_h_delta >= EXACT_NONLINEAR_MESH_DT_MAX {
+        return Err(format!(
+            "nonlinear_mesh_H convergence/linearity error {nonlinear_mesh_h_delta:e} exceeds {EXACT_NONLINEAR_MESH_DT_MAX:e}"
+        ));
+    }
+    if dt_h_delta >= EXACT_NONLINEAR_MESH_DT_MAX {
+        return Err(format!(
+            "dt_H convergence/linearity error {dt_h_delta:e} exceeds {EXACT_NONLINEAR_MESH_DT_MAX:e}"
+        ));
+    }
+    if half_drive_h_delta >= EXACT_HALF_DRIVE_LINEARITY_MAX {
+        return Err(format!(
+            "half_drive_H convergence/linearity error {half_drive_h_delta:e} exceeds {EXACT_HALF_DRIVE_LINEARITY_MAX:e}"
+        ));
     }
 
-    for (index, frequency_hz) in frequencies.into_iter().enumerate() {
-        let nonlinear = if index == 1 {
-            &centre
-        } else {
-            // Keep each completed point alive through the comparison/print.
-            // The branch-local owned value is handled below.
-            let point = run_exact_nonlinear_point(
-                &fine_mesh,
-                &fine_geometry,
-                frequency_hz,
-                EXACT_VOLTAGE_PEAK_V,
-                EXACT_SAMPLES_PER_CYCLE,
-            )?;
-            let reference =
-                solve_round_port_linear_reference(&fine_mesh, &reference_config, frequency_hz)
-                    .map_err(|error| error.to_string())?;
-            validate_exact_frequency_row(frequency_hz, &point, &reference)?;
-            continue;
-        };
-        validate_exact_frequency_row(frequency_hz, nonlinear, &fine_reference)?;
+    let mut gate_reports = Vec::with_capacity(frequencies.len());
+    let mut worst_tail_z_delta = centre.tail_z_delta;
+    let mut worst_tail_h_delta = centre.tail_h_delta;
+    for study_point in [&centre_coarse_mesh, &centre_coarse_dt, &half_drive] {
+        worst_tail_z_delta = worst_tail_z_delta.max(study_point.tail_z_delta);
+        worst_tail_h_delta = worst_tail_h_delta.max(study_point.tail_h_delta);
     }
-    Ok(())
+    for (index, frequency_hz) in frequencies.into_iter().enumerate() {
+        if index == 1 {
+            gate_reports.push(validate_exact_frequency_row(
+                frequency_hz,
+                &centre,
+                &fine_reference,
+            )?);
+            continue;
+        }
+        // Keep each completed point alive through the comparison/print.
+        let point = run_exact_nonlinear_point(
+            &fine_mesh,
+            &fine_geometry,
+            frequency_hz,
+            EXACT_VOLTAGE_PEAK_V,
+            EXACT_SAMPLES_PER_CYCLE,
+        )?;
+        worst_tail_z_delta = worst_tail_z_delta.max(point.tail_z_delta);
+        worst_tail_h_delta = worst_tail_h_delta.max(point.tail_h_delta);
+        let reference =
+            solve_round_port_linear_reference(&fine_mesh, &reference_config, frequency_hz)
+                .map_err(|error| error.to_string())?;
+        gate_reports.push(validate_exact_frequency_row(
+            frequency_hz,
+            &point,
+            &reference,
+        )?);
+    }
+    if gate_reports.len() != frequencies.len() {
+        return Err(format!(
+            "exact reference sweep gated {} of {} frequencies",
+            gate_reports.len(),
+            frequencies.len()
+        ));
+    }
+    let worst = |select: fn(&LinearReferenceGateReport) -> f64| {
+        gate_reports.iter().map(select).fold(0.0_f64, f64::max)
+    };
+    Ok(ExactReferenceMetrics {
+        reference_z_delta,
+        reference_h_delta,
+        nonlinear_mesh_z_delta,
+        nonlinear_mesh_h_delta,
+        dt_z_delta,
+        dt_h_delta,
+        half_drive_z_delta,
+        half_drive_h_delta,
+        worst_tail_z_delta,
+        worst_tail_h_delta,
+        gate_impedance_error: worst(|report| report.impedance_relative_error),
+        gate_flow_ratio_error: worst(|report| report.flow_ratio_relative_error),
+        gate_identity_error: worst(|report| report.transfer_identity_relative_error),
+        gate_reference_residual: worst(|report| report.reference_relative_residual),
+        gate_flux_difference: worst(|report| report.reference_flux_relative_difference),
+        gate_cap_continuity: worst(|report| report.cap_continuity_relative_error),
+        gate_energy_algebraic: worst(|report| report.energy_algebraic_relative_closure),
+        gate_energy_physical: worst(|report| report.energy_physical_relative_closure),
+        gate_energy_interface: worst(|report| report.energy_interface_relative_residual),
+        gate_thd: worst(|report| report.thd_fraction),
+        gate_mach: worst(|report| report.mach),
+        frequencies_gated: gate_reports.len(),
+    })
 }
 
 fn validate_exact_frequency_row(
     frequency_hz: f64,
     nonlinear: &ExactNonlinearPoint,
-    reference: &sonium_sim_speaker_modeling::port_flow::ComplexPortTransfer,
-) -> Result<(), String> {
+    reference: &ComplexPortTransfer,
+) -> Result<LinearReferenceGateReport, String> {
     let z = nonlinear.observables.port_impedance_pa_s_per_m3;
     let h = nonlinear.observables.direct_box_to_port_flow_ratio;
     let _h_from_z = nonlinear.observables.box_to_port_flow_ratio_from_impedance;
@@ -1779,7 +2088,7 @@ fn validate_exact_frequency_row(
             thd_fraction: nonlinear.thd,
             mach: nonlinear.mach,
         },
-        LinearReferenceGateConfig::default(),
+        linear_reference_gate_config(),
     )
     .map_err(|error| format!("CPU linear-reference gate failed: {error}"))?;
     let z_error = gate.impedance_relative_error;
@@ -1830,51 +2139,391 @@ fn validate_exact_frequency_row(
         EXACT_TAIL_CYCLES,
         nonlinear.elapsed_s
     );
+    Ok(gate)
+}
+
+/// Execute the always-on 2D leg and return its structured evidence.
+fn run_2d_subcase() -> Result<Nonlinear2dEvidence, String> {
+    report_literature_comparison();
+    let plane_poiseuille = validate_plane_poiseuille()?;
+    let (frequency_hz, measurements) = measure_coupled_levels()?;
+    if measurements.len() != DRIVE_LEVELS_V_PEAK.len() {
+        return Err(format!(
+            "coupled level sweep returned {} of {} drive levels",
+            measurements.len(),
+            DRIVE_LEVELS_V_PEAK.len()
+        ));
+    }
+    let steps_expected = COUPLED_TOTAL_CYCLES * COUPLED_SAMPLES_PER_CYCLE;
+    let steps_completed_min = measurements
+        .iter()
+        .map(|measurement| measurement.steps_completed)
+        .min()
+        .unwrap_or(0);
+    let compression_energy = validate_compression_and_energy(&measurements)?;
+    let lumped_limit = validate_lumped_limit(frequency_hz, &measurements)?;
+    let linear_thd = validate_linear_thd(&measurements)?;
+    Ok(Nonlinear2dEvidence {
+        plane_poiseuille,
+        frequency_hz,
+        lumped_limit,
+        compression_energy,
+        linear_thd,
+        steps_completed_min,
+        steps_expected,
+    })
+}
+
+/// Execute the optional nightly 3D leg and return its structured evidence.
+/// Every 3D reference gate must execute and converge; there is no partial
+/// 3D claim.
+fn run_3d_subcase() -> Result<Nonlinear3dEvidence, String> {
+    if std::env::var("SPEAKER_PORT_REFERENCE_ONLY").as_deref() == Ok("1")
+        || std::env::var("SPEAKER_PORT_EXACT_CENTER_ONLY").as_deref() == Ok("1")
+    {
+        return Err("diagnostic exact tiers (SPEAKER_PORT_REFERENCE_ONLY/SPEAKER_PORT_EXACT_CENTER_ONLY) require SPEAKER_PORT_EXACT_ONLY=1; refusing a truncated 3D claim"
+            .to_string());
+    }
+    let poiseuille = validate_round_port_poiseuille()?;
+    let exact_reference = validate_against_exact_resolved_fem()?;
+    Ok(Nonlinear3dEvidence {
+        poiseuille,
+        exact_reference,
+    })
+}
+
+/// Bounded exact-reference diagnostic tiers. These keep their legacy markers
+/// and carry no subcase evidence.
+fn run_exact_diagnostic() -> Result<(), String> {
+    if std::env::var("SPEAKER_PORT_REFERENCE_ONLY").as_deref() == Ok("1") {
+        run_exact_reference_convergence()?;
+        println!("EXACT_REFERENCE_ONLY_SUCCESS");
+        return Ok(());
+    }
+    if std::env::var("SPEAKER_PORT_EXACT_CENTER_ONLY").as_deref() == Ok("1") {
+        let convergence = run_exact_reference_convergence()?;
+        let _centre = run_exact_nonlinear_point(
+            &convergence.fine_mesh,
+            &convergence.fine_geometry,
+            convergence.frequencies[1],
+            EXACT_VOLTAGE_PEAK_V,
+            EXACT_SAMPLES_PER_CYCLE,
+        )?;
+        println!("EXACT_CENTER_ONLY_SUCCESS");
+        return Ok(());
+    }
+    let _metrics = validate_against_exact_resolved_fem()?;
     Ok(())
 }
 
-fn run() -> Result<(), String> {
+fn run() -> Result<RunOutcome, BranchError> {
     if std::env::var("SPEAKER_PORT_SOLVER_PARITY_ONLY").as_deref() == Ok("1") {
-        return run_reduced_3d_solver_parity();
+        return run_reduced_3d_solver_parity()
+            .map(|()| RunOutcome::Diagnostic)
+            .map_err(|message| BranchError::new("diagnostic", message));
     }
-    if let Some(tier) = reduced_3d_tier_from_env()? {
-        return run_reduced_3d_nonlinear(tier);
+    if let Some(tier) =
+        reduced_3d_tier_from_env().map_err(|message| BranchError::new("diagnostic", message))?
+    {
+        return run_reduced_3d_nonlinear(tier)
+            .map(|()| RunOutcome::Diagnostic)
+            .map_err(|message| BranchError::new("diagnostic", message));
     }
     if std::env::var("SPEAKER_PORT_POISEUILLE_ONLY").as_deref() == Ok("1") {
-        validate_round_port_poiseuille()?;
+        let _metrics = validate_round_port_poiseuille()
+            .map_err(|message| BranchError::new("diagnostic", message))?;
         println!("POISEUILLE_3D_ONLY_SUCCESS");
-        return Ok(());
+        return Ok(RunOutcome::Diagnostic);
     }
     if std::env::var("SPEAKER_PORT_PLANE_POISEUILLE_ONLY").as_deref() == Ok("1") {
-        validate_plane_poiseuille()?;
+        let _metrics = validate_plane_poiseuille()
+            .map_err(|message| BranchError::new("diagnostic", message))?;
         println!("PLANE_POISEUILLE_ONLY_SUCCESS");
-        return Ok(());
+        return Ok(RunOutcome::Diagnostic);
     }
     if std::env::var("SPEAKER_PORT_EXACT_ONLY").as_deref() == Ok("1") {
-        return validate_against_exact_resolved_fem();
+        return run_exact_diagnostic()
+            .map(|()| RunOutcome::Diagnostic)
+            .map_err(|message| BranchError::new("diagnostic", message));
     }
-    report_literature_comparison();
-    validate_plane_poiseuille()?;
-    if std::env::var("SPEAKER_PORT_3D").as_deref() == Ok("1") {
-        validate_round_port_poiseuille()?;
-        validate_against_exact_resolved_fem()?;
+    // Default path: the required 2D subcase always runs first so a 3D
+    // failure can never mask completed 2D evidence. The 3D leg runs only
+    // when explicitly enabled and reports its own status either way.
+    let two_d = run_2d_subcase().map_err(|message| BranchError::new("2d", message))?;
+    let three_d = if three_d_enabled() {
+        match run_3d_subcase() {
+            Ok(evidence) => ThreeDOutcome::Executed(evidence),
+            Err(message) => ThreeDOutcome::Failed(message),
+        }
     } else {
         println!("[SKIP] 3D Taylor-Hood pipe gate requires SPEAKER_PORT_3D=1 (nightly tier)");
-    }
-    let (frequency_hz, measurements) = measure_coupled_levels()?;
-    validate_compression_and_energy(&measurements)?;
-    validate_lumped_limit(frequency_hz, &measurements)?;
-    validate_linear_thd(&measurements)?;
+        ThreeDOutcome::Skipped
+    };
+    Ok(RunOutcome::Full(Box::new(FullOutcome { two_d, three_d })))
+}
+
+fn emit_2d_result(evidence: &Nonlinear2dEvidence, elapsed_ms: u64) -> Result<(), String> {
+    let plane = &evidence.plane_poiseuille;
+    let lumped = &evidence.lumped_limit;
+    let energy = &evidence.compression_energy;
+    let result = QaResult::passed(CASE_ID_2D)
+        .requested_backend("cpu")
+        .actual_backend("cpu")
+        .reference("plane Poiseuille exact profile; lumped port-flow model")
+        .dimension("2-D slot-port Taylor-Hood P2/P1 with coupled driver and box")
+        .formulation("BDF2 Navier-Stokes coupled to a lumped driver/box circuit")
+        .tolerance("plane Poiseuille error <= 4%; lumped-limit error <= 10%; linear THD < 1%; physical energy closure <= 4%; algebraic/interface energy residuals <= 1e-8")
+        .metric("executed_2d", 1.0)
+        .metric("drive_levels", energy.levels as f64)
+        .metric("frequency_hz", evidence.frequency_hz)
+        .metric(
+            "coupled_steps_completed_min",
+            evidence.steps_completed_min as f64,
+        )
+        .metric("coupled_steps_expected", evidence.steps_expected as f64)
+        .metric("plane_poiseuille_relative_error", plane.relative_error)
+        .metric("plane_poiseuille_u_max", plane.numerical_u_max)
+        .metric("plane_poiseuille_u_exact", plane.exact_u_max)
+        .metric("lumped_limit_relative_error", lumped.relative_error)
+        .metric("lumped_coupled_flow_m3s", lumped.coupled_flow_m3s)
+        .metric("lumped_reference_flow_m3s", lumped.reference_flow_m3s)
+        .metric("linear_thd_fraction", evidence.linear_thd)
+        .metric("max_physical_closure", energy.max_physical_closure)
+        .metric("max_algebraic_closure", energy.max_algebraic_closure)
+        .metric("max_interface_residual", energy.max_interface_residual)
+        .metric("max_compression_db", energy.max_compression_db)
+        .minimum("executed_2d", 1.0)
+        .minimum("drive_levels", DRIVE_LEVELS_V_PEAK.len() as f64)
+        .minimum(
+            "coupled_steps_completed_min",
+            evidence.steps_expected as f64,
+        )
+        .maximum(
+            "plane_poiseuille_relative_error",
+            PLANE_POISEUILLE_MAX_RELATIVE_ERROR,
+        )
+        .maximum(
+            "lumped_limit_relative_error",
+            LUMPED_LIMIT_MAX_RELATIVE_ERROR,
+        )
+        .maximum("linear_thd_fraction", LINEAR_THD_MAX_FRACTION)
+        .maximum(
+            "max_physical_closure",
+            COUPLED_ENERGY_PHYSICAL_CLOSURE_MAX,
+        )
+        .maximum(
+            "max_algebraic_closure",
+            COUPLED_ENERGY_ALGEBRAIC_CLOSURE_MAX,
+        )
+        .maximum(
+            "max_interface_residual",
+            COUPLED_ENERGY_INTERFACE_RESIDUAL_MAX,
+        )
+        .elapsed_ms(elapsed_ms);
+    println!("QA_RESULT: {}", result.to_json_line()?);
+    Ok(())
+}
+
+fn emit_3d_passed(evidence: &Nonlinear3dEvidence, elapsed_ms: u64) -> Result<(), String> {
+    let poiseuille = &evidence.poiseuille;
+    let exact = &evidence.exact_reference;
+    let result = QaResult::passed(CASE_ID_3D)
+        .requested_backend("cpu")
+        .actual_backend("cpu")
+        .reference("Hagen-Poiseuille profile; independent harmonic round-port FEM reference")
+        .dimension("3-D round-port Taylor-Hood P2/P1 with coupled driver and box")
+        .formulation("BDF2 Navier-Stokes coupled to a lumped driver/box circuit; coarse/fine reference ladder plus per-frequency linear-reference gates")
+        .tolerance("round-port Poiseuille error <= 8%; reference convergence <= 1%; mesh/dt deltas <= 2%; half-drive linearity <= 1%; tail deltas <= 0.5%; gate impedance/transfer errors <= 3%/2%")
+        .metric("executed_3d", 1.0)
+        .metric("round_port_nodes", poiseuille.nodes as f64)
+        .metric(
+            "round_port_poiseuille_relative_error",
+            poiseuille.relative_error,
+        )
+        .metric("round_port_u_max", poiseuille.numerical_u_max)
+        .metric("round_port_u_exact", poiseuille.exact_u_max)
+        .metric("reference_z_delta", exact.reference_z_delta)
+        .metric("reference_h_delta", exact.reference_h_delta)
+        .metric("nonlinear_mesh_z_delta", exact.nonlinear_mesh_z_delta)
+        .metric("nonlinear_mesh_h_delta", exact.nonlinear_mesh_h_delta)
+        .metric("dt_z_delta", exact.dt_z_delta)
+        .metric("dt_h_delta", exact.dt_h_delta)
+        .metric("half_drive_z_delta", exact.half_drive_z_delta)
+        .metric("half_drive_h_delta", exact.half_drive_h_delta)
+        .metric("worst_tail_z_delta", exact.worst_tail_z_delta)
+        .metric("worst_tail_h_delta", exact.worst_tail_h_delta)
+        .metric("gate_impedance_error", exact.gate_impedance_error)
+        .metric("gate_flow_ratio_error", exact.gate_flow_ratio_error)
+        .metric("gate_identity_error", exact.gate_identity_error)
+        .metric("gate_reference_residual", exact.gate_reference_residual)
+        .metric("gate_flux_difference", exact.gate_flux_difference)
+        .metric("gate_cap_continuity", exact.gate_cap_continuity)
+        .metric("gate_energy_algebraic", exact.gate_energy_algebraic)
+        .metric("gate_energy_physical", exact.gate_energy_physical)
+        .metric("gate_energy_interface", exact.gate_energy_interface)
+        .metric("gate_thd", exact.gate_thd)
+        .metric("gate_mach", exact.gate_mach)
+        .metric("frequencies_gated", exact.frequencies_gated as f64)
+        .minimum("executed_3d", 1.0)
+        .minimum("frequencies_gated", 3.0)
+        .maximum(
+            "round_port_poiseuille_relative_error",
+            ROUND_PORT_POISEUILLE_MAX_RELATIVE_ERROR,
+        )
+        .maximum("reference_z_delta", EXACT_REFERENCE_CONVERGENCE_MAX)
+        .maximum("reference_h_delta", EXACT_REFERENCE_CONVERGENCE_MAX)
+        .maximum("nonlinear_mesh_z_delta", EXACT_NONLINEAR_MESH_DT_MAX)
+        .maximum("nonlinear_mesh_h_delta", EXACT_NONLINEAR_MESH_DT_MAX)
+        .maximum("dt_z_delta", EXACT_NONLINEAR_MESH_DT_MAX)
+        .maximum("dt_h_delta", EXACT_NONLINEAR_MESH_DT_MAX)
+        .maximum("half_drive_z_delta", EXACT_HALF_DRIVE_LINEARITY_MAX)
+        .maximum("half_drive_h_delta", EXACT_HALF_DRIVE_LINEARITY_MAX)
+        .maximum("worst_tail_z_delta", EXACT_TAIL_DELTA_MAX)
+        .maximum("worst_tail_h_delta", EXACT_TAIL_DELTA_MAX)
+        .maximum(
+            "gate_impedance_error",
+            GATE_MAX_IMPEDANCE_RELATIVE_ERROR,
+        )
+        .maximum(
+            "gate_flow_ratio_error",
+            GATE_MAX_FLOW_RATIO_RELATIVE_ERROR,
+        )
+        .maximum(
+            "gate_identity_error",
+            GATE_MAX_TRANSFER_IDENTITY_RELATIVE_ERROR,
+        )
+        .maximum(
+            "gate_reference_residual",
+            GATE_MAX_REFERENCE_RELATIVE_RESIDUAL,
+        )
+        .maximum(
+            "gate_flux_difference",
+            GATE_MAX_REFERENCE_FLUX_RELATIVE_DIFFERENCE,
+        )
+        .maximum(
+            "gate_cap_continuity",
+            GATE_MAX_CAP_CONTINUITY_RELATIVE_ERROR,
+        )
+        .maximum(
+            "gate_energy_algebraic",
+            GATE_MAX_ENERGY_ALGEBRAIC_RELATIVE_CLOSURE,
+        )
+        .maximum(
+            "gate_energy_physical",
+            GATE_MAX_ENERGY_PHYSICAL_RELATIVE_CLOSURE,
+        )
+        .maximum(
+            "gate_energy_interface",
+            GATE_MAX_ENERGY_INTERFACE_RELATIVE_RESIDUAL,
+        )
+        .maximum("gate_thd", GATE_MAX_THD_FRACTION)
+        .maximum("gate_mach", GATE_MAX_MACH)
+        .elapsed_ms(elapsed_ms);
+    println!("QA_RESULT: {}", result.to_json_line()?);
+    Ok(())
+}
+
+fn emit_3d_skipped(reason: &str) -> Result<(), String> {
+    // A skipped 3D leg carries only its executed flag. No 3D metrics or
+    // thresholds appear unless the 3D gates actually ran.
+    let result = QaResult::skipped(CASE_ID_3D, reason).metric("executed_3d", 0.0);
+    println!("QA_RESULT: {}", result.to_json_line()?);
     Ok(())
 }
 
 fn main() {
-    if let Err(error) = run() {
-        eprintln!("FAILED: {error}");
-        println!("FAILED");
-        std::process::exit(1);
+    let started = Instant::now();
+    match run() {
+        Ok(RunOutcome::Diagnostic) => {
+            println!("SUCCESS");
+        }
+        Ok(RunOutcome::Full(outcome)) => {
+            let elapsed_ms = started.elapsed().as_millis() as u64;
+            if let Err(error) = emit_2d_result(&outcome.two_d, elapsed_ms) {
+                eprintln!("FAILED: 2D subcase evidence error: {error}");
+                println!("FAILED");
+                std::process::exit(1);
+            }
+            let mut failed_message: Option<String> = None;
+            let status_3d = match &outcome.three_d {
+                ThreeDOutcome::Executed(evidence) => {
+                    if let Err(error) = emit_3d_passed(evidence, elapsed_ms) {
+                        eprintln!("FAILED: 3D subcase evidence error: {error}");
+                        println!("FAILED");
+                        std::process::exit(1);
+                    }
+                    "passed"
+                }
+                ThreeDOutcome::Skipped => {
+                    if let Err(error) = emit_3d_skipped(
+                        "SPEAKER_PORT_3D != 1: nightly 3D gates did not run; whole-binary SUCCESS covers the 2D subcase only",
+                    ) {
+                        eprintln!("FAILED: 3D subcase evidence error: {error}");
+                        println!("FAILED");
+                        std::process::exit(1);
+                    }
+                    "skipped"
+                }
+                ThreeDOutcome::Failed(message) => {
+                    let failed = QaResult::failed(CASE_ID_3D, message.clone())
+                        .requested_backend("cpu")
+                        .actual_backend("cpu")
+                        .metric("executed_3d", 1.0);
+                    match failed.to_json_line() {
+                        Ok(line) => println!("QA_RESULT: {line}"),
+                        Err(error) => {
+                            eprintln!("FAILED: 3D failure evidence error: {error}");
+                            println!("FAILED");
+                            std::process::exit(1);
+                        }
+                    }
+                    failed_message = Some(message.clone());
+                    "failed"
+                }
+            };
+            let executed_3d = i32::from(!matches!(outcome.three_d, ThreeDOutcome::Skipped));
+            println!(
+                "SUBCASE_SUMMARY subcase_2d=passed subcase_3d={status_3d} executed_2d=1 executed_3d={executed_3d} executed_cases={} requested_cases=2",
+                1 + executed_3d,
+            );
+            if let Some(message) = failed_message {
+                eprintln!("FAILED: 3D subcase failed: {message}");
+                println!("FAILED");
+                std::process::exit(1);
+            }
+            println!("SUCCESS");
+        }
+        Err(error) => {
+            if error.branch == "diagnostic" {
+                eprintln!("FAILED: {}", error.message);
+                println!("FAILED");
+                std::process::exit(1);
+            }
+            // The 2D leg is required: a 2D failure fails the binary and the
+            // 3D leg is reported as not attempted.
+            let failed = QaResult::failed(CASE_ID_2D, error.message.clone())
+                .requested_backend("cpu")
+                .actual_backend("cpu");
+            match failed.to_json_line() {
+                Ok(line) => println!("QA_RESULT: {line}"),
+                Err(encode_error) => {
+                    eprintln!("FAILED: 2D failure evidence error: {encode_error}");
+                    println!("FAILED");
+                    std::process::exit(1);
+                }
+            }
+            if emit_3d_skipped("not attempted: the required 2D subcase failed first").is_err() {
+                println!("FAILED");
+                std::process::exit(1);
+            }
+            println!(
+                "SUBCASE_SUMMARY subcase_2d=failed subcase_3d=skipped executed_2d=1 executed_3d=0 executed_cases=1 requested_cases=2"
+            );
+            eprintln!("FAILED: 2D subcase failed: {}", error.message);
+            println!("FAILED");
+            std::process::exit(1);
+        }
     }
-    println!("SUCCESS");
 }
 
 #[cfg(test)]

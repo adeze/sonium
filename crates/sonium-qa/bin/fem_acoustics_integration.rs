@@ -13,10 +13,11 @@
 
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
-use sonium_fem::assembly::HelmholtzProblem;
+use sonium_fem::assembly::{HelmholtzProblem, assemble_bilinear};
 use sonium_fem::basis::PolynomialDegree;
 #[allow(deprecated)]
 use sonium_fem::boundary::{DirichletBC, apply_dirichlet};
+use sonium_fem::forms::{LaplacianForm, MassForm};
 use sonium_fem::io::vtk::VtuWriter;
 use sonium_fem::mesh::{Mesh, annular_mesh_triangles, spherical_shell_mesh_tetrahedra};
 use sonium_fem::physics::acoustics::pressure::impedance::impedance_to_robin_coefficient;
@@ -25,6 +26,7 @@ use sonium_fem::physics::acoustics::pressure::{
     AcousticsAssemblerExt, build_acoustics_assembler_with_boundaries,
 };
 use sonium_fem::solver::{GmresConfigF64, SolverConfig, SolverType, solve};
+use sonium_fem::spaces::H1Space;
 use sonium_solvers::gmres;
 use sonium_xem::io::binary_output_dir;
 
@@ -39,6 +41,21 @@ use spec_math::Bessel;
 use std::collections::HashMap;
 use std::path::Path;
 use std::time::Instant;
+
+/// Agreement between the iterative and direct solves of the driven system.
+const TOL_GMRES_DIRECT_AGREEMENT: f64 = 1e-6;
+/// True algebraic residual of the driven iterative solution.
+const TOL_TRUE_RESIDUAL: f64 = 1e-8;
+/// Driven pressure against the exact quasi-1D reference at 100 Hz.
+const TOL_QUASI_1D_100HZ: f64 = 0.02;
+/// Driven pressure against the exact quasi-1D reference at 1 Hz.
+const TOL_QUASI_1D_1HZ: f64 = 0.01;
+/// Cached prebaked sweep matrix against fresh triplet assembly.
+const TOL_SWEEP_MATRIX: f64 = 1e-12;
+/// Cached sweep solve against the freshly assembled solve.
+const TOL_SWEEP_SOLVE: f64 = 1e-9;
+/// Frequency for the quasi-static compatibility check.
+const LOW_CHECK_FREQUENCY: f64 = 1.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationResult {
@@ -63,28 +80,32 @@ fn main() -> anyhow::Result<()> {
 
     // 1. Integration tests (from fem_acoustics_integration.rs)
     println!("\nRunning Integration Tests...");
+    let (source_passed, source_error, source_iterations, source_residual) =
+        test_acoustics_helmholtz_with_source_and_impedance();
     results.push(ValidationResult {
         test_name: "Helmholtz with source + impedance".to_string(),
         solver: "GMRES".to_string(),
         mesh_info: "unit square".to_string(),
         dofs: 121,
         duration_ms: 0,
-        l2_error: 0.0,
-        iterations: 0,
-        residual: 0.0,
-        passed: test_acoustics_helmholtz_with_source_and_impedance(),
+        l2_error: source_error,
+        iterations: source_iterations,
+        residual: source_residual,
+        passed: source_passed,
     });
 
+    let (sweep_passed, sweep_error, sweep_points, sweep_residual) =
+        test_acoustics_frequency_sweep();
     results.push(ValidationResult {
         test_name: "Frequency sweep".to_string(),
         solver: "PrebakedAssembler".to_string(),
         mesh_info: "unit square".to_string(),
         dofs: 25,
         duration_ms: 0,
-        l2_error: 0.0,
-        iterations: 0,
-        residual: 0.0,
-        passed: test_acoustics_frequency_sweep(),
+        l2_error: sweep_error,
+        iterations: sweep_points,
+        residual: sweep_residual,
+        passed: sweep_passed,
     });
 
     // 2. Cylinder Scattering Tests (2D)
@@ -203,13 +224,100 @@ fn main() -> anyhow::Result<()> {
 // Integration tests (from fem_acoustics_integration.rs)
 // =====================================================================
 
-fn test_acoustics_helmholtz_with_source_and_impedance() -> bool {
+/// Dense complex Gaussian elimination with partial pivoting.
+fn dense_complex_solve(matrix: &mut [Complex64], rhs: &mut [Complex64]) -> bool {
+    let n = rhs.len();
+    for col in 0..n {
+        let mut pivot = col;
+        let mut pivot_value = matrix[col * n + col].norm();
+        for row in (col + 1)..n {
+            let value = matrix[row * n + col].norm();
+            if value > pivot_value {
+                pivot_value = value;
+                pivot = row;
+            }
+        }
+        if pivot_value == 0.0 {
+            return false;
+        }
+        if pivot != col {
+            for k in col..n {
+                matrix.swap(col * n + k, pivot * n + k);
+            }
+            rhs.swap(col, pivot);
+        }
+        let diagonal = matrix[col * n + col];
+        for row in (col + 1)..n {
+            let factor = matrix[row * n + col] / diagonal;
+            matrix[row * n + col] = Complex64::new(0.0, 0.0);
+            for k in (col + 1)..n {
+                matrix[row * n + k] -= factor * matrix[col * n + k];
+            }
+            rhs[row] -= factor * rhs[col];
+        }
+    }
+    for row in (0..n).rev() {
+        let mut sum = rhs[row];
+        for k in (row + 1)..n {
+            sum -= matrix[row * n + k] * rhs[k];
+        }
+        rhs[row] = sum / matrix[row * n + row];
+    }
+    true
+}
+
+fn csr_to_dense(system: &sonium_solvers::CsrMatrix<Complex64>) -> Vec<Complex64> {
+    let n = system.num_rows;
+    let mut dense = vec![Complex64::new(0.0, 0.0); n * n];
+    for row in 0..n {
+        for k in system.row_ptrs[row]..system.row_ptrs[row + 1] {
+            dense[row * n + system.col_indices[k]] += system.values[k];
+        }
+    }
+    dense
+}
+
+fn relative_complex_residual(
+    matrix: &[Complex64],
+    solution: &[Complex64],
+    rhs: &[Complex64],
+) -> f64 {
+    let n = rhs.len();
+    let mut residual = 0.0;
+    let mut rhs_norm = 0.0;
+    for row in 0..n {
+        let mut row_sum = Complex64::new(0.0, 0.0);
+        for col in 0..n {
+            row_sum += matrix[row * n + col] * solution[col];
+        }
+        residual += (row_sum - rhs[row]).norm_sqr();
+        rhs_norm += rhs[row].norm_sqr();
+    }
+    (residual / rhs_norm).sqrt()
+}
+
+fn relative_complex_difference(first: &[Complex64], second: &[Complex64]) -> f64 {
+    let mut difference = 0.0;
+    let mut norm = 0.0;
+    for (a, b) in first.iter().zip(second.iter()) {
+        difference += (a - b).norm_sqr();
+        norm += b.norm_sqr();
+    }
+    (difference / norm).sqrt()
+}
+
+/// Assemble the driven source/impedance system at one frequency.
+///
+/// Returns the Helmholtz matrix and the Neumann-flux load vector for a unit
+/// normal velocity on boundary tag 1 with an anechoic impedance on tag 2.
+fn assemble_driven_system(
+    freq: f64,
+) -> (Mesh, sonium_solvers::CsrMatrix<Complex64>, Vec<Complex64>) {
     let mesh = sonium_fem::mesh::unit_square_triangles(10);
     let boundary_tags = vec![2];
     let assembler =
         build_acoustics_assembler_with_boundaries(&mesh, PolynomialDegree::P1, &boundary_tags);
 
-    let freq = 100.0;
     let rho = 1.204;
     let c = 343.0;
     let k_val = 2.0 * std::f64::consts::PI * freq / c;
@@ -235,6 +343,17 @@ fn test_acoustics_helmholtz_with_source_and_impedance() -> bool {
     for k in 0..b_mass.nnz() {
         rhs[b_mass.rows[k]] += flux * b_mass.values[k];
     }
+
+    (mesh, system, rhs)
+}
+
+fn test_acoustics_helmholtz_with_source_and_impedance() -> (bool, f64, usize, f64) {
+    let fail = |message: &str| {
+        eprintln!("{message}");
+        (false, 1.0, 0, 1.0)
+    };
+
+    let (mesh, system, rhs) = assemble_driven_system(100.0);
     let config = sonium_solvers::GmresConfig {
         max_iterations: 1000,
         restart: 50,
@@ -249,37 +368,181 @@ fn test_acoustics_helmholtz_with_source_and_impedance() -> bool {
     let result = gmres(&system, &rhs, &config);
 
     if !result.converged {
-        eprintln!("GMRES failed to converge");
-        return false;
+        return fail("GMRES failed to converge");
     }
 
     let norm = result.x.iter().map(|c| c.norm_sqr()).sum::<f64>().sqrt();
     if norm <= 0.0 {
-        eprintln!("Solution is trivial");
-        return false;
+        return fail("Solution is trivial");
+    }
+
+    // Independent direct solve of the same driven system.
+    let dense = csr_to_dense(&system);
+    let mut direct_matrix = dense.clone();
+    let mut direct_solution = rhs.clone();
+    if !dense_complex_solve(&mut direct_matrix, &mut direct_solution) {
+        return fail("direct solve of the driven system failed");
+    }
+    let agreement = relative_complex_difference(&result.x, &direct_solution);
+    if agreement > TOL_GMRES_DIRECT_AGREEMENT {
+        return fail(&format!(
+            "GMRES/direct agreement {agreement:.3e} exceeds {TOL_GMRES_DIRECT_AGREEMENT:.1e}"
+        ));
+    }
+
+    // True algebraic residual of the iterative solution.
+    let true_residual = relative_complex_residual(&dense, &result.x, &rhs);
+    if true_residual > TOL_TRUE_RESIDUAL {
+        return fail(&format!(
+            "true residual {true_residual:.3e} exceeds {TOL_TRUE_RESIDUAL:.1e}"
+        ));
+    }
+
+    // Exact quasi-1D reference: the uniform drive, uniform Robin edge, and
+    // zero-flux top/bottom make the solution y-independent, so it equals the
+    // 1-D solution p(x) = A cos(kx) + B sin(kx) with -p'(0) = g for the unit
+    // normal velocity and p'(1) + alpha p(1) = 0 with alpha = -i k. The flux
+    // g = i omega rho and alpha are evaluated from first principles so the
+    // reference stays independent of the assembly helpers.
+    let rho = 1.204;
+    let c = 343.0;
+    let quasi_1d_error = |freq: f64, solution: &[Complex64], nodes: &Mesh| -> f64 {
+        let omega = 2.0 * std::f64::consts::PI * freq;
+        let k = omega / c;
+        let flux = Complex64::new(0.0, omega * rho);
+        let alpha = Complex64::new(0.0, -k);
+        let b = -flux / k;
+        let cos_k = k.cos();
+        let sin_k = k.sin();
+        let a = -b * (k * cos_k + alpha * sin_k) / (alpha * cos_k - k * sin_k);
+        let mut error = 0.0;
+        let mut norm = 0.0;
+        for (node, point) in nodes.nodes.iter().enumerate() {
+            let exact = a * (k * point.x).cos() + b * (k * point.x).sin();
+            error += (solution[node] - exact).norm_sqr();
+            norm += exact.norm_sqr();
+        }
+        (error / norm).sqrt()
+    };
+    let exact_100hz = quasi_1d_error(100.0, &result.x, &mesh);
+    if exact_100hz > TOL_QUASI_1D_100HZ {
+        return fail(&format!(
+            "quasi-1D error {exact_100hz:.3e} at 100 Hz exceeds {TOL_QUASI_1D_100HZ:.1e}"
+        ));
+    }
+
+    let (low_mesh, low_system, low_rhs) = assemble_driven_system(LOW_CHECK_FREQUENCY);
+    let low_dense = csr_to_dense(&low_system);
+    let mut low_matrix = low_dense.clone();
+    let mut low_solution = low_rhs.clone();
+    if !dense_complex_solve(&mut low_matrix, &mut low_solution) {
+        return fail("direct solve of the low-frequency system failed");
+    }
+    let exact_1hz = quasi_1d_error(LOW_CHECK_FREQUENCY, &low_solution, &low_mesh);
+    if exact_1hz > TOL_QUASI_1D_1HZ {
+        return fail(&format!(
+            "quasi-1D error {exact_1hz:.3e} at 1 Hz exceeds {TOL_QUASI_1D_1HZ:.1e}"
+        ));
     }
 
     write_helmholtz_vtu("helmholtz_source_impedance", &mesh, &result.x);
 
-    true
+    (
+        true,
+        agreement.max(exact_100hz).max(exact_1hz),
+        result.iterations,
+        true_residual,
+    )
 }
 
-fn test_acoustics_frequency_sweep() -> bool {
+fn test_acoustics_frequency_sweep() -> (bool, f64, usize, f64) {
+    let fail = |message: &str| {
+        eprintln!("{message}");
+        (false, 1.0, 0, 1.0)
+    };
+
     let mesh = sonium_fem::mesh::unit_square_triangles(4);
     let assembler = build_acoustics_assembler_with_boundaries(&mesh, PolynomialDegree::P1, &[]);
+
+    // Fresh stiffness and mass triplets with the same quadrature as the
+    // prebaked assembler, for the cached-versus-fresh comparison.
+    let space = H1Space::new(PolynomialDegree::P1);
+    let quad_stiffness =
+        sonium_fem::quadrature::required_order_for_stiffness(PolynomialDegree::P1.degree());
+    let quad_mass = sonium_fem::quadrature::required_order_for_mass(PolynomialDegree::P1.degree());
+    let fresh_stiffness = assemble_bilinear(&LaplacianForm, &space, &space, &mesh, quad_stiffness);
+    let fresh_mass = assemble_bilinear(&MassForm, &space, &space, &mesh, quad_mass);
+    let n = mesh.num_nodes();
 
     let frequencies = vec![50.0, 100.0, 200.0];
     let c = 343.0;
 
-    for f in frequencies {
-        let k = Complex64::new(2.0 * std::f64::consts::PI * f / c, 0.0);
-        let system = assembler.assemble_helmholtz(k, &HashMap::new());
-        if system.num_rows != mesh.num_nodes() {
-            return false;
+    let mut worst_matrix_error = 0.0f64;
+    let mut worst_solve_error = 0.0f64;
+    for f in &frequencies {
+        let k_val = 2.0 * std::f64::consts::PI * f / c;
+        let k = Complex64::new(k_val, 0.0);
+        let cached = assembler.assemble_helmholtz(k, &HashMap::new());
+        if cached.num_rows != n {
+            return fail("sweep system dimension mismatch");
+        }
+        let cached_dense = csr_to_dense(&cached);
+
+        // Fresh assembly of A = K - k^2 M.
+        let k_squared = k * k;
+        let mut fresh_dense = vec![Complex64::new(0.0, 0.0); n * n];
+        for entry in 0..fresh_stiffness.values.len() {
+            fresh_dense[fresh_stiffness.rows[entry] * n + fresh_stiffness.cols[entry]] +=
+                Complex64::new(fresh_stiffness.values[entry], 0.0);
+        }
+        for entry in 0..fresh_mass.values.len() {
+            fresh_dense[fresh_mass.rows[entry] * n + fresh_mass.cols[entry]] +=
+                -k_squared * fresh_mass.values[entry];
+        }
+        let mut matrix_difference = 0.0f64;
+        let mut matrix_norm = 0.0f64;
+        for entry in 0..n * n {
+            matrix_difference =
+                matrix_difference.max((cached_dense[entry] - fresh_dense[entry]).norm());
+            matrix_norm = matrix_norm.max(cached_dense[entry].norm());
+        }
+        let matrix_error = matrix_difference / matrix_norm;
+        worst_matrix_error = worst_matrix_error.max(matrix_error);
+        if matrix_error > TOL_SWEEP_MATRIX {
+            return fail(&format!(
+                "sweep matrix error {matrix_error:.3e} at {f} Hz exceeds {TOL_SWEEP_MATRIX:.1e}"
+            ));
+        }
+
+        // Cached-versus-fresh solves with a deterministic complex load.
+        let load: Vec<Complex64> = (0..n)
+            .map(|i| Complex64::new((i % 7) as f64 - 3.0, (i % 5) as f64 * 0.5))
+            .collect();
+        let mut cached_matrix = cached_dense.clone();
+        let mut cached_solution = load.clone();
+        if !dense_complex_solve(&mut cached_matrix, &mut cached_solution) {
+            return fail(&format!("cached sweep solve failed at {f} Hz"));
+        }
+        let mut fresh_matrix = fresh_dense.clone();
+        let mut fresh_solution = load.clone();
+        if !dense_complex_solve(&mut fresh_matrix, &mut fresh_solution) {
+            return fail(&format!("fresh sweep solve failed at {f} Hz"));
+        }
+        let solve_error = relative_complex_difference(&cached_solution, &fresh_solution);
+        worst_solve_error = worst_solve_error.max(solve_error);
+        if solve_error > TOL_SWEEP_SOLVE {
+            return fail(&format!(
+                "sweep solve error {solve_error:.3e} at {f} Hz exceeds {TOL_SWEEP_SOLVE:.1e}"
+            ));
         }
     }
 
-    true
+    (
+        true,
+        worst_solve_error,
+        frequencies.len(),
+        worst_matrix_error,
+    )
 }
 
 // =====================================================================

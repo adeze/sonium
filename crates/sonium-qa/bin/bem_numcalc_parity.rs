@@ -18,8 +18,9 @@
 //!   1. `NUMCALC_BIN` env var
 //!   2. `~/Mesh2HRTF/mesh2hrtf/NumCalc/bin/NumCalc`
 //!
-//! If neither is found, the binary prints `[SKIP]` and exits SUCCESS so
-//! CI / non-Mesh2HRTF dev boxes don't fail. To opt in: clone Mesh2HRTF
+//! If neither is found, the binary emits a structured skipped record and
+//! fails: this is a required parity gate, so a missing reference executable
+//! must not report success. To opt in: clone Mesh2HRTF
 //! (`git clone https://github.com/Any2HRTF/Mesh2HRTF.git`), build NumCalc
 //! (`make` in `mesh2hrtf/NumCalc/src`), then re-run.
 //!
@@ -42,6 +43,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+const CASE_ID: &str = "bem.numcalc-parity.v1";
 const DEFAULT_DENSITY: f64 = 1.1839;
 const EVAL_NODE_ID_BASE: usize = 200_000;
 const EVAL_GROUP: usize = 1;
@@ -610,8 +612,16 @@ fn main() {
                 "[SKIP] NumCalc not found. Set NUMCALC_BIN or build it at \
                  ~/Mesh2HRTF/mesh2hrtf/NumCalc/bin/NumCalc to run this gate."
             );
-            println!("\nSUCCESS");
-            return;
+            let skipped = sonium_qa::QaResult::skipped(
+                CASE_ID,
+                "NumCalc executable unavailable (NUMCALC_BIN unset and no ~/Mesh2HRTF build)",
+            );
+            match skipped.to_json_line() {
+                Ok(line) => println!("QA_RESULT: {line}"),
+                Err(error) => eprintln!("failed to serialize NumCalc QA_RESULT: {error}"),
+            }
+            println!("FAILED");
+            std::process::exit(1);
         }
     };
 

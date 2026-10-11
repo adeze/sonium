@@ -1,9 +1,13 @@
-//! Phase-3 lane 3D G-leg (lane-owned): failure/erosion.
+//! Phase-3 lane 3D G-leg (lane-owned): failure/erosion criterion replay.
 //!
-//! Native-vs-harvested-golden comparison for the RUPTURE miniqa cases
+//! Failure-criterion replay for the RUPTURE miniqa cases
 //! (`RUPTURE/FAIL_TAB/ELEM_SAMP`, `RUPTURE/Wierzbcki/User_law/shell`).
-//! Offline: reads only `goldens/miniqa/**/*.json` plus the schema rules.
-//! Exit 0 = PASS, exit 1 = FAIL with per-probe report on stdout.
+//! Scope is criterion-replay, NOT a native rupture solve: deck failure
+//! criteria run along golden-recorded kinematics with surrogate
+//! triaxiality; NO native coupled stress evolution, fracture, or erosion
+//! run is compared against the goldens. Offline: reads only
+//! `goldens/miniqa/**/*.json` plus the schema rules. Exit 0 = PASS,
+//! exit 1 = FAIL with per-probe report on stdout.
 //!
 //! Probe design (single-point drivers; no cross-lane runtimes):
 //! - M1 rebuilds the ELEM_SAMP part mass from H8 quadrature volumes and
@@ -62,6 +66,21 @@ const EL1_MM: [f64; 3] = [5.0, 5.0, 1.0];
 const EL9_MM: [f64; 3] = [10.0, 10.0, 1.0];
 /// ELEM_SAMP steel density in kg/mm^3 (deck `/MAT/PLAS_TAB/2`).
 const DECK_DENSITY_KG_MM3: f64 = 7.8e-6;
+/// FAIL_TAB deck rate-table bounds (1/s) behind the F2 closed form.
+const FAIL_TAB_RATE_HIGH: f64 = 0.5;
+const FAIL_TAB_RATE_LOW: f64 = 1.0e-5;
+/// FAIL_TAB deck rate-scale slope in the F2 closed form.
+const FAIL_TAB_FSCALE_SLOPE: f64 = 0.5;
+/// FAIL_TAB deck table node (triaxiality, failure strain) for F2.
+const FAIL_TAB_DECK_TRIAX: f64 = 0.3333333;
+const FAIL_TAB_DECK_STRAIN: f64 = 0.360;
+/// F2 locus-match band (absolute + relative).
+const F2_ABS_TOL: f64 = 1e-9;
+const F2_REL_TOL: f64 = 1e-12;
+/// W1 replay-vs-locus crossing relative cap.
+const W1_CROSS_REL_TOL: f64 = 1e-6;
+/// W2 locus-endpoint identity absolute cap.
+const W2_ENDPOINT_ABS_TOL: f64 = 1e-12;
 
 fn goldens_root() -> PathBuf {
     let args: Vec<String> = std::env::args().collect();
@@ -277,15 +296,15 @@ fn main() {
     total += 1;
     let tab = FailTab::elem_samp_steel();
     let (damage, ep, max_triax, end_rate) = fail_tab_damage(&fail, None);
-    let native_survives = !tab.ruptured(damage);
+    let replay_survives = !tab.ruptured(damage);
     // Golden survival: MASS constant (M1) plus THIC above zero at end.
     let thic_end = channel(&fail, "THIC 1").pop().unwrap();
     let golden_survives = thic_end > 0.0 && m1;
-    let f1 = native_survives && golden_survives;
+    let f1 = replay_survives && golden_survives;
     println!(
-        "PROBE F1 fail-tab-survival: native D {damage:.6e} (ep {ep:.4}, max triax {max_triax:.4}, end rate {end_rate:.3e}/s) vs Dcrit {:.2} -> native {} / golden {} -> {}",
+        "PROBE F1 fail-tab-survival: replay D {damage:.6e} (ep {ep:.4}, max triax {max_triax:.4}, end rate {end_rate:.3e}/s) vs Dcrit {:.2} -> replay {} / golden {} -> {}",
         tab.dcrit,
-        if native_survives {
+        if replay_survives {
             "survives"
         } else {
             "RUPTURES"
@@ -312,14 +331,14 @@ fn main() {
 
     // F2: locus value at golden end rate vs deck closed form.
     total += 1;
-    let span = 0.5 - 1.0e-5;
-    let fscale = 1.0 + 0.5 * (end_rate - 0.5) / span;
-    let expected_ef = 0.360 * fscale;
-    // Exact deck node (0.3333333, 0.360): no triaxiality interpolation.
-    let native_ef = tab.table_strain(0.3333333, end_rate, 0.0);
-    let f2 = (native_ef - expected_ef).abs() <= 1e-9 + 1e-12 * expected_ef.abs();
+    let span = FAIL_TAB_RATE_HIGH - FAIL_TAB_RATE_LOW;
+    let fscale = 1.0 + FAIL_TAB_FSCALE_SLOPE * (end_rate - FAIL_TAB_RATE_HIGH) / span;
+    let expected_ef = FAIL_TAB_DECK_STRAIN * fscale;
+    // Exact deck node: no triaxiality interpolation.
+    let table_ef = tab.table_strain(FAIL_TAB_DECK_TRIAX, end_rate, 0.0);
+    let f2 = (table_ef - expected_ef).abs() <= F2_ABS_TOL + F2_REL_TOL * expected_ef.abs();
     println!(
-        "PROBE F2 fail-tab-locus: native {native_ef:.6e} vs deck {expected_ef:.6e} at {end_rate:.3e}/s (F {fscale:.3e}) -> {}",
+        "PROBE F2 fail-tab-locus: table {table_ef:.6e} vs deck {expected_ef:.6e} at {end_rate:.3e}/s (F {fscale:.3e}) -> {}",
         if f2 { "PASS" } else { "FAIL" }
     );
     passed += usize::from(f2);
@@ -346,7 +365,7 @@ fn main() {
         }
     }
     let locus_cross = locus.emax(eta);
-    let w1_cross = ((cross - locus_cross) / locus_cross).abs() < 1e-6;
+    let w1_cross = ((cross - locus_cross) / locus_cross).abs() < W1_CROSS_REL_TOL;
     let eroded36 = channel(&wier, "PART_36 ERODED").pop().unwrap();
     let eroded59 = channel(&wier, "PART_59 ERODED").pop().unwrap();
     let time_w = time_grid(&wier);
@@ -360,7 +379,7 @@ fn main() {
     let golden_ruptures = eroded36 >= 1.0 && eroded59 >= 1.0;
     let w1 = w1_cross && golden_ruptures;
     println!(
-        "PROBE W1 wierzbicki-rupture: native cross ep {cross:.6e} vs locus {locus_cross:.6e}; golden ERODED {eroded36:.0}/{eroded59:.0} at t* {:.6e}/{:.6e} -> {}",
+        "PROBE W1 wierzbicki-rupture: replay cross ep {cross:.6e} vs locus {locus_cross:.6e}; golden ERODED {eroded36:.0}/{eroded59:.0} at t* {:.6e}/{:.6e} -> {}",
         onset("PART_36 ERODED"),
         onset("PART_59 ERODED"),
         if w1 { "PASS" } else { "FAIL" }
@@ -369,9 +388,9 @@ fn main() {
 
     // W2: locus endpoint identities (analytic).
     total += 1;
-    let w2 = (locus.fracture_strain(eta, 1.0) - locus.emax(eta)).abs() < 1e-12
-        && (locus.fracture_strain(eta, 0.0) - locus.emin(eta)).abs() < 1e-12
-        && (xi_shell(eta) - 1.0).abs() < 1e-12;
+    let w2 = (locus.fracture_strain(eta, 1.0) - locus.emax(eta)).abs() < W2_ENDPOINT_ABS_TOL
+        && (locus.fracture_strain(eta, 0.0) - locus.emin(eta)).abs() < W2_ENDPOINT_ABS_TOL
+        && (xi_shell(eta) - 1.0).abs() < W2_ENDPOINT_ABS_TOL;
     println!(
         "PROBE W2 wierzbicki-endpoints: emax {:.6e}, emin {:.6e}, xi {:.6e} -> {}",
         locus.emax(eta),

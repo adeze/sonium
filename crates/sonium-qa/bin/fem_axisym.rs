@@ -1,14 +1,17 @@
-//! Phase-3 lane 3E G-leg (lane-owned): axisymmetric solids.
+//! Phase-3 lane 3E G-leg (lane-owned): axisymmetric solids golden-integrity audit.
 //!
-//! Native-vs-harvested-golden comparison for axisymmetric SOLIDES
-//! miniqa cases. Offline: reads only `goldens/miniqa/**/*.json` plus
-//! the schema rules. Exit 0 = PASS, exit 1 = FAIL with per-probe
-//! report on stdout.
+//! Golden-integrity and presence audit over the SOLIDES miniqa goldens.
+//! Scope is integrity-only: this leg runs NO native axisymmetric solve
+//! and performs NO native-vs-harvested comparison, because no harvested
+//! SOLIDES golden is an axisymmetric case. A native comparison stays out
+//! of scope until an axisymmetric (`/QUAD`, `N2D3D != 0`) deck is
+//! harvested. Offline: reads only `goldens/miniqa/**/*.json` plus the
+//! schema rules. Exit 0 = PASS, exit 1 = FAIL with per-probe report on
+//! stdout.
 //!
-//! Audit result (W-only leg): no harvested SOLIDES golden is an
-//! axisymmetric case. All seven carry 3D `/BRICK` decks (`N2D3D = 0`;
-//! no `/QUAD` card anywhere under vendor `miniqa/SOLIDES/`), so per
-//! the Phase-3 contracts this leg runs integrity + presence probes
+//! Audit result: all seven harvested goldens carry 3D `/BRICK` decks
+//! (`N2D3D = 0`; no `/QUAD` card anywhere under vendor `miniqa/SOLIDES/`),
+//! so per the Phase-3 contracts this leg runs integrity + presence probes
 //! instead of a native comparison:
 //! - S0 enumerates `goldens/miniqa/SOLIDES/**/*.json` recursively.
 //! - S1 validates each golden against `goldens/SCHEMA.md`: schema
@@ -237,8 +240,9 @@ fn main() {
 
     if failures == 0 {
         println!(
-            "VERDICT: PASS (W-only: no axisymmetric SOLIDES golden exists; \
-             all {} audited cases are 3D /BRICK)",
+            "VERDICT: PASS (integrity-only, no native axisymmetric solve: \
+             no axisymmetric SOLIDES golden exists; all {} audited cases \
+             are 3D /BRICK)",
             AUDITED_CASES.len()
         );
     } else {

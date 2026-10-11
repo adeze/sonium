@@ -2,23 +2,44 @@
 //!
 //! These tests verify that the FEM solver produces correct results by comparing
 //! against known analytical solutions from the math-wave crate.
+//!
+//! Every leg below solves a genuine discrete system: thin-strip cases keep
+//! interior rows of free P1 unknowns (a strip with one element across its width
+//! would prescribe every node and prove nothing), error norms cover interior
+//! nodes and element quadrature points rather than prescribed values alone,
+//! and the cylinder far-field leg measures the decay of the numerical FEM
+//! scattered field, not of the analytical series.
 #![allow(deprecated)]
 #![allow(non_snake_case)]
 
 use num_complex::Complex64;
 use sonium_fem::assembly::HelmholtzProblem;
-use sonium_fem::basis::PolynomialDegree;
+use sonium_fem::basis::{Jacobian, PolynomialDegree, evaluate_shape};
 use sonium_fem::boundary::{DirichletBC, apply_dirichlet};
 use sonium_fem::io::vtk::VtuWriter;
 use sonium_fem::mesh::{
-    BoundaryType, annular_mesh_triangles, box_mesh_tetrahedra, rectangular_mesh_triangles,
-    spherical_shell_mesh_tetrahedra, unit_square_triangles,
+    BoundaryType, ElementType, annular_mesh_triangles, box_mesh_tetrahedra,
+    rectangular_mesh_triangles, spherical_shell_mesh_tetrahedra, unit_square_triangles,
 };
+use sonium_fem::quadrature::QuadratureRule;
 use sonium_qa::{QaResult, convergence_rate_with_sizes};
 use sonium_solvers::{CsrMatrix, GmresConfig, IluPreconditioner, gmres, gmres_preconditioned};
 use sonium_wave::analytical::{legendre_p, spherical_bessel_j, spherical_bessel_y};
 use sonium_xem::io::binary_output_dir;
+use std::collections::HashSet;
 use std::f64::consts::PI;
+
+// Named acceptance tolerances for the thin-strip legs. Each strip leg gates
+// the interior-node error, and the worst element-quadrature error across all
+// strip legs is gated jointly so no leg can hide behind prescribed nodes.
+const STRIP_1D_MODE_INTERIOR_TOL: f64 = 1.0e-5;
+const STRIP_PLANE_WAVE_INTERIOR_TOL: f64 = 1.0e-5;
+const STRIP_HELMHOLTZ_MODE_INTERIOR_TOL: f64 = 1.0e-4;
+const STRIP_DAMPED_WAVE_INTERIOR_TOL: f64 = 1.0e-6;
+const STRIP_MAX_QUADRATURE_TOL: f64 = 1.0e-2;
+// The numerical far-field leg measures the 1/sqrt(r) decay of the solved FEM
+// scattered field between consecutive probe radii.
+const FAR_FIELD_DECAY_MISMATCH_TOL: f64 = 0.3;
 
 fn write_complex_vtu(name: &str, mesh: &sonium_fem::mesh::Mesh, p: &[Complex64]) {
     let dir = binary_output_dir(env!("CARGO_PKG_NAME"), env!("CARGO_BIN_NAME"));
@@ -61,6 +82,152 @@ where
     } else {
         error_sq.sqrt()
     }
+}
+
+/// Nodes prescribed by Dirichlet data on the given boundary markers.
+fn prescribed_nodes(mesh: &sonium_fem::mesh::Mesh, markers: &[i32]) -> HashSet<usize> {
+    let mut prescribed = HashSet::new();
+    for boundary in &mesh.boundaries {
+        if markers.contains(&boundary.marker) {
+            prescribed.extend(boundary.nodes.iter().copied());
+        }
+    }
+    prescribed
+}
+
+/// Assert that a Dirichlet problem keeps at least one free unknown.
+///
+/// A case that prescribes every P1 node (for example a strip with one element
+/// across its width and exact data on all four sides) returns the prescribed
+/// values verbatim and cannot validate the solver.
+fn assert_nontrivial_solve(label: &str, mesh: &sonium_fem::mesh::Mesh, markers: &[i32]) -> usize {
+    let free = mesh.num_nodes() - prescribed_nodes(mesh, markers).len();
+    assert!(
+        free > 0,
+        "{label}: every P1 node is prescribed; no free unknowns are solved"
+    );
+    println!(
+        "{label}: {free} free unknowns of {} nodes",
+        mesh.num_nodes()
+    );
+    free
+}
+
+/// Relative nodal L2 error restricted to free (non-prescribed) nodes.
+fn interior_l2_error<F>(
+    mesh: &sonium_fem::mesh::Mesh,
+    fem_solution: &[Complex64],
+    prescribed: &HashSet<usize>,
+    analytical: F,
+) -> f64
+where
+    F: Fn(f64, f64, f64) -> Complex64,
+{
+    let mut error_sq = 0.0;
+    let mut norm_sq = 0.0;
+    let mut count = 0usize;
+
+    for (i, node) in mesh.nodes.iter().enumerate() {
+        if prescribed.contains(&i) {
+            continue;
+        }
+        let diff = fem_solution[i] - analytical(node.x, node.y, node.z);
+        error_sq += diff.norm_sqr();
+        norm_sq += analytical(node.x, node.y, node.z).norm_sqr();
+        count += 1;
+    }
+
+    assert!(count > 0, "interior error needs at least one free node");
+    if norm_sq > 1e-15 {
+        (error_sq / norm_sq).sqrt()
+    } else {
+        error_sq.sqrt()
+    }
+}
+
+/// Relative element-quadrature L2 error of the P1 field over the whole domain.
+///
+/// Unlike the nodal norm this samples the finite element solution inside the
+/// elements through the production shape functions and quadrature rules.
+fn quadrature_l2_error<F>(
+    mesh: &sonium_fem::mesh::Mesh,
+    fem_solution: &[Complex64],
+    analytical: F,
+) -> f64
+where
+    F: Fn(f64, f64, f64) -> Complex64,
+{
+    let mut error_sq = 0.0;
+    let mut norm_sq = 0.0;
+
+    for element in &mesh.elements {
+        let vertex_count = match element.element_type {
+            ElementType::Triangle => 3,
+            ElementType::Tetrahedron => 4,
+            other => panic!("quadrature L2 norm supports triangles and tetrahedra, got {other:?}"),
+        };
+        let nodes = &element.nodes[..vertex_count];
+        let rule = QuadratureRule::new(element.element_type, 4);
+
+        for point in rule.iter() {
+            let shape = evaluate_shape(
+                element.element_type,
+                PolynomialDegree::P1,
+                point.xi(),
+                point.eta(),
+                point.zeta(),
+            );
+            let mut x = 0.0;
+            let mut y = 0.0;
+            let mut z = 0.0;
+            let mut discrete = Complex64::new(0.0, 0.0);
+            for (i, &node) in nodes.iter().enumerate() {
+                let basis = shape.values[i];
+                let vertex = &mesh.nodes[node];
+                x += basis * vertex.x;
+                y += basis * vertex.y;
+                z += basis * vertex.z;
+                discrete += fem_solution[node] * basis;
+            }
+            let det = match element.element_type {
+                ElementType::Triangle => {
+                    let coords: Vec<[f64; 2]> = nodes
+                        .iter()
+                        .map(|&node| [mesh.nodes[node].x, mesh.nodes[node].y])
+                        .collect();
+                    Jacobian::from_2d(&shape.gradients, shape.grad_dim, &coords)
+                        .det
+                        .abs()
+                }
+                _ => {
+                    let coords: Vec<[f64; 3]> = nodes
+                        .iter()
+                        .map(|&node| [mesh.nodes[node].x, mesh.nodes[node].y, mesh.nodes[node].z])
+                        .collect();
+                    Jacobian::from_3d(&shape.gradients, shape.grad_dim, &coords)
+                        .det
+                        .abs()
+                }
+            };
+            let weight = point.weight * det;
+            let exact = analytical(x, y, z);
+            error_sq += weight * (discrete - exact).norm_sqr();
+            norm_sq += weight * exact.norm_sqr();
+        }
+    }
+
+    if norm_sq > 1e-15 {
+        (error_sq / norm_sq).sqrt()
+    } else {
+        error_sq.sqrt()
+    }
+}
+
+/// Metrics reported by one thin-strip leg for the structured result.
+struct StripLegMetrics {
+    interior_error: f64,
+    quadrature_error: f64,
+    free_dofs: usize,
 }
 
 fn assert_helmholtz_l2_convergence(
@@ -124,8 +291,10 @@ fn assert_helmholtz_l2_convergence(
 
 /// Test 1D Helmholtz mode in x-direction using manufactured solution
 ///
-/// Uses a source term to drive the solution to sin(kx)
-fn test_1d_mode_in_2d_strip() {
+/// Uses a source term to drive the solution to sin(kx). The strip keeps two
+/// elements across its width so the middle row stays a free unknown; error
+/// norms cover those interior nodes and element quadrature points.
+fn test_1d_mode_in_2d_strip() -> StripLegMetrics {
     // Create a thin strip mesh (effectively 1D)
     // Domain: [0, 1] x [0, 0.05]
     let l = 1.0;
@@ -173,9 +342,17 @@ fn test_1d_mode_in_2d_strip() {
 
     write_complex_vtu("1d_mode_2d_strip", &mesh, solution.x.as_slice());
 
+    let markers = [1, 2, 3, 4];
+    let free_dofs = assert_nontrivial_solve("1-D mode in 2-D strip", &mesh, &markers);
+
     // Compare with analytical solution u(x,y) = sin(πx)
     let error = l2_error(&mesh, &solution.x, exact_u);
-    println!("1-D mode in 2-D strip: L2 error {error:.4e}");
+    let prescribed = prescribed_nodes(&mesh, &markers);
+    let interior = interior_l2_error(&mesh, &solution.x, &prescribed, exact_u);
+    let quadrature = quadrature_l2_error(&mesh, &solution.x, exact_u);
+    println!(
+        "1-D mode in 2-D strip: L2 error {error:.4e}, interior {interior:.4e}, quadrature {quadrature:.4e}"
+    );
 
     // P1 elements on fine mesh should achieve good accuracy
     assert!(
@@ -183,6 +360,16 @@ fn test_1d_mode_in_2d_strip() {
         "L2 error {} should be < 1e-5 for P1 elements",
         error
     );
+    assert!(
+        interior < STRIP_1D_MODE_INTERIOR_TOL,
+        "interior L2 error {interior} should be < {STRIP_1D_MODE_INTERIOR_TOL} for P1 elements",
+    );
+
+    StripLegMetrics {
+        interior_error: interior,
+        quadrature_error: quadrature,
+        free_dofs,
+    }
 }
 
 /// Test 2D plane wave solution
@@ -427,8 +614,10 @@ fn test_manufactured_solution() {
 
 /// Test using math-wave plane_wave_1d function to validate against a known solution
 ///
-/// This test uses the analytical solution from math-wave and compares with FEM
-fn test_with_math_wave_plane_wave_1d() {
+/// This test uses the analytical solution from math-wave and compares with FEM.
+/// The strip uses four elements across its width so interior rows stay free
+/// unknowns; a single element across would prescribe every P1 node.
+fn test_with_math_wave_plane_wave_1d() -> StripLegMetrics {
     use sonium_wave::analytical::plane_wave_1d;
 
     let k = 2.0;
@@ -439,7 +628,7 @@ fn test_with_math_wave_plane_wave_1d() {
     let analytical_solution = plane_wave_1d(k, x_min, x_max, 50);
 
     // Create a thin 2D strip to simulate 1D
-    let mesh = rectangular_mesh_triangles(x_min, x_max, 0.0, 0.05, 20, 1);
+    let mesh = rectangular_mesh_triangles(x_min, x_max, 0.0, 0.05, 40, 4);
 
     let k_complex = Complex64::new(k, 0.0);
     let mut problem =
@@ -477,9 +666,17 @@ fn test_with_math_wave_plane_wave_1d() {
     let solution = gmres(&matrix, &rhs, &config);
     assert!(solution.converged, "GMRES should converge");
 
+    let markers = [1, 2, 3, 4];
+    let free_dofs = assert_nontrivial_solve("sonium-wave plane wave", &mesh, &markers);
+
     // Verify that the FEM solution matches the analytical plane wave
     let error = l2_error(&mesh, &solution.x, plane_wave_bc);
-    println!("sonium-wave plane wave: L2 error {error:.4e}");
+    let prescribed = prescribed_nodes(&mesh, &markers);
+    let interior = interior_l2_error(&mesh, &solution.x, &prescribed, plane_wave_bc);
+    let quadrature = quadrature_l2_error(&mesh, &solution.x, plane_wave_bc);
+    println!(
+        "sonium-wave plane wave: L2 error {error:.4e}, interior {interior:.4e}, quadrature {quadrature:.4e}"
+    );
 
     // Also verify that math-wave's solution has the expected properties
     // At x=0: exp(0) = 1
@@ -488,19 +685,27 @@ fn test_with_math_wave_plane_wave_1d() {
         "Analytical solution at x=0 should be 1"
     );
 
-    // The FEM should achieve good accuracy
+    // The FEM solution is genuinely solved on interior unknowns, so gate the
+    // interior discretization error rather than a vacuous all-node norm.
     assert!(
-        error < 1.0e-12,
-        "L2 error {} should be < 1e-12 for plane wave",
-        error
+        interior < STRIP_PLANE_WAVE_INTERIOR_TOL,
+        "interior L2 error {interior} should be < {STRIP_PLANE_WAVE_INTERIOR_TOL} for plane wave",
     );
+
+    StripLegMetrics {
+        interior_error: interior,
+        quadrature_error: quadrature,
+        free_dofs,
+    }
 }
 
 /// Test using math-wave helmholtz_1d_mode function
 ///
-/// The Helmholtz 1D mode solution satisfies:
-/// d²u/dx² + k²u = sin(nπx/L) / (k² - (nπ/L)²)
-fn test_with_math_wave_helmholtz_mode() {
+/// The FEM convention is -Δu - k²u = f, so with the source f(x) = sin(nπx/L)
+/// the exact mode is u(x) = -sin(nπx/L) / (k² - (nπ/L)²). (The math-wave
+/// helper documents the u'' + k²u = +f convention, which carries the opposite
+/// sign; the endpoint cross-check below holds either way.)
+fn test_with_math_wave_helmholtz_mode() -> StripLegMetrics {
     use sonium_wave::analytical::helmholtz_1d_mode;
 
     let k = 2.0; // Not at resonance
@@ -510,8 +715,8 @@ fn test_with_math_wave_helmholtz_mode() {
     // Get analytical solution from math-wave
     let analytical_solution = helmholtz_1d_mode(k, l, mode_n, 50);
 
-    // Create a thin 2D strip
-    let mesh = rectangular_mesh_triangles(0.0, l, 0.0, 0.05, 20, 1);
+    // Thin 2D strip with interior rows of free unknowns
+    let mesh = rectangular_mesh_triangles(0.0, l, 0.0, 0.05, 40, 4);
 
     // The source term for this mode: f(x) = sin(nπx/L)
     let kn = (mode_n as f64) * PI / l;
@@ -523,7 +728,7 @@ fn test_with_math_wave_helmholtz_mode() {
     // The Helmholtz mode has u(0) = u(L) = 0
     // Use analytical values on top/bottom boundaries
     let denom = k * k - kn * kn;
-    let exact_u = move |x: f64, _y: f64, _z: f64| Complex64::new((kn * x).sin() / denom, 0.0);
+    let exact_u = move |x: f64, _y: f64, _z: f64| Complex64::new(-(kn * x).sin() / denom, 0.0);
 
     let bc_left = DirichletBC::new(1, |_, _, _| Complex64::new(0.0, 0.0));
     let bc_right = DirichletBC::new(2, |_, _, _| Complex64::new(0.0, 0.0));
@@ -549,9 +754,17 @@ fn test_with_math_wave_helmholtz_mode() {
     let solution = gmres(&matrix, &rhs, &config);
     assert!(solution.converged, "GMRES should converge");
 
+    let markers = [1, 2, 3, 4];
+    let free_dofs = assert_nontrivial_solve("sonium-wave Helmholtz mode", &mesh, &markers);
+
     // Verify the FEM solution matches the analytical
     let error = l2_error(&mesh, &solution.x, exact_u);
-    println!("sonium-wave Helmholtz mode: L2 error {error:.4e}");
+    let prescribed = prescribed_nodes(&mesh, &markers);
+    let interior = interior_l2_error(&mesh, &solution.x, &prescribed, exact_u);
+    let quadrature = quadrature_l2_error(&mesh, &solution.x, exact_u);
+    println!(
+        "sonium-wave Helmholtz mode: L2 error {error:.4e}, interior {interior:.4e}, quadrature {quadrature:.4e}"
+    );
 
     // Also verify math-wave's solution properties
     // At x=0: sin(0) = 0, so u(0) = 0
@@ -561,14 +774,19 @@ fn test_with_math_wave_helmholtz_mode() {
     );
 
     assert!(
-        error < 1.0e-12,
-        "L2 error {} should be < 1e-12 for helmholtz mode",
-        error
+        interior < STRIP_HELMHOLTZ_MODE_INTERIOR_TOL,
+        "interior L2 error {interior} should be < {STRIP_HELMHOLTZ_MODE_INTERIOR_TOL} for helmholtz mode",
     );
+
+    StripLegMetrics {
+        interior_error: interior,
+        quadrature_error: quadrature,
+        free_dofs,
+    }
 }
 
 /// Test damped wave solution from math-wave
-fn test_with_math_wave_damped_wave() {
+fn test_with_math_wave_damped_wave() -> StripLegMetrics {
     use sonium_wave::analytical::damped_wave_1d;
 
     let k = 1.0;
@@ -581,7 +799,8 @@ fn test_with_math_wave_damped_wave() {
     // This solves the Helmholtz equation with complex wavenumber k_complex = k + i*α
     let k_complex = Complex64::new(k, alpha);
 
-    let mesh = rectangular_mesh_triangles(0.0, 1.0, 0.0, 0.05, 20, 1);
+    // Thin strip with interior rows of free unknowns
+    let mesh = rectangular_mesh_triangles(0.0, 1.0, 0.0, 0.05, 40, 4);
 
     let mut problem =
         HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, |_, _, _| {
@@ -618,8 +837,16 @@ fn test_with_math_wave_damped_wave() {
     let solution = gmres(&matrix, &rhs, &config);
     assert!(solution.converged, "GMRES should converge");
 
+    let markers = [1, 2, 3, 4];
+    let free_dofs = assert_nontrivial_solve("sonium-wave damped wave", &mesh, &markers);
+
     let error = l2_error(&mesh, &solution.x, damped_wave);
-    println!("sonium-wave damped wave: L2 error {error:.4e}");
+    let prescribed = prescribed_nodes(&mesh, &markers);
+    let interior = interior_l2_error(&mesh, &solution.x, &prescribed, damped_wave);
+    let quadrature = quadrature_l2_error(&mesh, &solution.x, damped_wave);
+    println!(
+        "sonium-wave damped wave: L2 error {error:.4e}, interior {interior:.4e}, quadrature {quadrature:.4e}"
+    );
 
     // Verify math-wave solution
     // At x=0: exp(0) = 1
@@ -629,10 +856,15 @@ fn test_with_math_wave_damped_wave() {
     );
 
     assert!(
-        error < 1.0e-12,
-        "L2 error {} should be < 1e-12 for damped wave",
-        error
+        interior < STRIP_DAMPED_WAVE_INTERIOR_TOL,
+        "interior L2 error {interior} should be < {STRIP_DAMPED_WAVE_INTERIOR_TOL} for damped wave",
     );
+
+    StripLegMetrics {
+        interior_error: interior,
+        quadrature_error: quadrature,
+        free_dofs,
+    }
 }
 
 // ============================================================================
@@ -645,6 +877,7 @@ where
     U: Fn(f64, f64, f64) -> Complex64 + Copy + 'static,
     F: Fn(f64, f64, f64) -> Complex64 + Sync,
 {
+    assert_nontrivial_solve("MMS problem", mesh, &[1, 2, 3, 4]);
     let k_complex = Complex64::new(k, 0.0);
     let mut problem = HelmholtzProblem::assemble(mesh, PolynomialDegree::P1, k_complex, source);
 
@@ -1088,6 +1321,7 @@ fn test_cylinder_scattering_sound_soft() {
     let bc_outer = DirichletBC::new(2, exact_u);
 
     apply_dirichlet(&mut problem, &mesh, &[bc_inner, bc_outer]);
+    assert_nontrivial_solve("sound-soft cylinder", &mesh, &[1, 2]);
 
     // Solve
     let matrix = to_csr_matrix(&problem);
@@ -1153,6 +1387,7 @@ fn test_cylinder_scattering_convergence() {
         let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
         let bc_outer = DirichletBC::new(2, exact_u);
         apply_dirichlet(&mut problem, &mesh, &[bc_inner, bc_outer]);
+        assert_nontrivial_solve("sound-soft cylinder convergence", &mesh, &[1, 2]);
 
         let matrix = to_csr_matrix(&problem);
         let rhs = problem.rhs.clone();
@@ -1206,45 +1441,116 @@ fn test_cylinder_scattering_convergence() {
     }
 }
 
-/// Test that scattered field satisfies Sommerfeld radiation condition qualitatively
+/// Test that the numerical scattered field satisfies the Sommerfeld radiation
+/// condition qualitatively: for outgoing waves, |u_scattered| decays like
+/// 1/√r in 2D.
 ///
-/// For outgoing waves, |u_scattered| should decay like 1/√r in 2D.
-fn test_cylinder_scattering_far_field_decay() {
+/// This solves the sound-soft cylinder scattering problem with FEM on the
+/// annulus, extracts the numerical total field at interior nodes along the
+/// θ = 0 ray, subtracts the incident wave, and checks the decay of the
+/// resulting numerical scattered field between probe radii.
+fn test_cylinder_scattering_far_field_decay() -> f64 {
     let cylinder_radius = 1.0;
+    let outer_radius = 3.0;
     let k = 2.0;
     let num_terms = 30;
 
-    // Compute scattered field at different radii along θ=0
-    let radii = [2.0, 3.0, 4.0, 5.0];
-    let mut scattered_magnitudes = Vec::new();
+    // Same mesh as the sound-soft accuracy leg: radial step 1/24, so probe
+    // radii 2, 2.25, 2.5, 2.75 land exactly on interior node rings.
+    let n_radial = 48;
+    let n_angular = 96;
+    let mesh = annular_mesh_triangles(0.0, 0.0, cylinder_radius, outer_radius, n_radial, n_angular);
 
-    for &r in &radii {
-        let total = cylinder_scattering_analytical(k, cylinder_radius, r, 0.0, num_terms);
+    let exact_u = move |x: f64, y: f64, _z: f64| {
+        cylinder_scattering_analytical(k, cylinder_radius, x, y, num_terms)
+    };
+    let source = |_x: f64, _y: f64, _z: f64| Complex64::new(0.0, 0.0);
 
-        // Subtract incident wave to get scattered field
-        let kr = k * r;
-        let incident = Complex64::new(kr.cos(), kr.sin()); // exp(ikr) at θ=0
-        let scattered = total - incident;
+    let k_complex = Complex64::new(k, 0.0);
+    let mut problem = HelmholtzProblem::assemble(&mesh, PolynomialDegree::P1, k_complex, source);
 
-        scattered_magnitudes.push(scattered.norm());
+    let bc_inner = DirichletBC::new(1, |_x, _y, _z| Complex64::new(0.0, 0.0));
+    let bc_outer = DirichletBC::new(2, exact_u);
+    apply_dirichlet(&mut problem, &mesh, &[bc_inner, bc_outer]);
+    assert_nontrivial_solve("cylinder far-field decay", &mesh, &[1, 2]);
+
+    let matrix = to_csr_matrix(&problem);
+    let rhs = problem.rhs.clone();
+
+    let config = GmresConfig {
+        max_iterations: 2000,
+        restart: 100,
+        tolerance: 1e-10,
+        print_interval: 0,
+        convergence_check_interval: 1,
+        min_restart: None,
+        max_restart: None,
+        exact_residual_check_interval: 0,
+    };
+
+    let preconditioner = IluPreconditioner::from_csr(&matrix);
+    let solution = gmres_preconditioned(&matrix, &preconditioner, &rhs, &config);
+    assert!(
+        solution.converged,
+        "GMRES should converge for far-field scattering problem"
+    );
+
+    // Accuracy of the solved field against the analytical series. A large
+    // value here means the truncated domain resonates at this wavenumber and
+    // the decay check below would measure pollution, not physics. Measured
+    // 2.16e-2 on the [1,3] mesh; the bound keeps a 1.8x margin.
+    let field_error = l2_error(&mesh, &solution.x, exact_u);
+    println!("cylinder far-field solved field: L2 error {field_error:.4e}");
+    assert!(
+        field_error < 4e-2,
+        "far-field solved field L2 error {field_error} should be < 4e-2"
+    );
+
+    // Annular nodes are stored ring by ring with angle index 0 on the θ = 0
+    // ray, so node (ring * n_angular) sits exactly at (r, 0).
+    let probe_rings = [24usize, 30, 36, 42];
+    let dr = (outer_radius - cylinder_radius) / n_radial as f64;
+    let mut scattered_magnitudes = Vec::with_capacity(probe_rings.len());
+    let mut radii = Vec::with_capacity(probe_rings.len());
+    for &ring in &probe_rings {
+        let r = cylinder_radius + ring as f64 * dr;
+        let node = ring * n_angular;
+        let total = solution.x[node];
+
+        // Subtract the incident wave to get the numerical scattered field.
+        let phase = k * r;
+        let incident = Complex64::new(phase.cos(), phase.sin());
+        let scattered = (total - incident).norm();
+        println!("cylinder far-field probe r={r:.2}: |u_scattered|={scattered:.4e}");
+        scattered_magnitudes.push(scattered);
+        radii.push(r);
     }
 
     // For 2D scattering, |u_scattered| ~ 1/√r
     // So |u(r1)| * √r1 ≈ |u(r2)| * √r2
+    let mut max_mismatch = 0.0f64;
     for i in 1..radii.len() {
         let r1 = radii[i - 1];
         let r2 = radii[i];
         let expected_ratio = (r1 / r2).sqrt();
         let actual_ratio = scattered_magnitudes[i] / scattered_magnitudes[i - 1];
-
-        // Allow some tolerance since we're not in true far-field
+        let mismatch = (actual_ratio - expected_ratio).abs();
         assert!(
-            (actual_ratio - expected_ratio).abs() < 0.3,
+            mismatch.is_finite(),
+            "Far-field decay ratio must be finite between r={r1} and r={r2}"
+        );
+        max_mismatch = max_mismatch.max(mismatch);
+
+        // Allow tolerance since we are not in the true far-field.
+        assert!(
+            mismatch < FAR_FIELD_DECAY_MISMATCH_TOL,
             "Far-field decay: expected ratio ~{:.3}, got {:.3}",
             expected_ratio,
             actual_ratio
         );
     }
+    println!("cylinder far-field decay: maximum ratio mismatch {max_mismatch:.4e}");
+    max_mismatch
 }
 
 // ============================================================================
@@ -1379,6 +1685,8 @@ fn test_cylinder_scattering_rigid() {
     // Outer (tag 2): Dirichlet -> Exact solution
     let bc_outer = DirichletBC::new(2, exact_u);
     apply_dirichlet(&mut problem, &mesh, &[bc_outer]);
+    // Only the outer ring is prescribed; the inner ring stays free.
+    assert_nontrivial_solve("rigid cylinder", &mesh, &[2]);
 
     let matrix = to_csr_matrix(&problem);
     let rhs = problem.rhs.clone();
@@ -1570,14 +1878,14 @@ fn test_sphere_scattering_rigid() {
 
 fn main() {
     let result = std::panic::catch_unwind(|| {
-        test_1d_mode_in_2d_strip();
+        let strip_1d_mode = test_1d_mode_in_2d_strip();
         test_2d_plane_wave();
         test_convergence_rate();
         test_2d_standing_wave();
         test_manufactured_solution();
-        test_with_math_wave_plane_wave_1d();
-        test_with_math_wave_helmholtz_mode();
-        test_with_math_wave_damped_wave();
+        let strip_plane_wave = test_with_math_wave_plane_wave_1d();
+        let strip_helmholtz_mode = test_with_math_wave_helmholtz_mode();
+        let strip_damped_wave = test_with_math_wave_damped_wave();
         test_mms_sin_cos();
         test_mms_sin_cos_convergence();
         test_mms_sin_sin_2pi();
@@ -1589,20 +1897,76 @@ fn main() {
         test_mms_rectangle();
         test_cylinder_scattering_sound_soft();
         test_cylinder_scattering_convergence();
-        test_cylinder_scattering_far_field_decay();
+        let far_field_mismatch = test_cylinder_scattering_far_field_decay();
         test_3d_plane_wave();
         test_cylinder_scattering_rigid();
         test_sphere_scattering_sound_soft();
         test_sphere_scattering_rigid();
+        (
+            strip_1d_mode,
+            strip_plane_wave,
+            strip_helmholtz_mode,
+            strip_damped_wave,
+            far_field_mismatch,
+        )
     });
     match result {
-        Ok(()) => {
+        Ok((
+            strip_1d_mode,
+            strip_plane_wave,
+            strip_helmholtz_mode,
+            strip_damped_wave,
+            far_field_mismatch,
+        )) => {
+            let strip_max_quadrature = strip_1d_mode
+                .quadrature_error
+                .max(strip_plane_wave.quadrature_error)
+                .max(strip_helmholtz_mode.quadrature_error)
+                .max(strip_damped_wave.quadrature_error);
+            let strip_min_free_dofs = strip_1d_mode
+                .free_dofs
+                .min(strip_plane_wave.free_dofs)
+                .min(strip_helmholtz_mode.free_dofs)
+                .min(strip_damped_wave.free_dofs);
             let record = QaResult::passed("fem.helmholtz-mms-convergence.v1")
                 .requested_backend("cpu")
                 .actual_backend("cpu")
                 .metric("analytical_cases_executed", 24.0)
                 .metric("mms_convergence_cases", 5.0)
                 .metric("independent_reference", 1.0)
+                .metric("strip_1d_mode_interior_error", strip_1d_mode.interior_error)
+                .metric(
+                    "strip_plane_wave_interior_error",
+                    strip_plane_wave.interior_error,
+                )
+                .metric(
+                    "strip_helmholtz_mode_interior_error",
+                    strip_helmholtz_mode.interior_error,
+                )
+                .metric(
+                    "strip_damped_wave_interior_error",
+                    strip_damped_wave.interior_error,
+                )
+                .metric("strip_max_quadrature_error", strip_max_quadrature)
+                .metric("strip_min_free_dofs", strip_min_free_dofs as f64)
+                .metric("far_field_decay_mismatch", far_field_mismatch)
+                .maximum("strip_1d_mode_interior_error", STRIP_1D_MODE_INTERIOR_TOL)
+                .maximum(
+                    "strip_plane_wave_interior_error",
+                    STRIP_PLANE_WAVE_INTERIOR_TOL,
+                )
+                .maximum(
+                    "strip_helmholtz_mode_interior_error",
+                    STRIP_HELMHOLTZ_MODE_INTERIOR_TOL,
+                )
+                .maximum(
+                    "strip_damped_wave_interior_error",
+                    STRIP_DAMPED_WAVE_INTERIOR_TOL,
+                )
+                .maximum("strip_max_quadrature_error", STRIP_MAX_QUADRATURE_TOL)
+                .minimum("strip_min_free_dofs", 1.0)
+                .maximum("far_field_decay_mismatch", FAR_FIELD_DECAY_MISMATCH_TOL)
+                .seed("helmholtz-p1:strip-40x2/40x4:annulus-48x96:mms")
                 .to_json_line()
                 .expect("FEM analytical QA result must serialize");
             println!("QA_RESULT: {record}");

@@ -546,64 +546,109 @@ fn test_stokes_taylor_couette() {
     );
 }
 
+/// Names accepted by `SONIUM_STOKES_CASE`; `all` runs every numerical case.
+const KNOWN_STOKES_CASES: [&str; 6] = [
+    "all",
+    "poiseuille",
+    "symmetry",
+    "divergence",
+    "cavity",
+    "taylor-couette",
+];
+
 fn main() {
+    let case_filter = std::env::var("SONIUM_STOKES_CASE").ok();
+    if let Some(filter) = case_filter.as_deref()
+        && !KNOWN_STOKES_CASES.contains(&filter)
+    {
+        if let Ok(line) = sonium_qa::QaResult::failed(
+            "fem.stokes-stability.v1",
+            format!(
+                "unknown SONIUM_STOKES_CASE {filter:?}; expected one of {}",
+                KNOWN_STOKES_CASES.join(", ")
+            ),
+        )
+        .requested_backend("cpu")
+        .actual_backend("cpu")
+        .to_json_line()
+        {
+            println!("QA_RESULT: {line}");
+        }
+        println!("FAILED");
+        std::process::exit(1);
+    }
     let result = std::panic::catch_unwind(|| {
-        let case_filter = std::env::var("SONIUM_STOKES_CASE").ok();
         let should_run = |name: &str| {
             case_filter
                 .as_deref()
                 .is_none_or(|filter| filter == "all" || filter == name)
         };
-        let (velocity_error, pressure_error, converged) = if should_run("poiseuille") {
-            test_stokes_poiseuille_converges()
+        let mut executed: Vec<&'static str> = Vec::new();
+        let poiseuille = if should_run("poiseuille") {
+            executed.push("poiseuille");
+            Some(test_stokes_poiseuille_converges())
         } else {
-            (0.0, 0.0, true)
+            None
         };
         if should_run("symmetry") {
+            executed.push("symmetry");
             test_stokes_viscous_form_symmetry();
         }
         if should_run("divergence") {
+            executed.push("divergence");
             test_stokes_divergence_form_nonzero();
         }
         if should_run("cavity") {
+            executed.push("cavity");
             test_stokes_lid_driven_cavity();
         }
         if should_run("taylor-couette") {
+            executed.push("taylor-couette");
             test_stokes_taylor_couette();
         }
         let (coupling_nnz, pressure_rows, pressure_block_zero) = stokes_structure_metrics();
         (
-            velocity_error,
-            pressure_error,
-            converged,
+            poiseuille,
+            executed,
             coupling_nnz,
             pressure_rows,
             pressure_block_zero,
         )
     });
     match result {
-        Ok((
-            velocity_error,
-            pressure_error,
-            converged,
-            coupling_nnz,
-            pressure_rows,
-            block_zero,
-        )) => {
-            let result = sonium_qa::QaResult::passed("fem.stokes-stability.v1")
+        Ok((poiseuille, executed, coupling_nnz, pressure_rows, block_zero)) => {
+            println!("executed Stokes cases: {}", executed.join(", "));
+            let mut result = sonium_qa::QaResult::passed("fem.stokes-stability.v1")
                 .requested_backend("cpu")
                 .actual_backend("cpu")
-                .metric("velocity_relative_error", velocity_error)
-                .metric("pressure_relative_error", pressure_error)
-                .metric("poiseuille_converged", if converged { 1.0 } else { 0.0 })
+                .metric("executed_cases", executed.len() as f64)
                 .metric("coupling_nnz", coupling_nnz as f64)
                 .metric("pressure_rows_with_coupling", pressure_rows as f64)
                 .metric("pressure_block_zero", if block_zero { 1.0 } else { 0.0 })
-                .minimum("poiseuille_converged", 1.0)
+                .minimum("executed_cases", 1.0)
                 .minimum("pressure_rows_with_coupling", 1.0)
-                .minimum("pressure_block_zero", 1.0)
-                .maximum("velocity_relative_error", 1.0e-6)
-                .maximum("pressure_relative_error", 1.0e-4);
+                .minimum("pressure_block_zero", 1.0);
+            for name in [
+                "poiseuille",
+                "symmetry",
+                "divergence",
+                "cavity",
+                "taylor-couette",
+            ] {
+                result = result.metric(
+                    format!("executed_{name}"),
+                    if executed.contains(&name) { 1.0 } else { 0.0 },
+                );
+            }
+            if let Some((velocity_error, pressure_error, converged)) = poiseuille {
+                result = result
+                    .metric("velocity_relative_error", velocity_error)
+                    .metric("pressure_relative_error", pressure_error)
+                    .metric("poiseuille_converged", if converged { 1.0 } else { 0.0 })
+                    .minimum("poiseuille_converged", 1.0)
+                    .maximum("velocity_relative_error", 1.0e-6)
+                    .maximum("pressure_relative_error", 1.0e-4);
+            }
             match result.to_json_line() {
                 Ok(line) => println!("QA_RESULT: {line}"),
                 Err(error) => {

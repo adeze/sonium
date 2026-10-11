@@ -1,16 +1,20 @@
-//! Phase-3 lane 3C G-leg (lane-owned): foam/extended laws.
+//! Phase-3 lane 3C G-leg (lane-owned): foam/extended-law golden-integrity audit.
 //!
-//! Native-vs-harvested-golden comparison for the LOIS foam-law miniqa
-//! cases (`LOIS/FOAM/FOAM429/input_100/isolid_101.json`,
+//! Golden-integrity and harvested yield-bound/symmetry checks for the LOIS
+//! foam-law miniqa cases (`LOIS/FOAM/FOAM429/input_100/isolid_101.json`,
 //! `LOIS/LOI50/test1/pid_6/input_44.json`,
 //! `LOIS/LOI51/JWL/01-PG_degenerated/01a_P-E.json` and `01b_dP-E.json`,
-//! `LOIS/LOI76/shell/test1/compression.json`). Offline: reads only
+//! `LOIS/LOI76/shell/test1/compression.json`). Scope is integrity-only: NO
+//! native LAW33/50/51/76 material evolution is executed and NO solved foam
+//! case is compared; the harvested histories carry stresses, densities,
+//! and energies but no strain inputs, so native material-point replay and
+//! solved foam cases stay future work. Offline: reads only
 //! `goldens/miniqa/**/*.json` plus the `SCHEMA.md` contract compiled
 //! into the probes below. No engine, no network.
 //!
-//! Each probe recomputes a quantity natively from the harvested raw
-//! series and compares it against the harvested summary or a physics
-//! identity, with tolerances justified per probe:
+//! Each probe re-derives a quantity from the harvested raw series and
+//! compares it against the harvested summary or a physics identity, with
+//! tolerances justified per probe:
 //!
 //! - `schema`: `schema` tag equals `opencourant-golden-v1` (SCHEMA.md).
 //! - `termination`: engine run terminated normally.
@@ -18,8 +22,8 @@
 //! - `decimation`: kept-row record matches the series length, or the
 //!   record is null (no decimation).
 //! - `shapes`: every channel has exactly N finite samples.
-//! - `summary`: natively recomputed final/min/max match the harvested
-//!   summaries within each channel's own `abs_tol`/`rel_tol`.
+//! - `summary`: recomputed final/min/max match the harvested summaries
+//!   within each channel's own `abs_tol`/`rel_tol`.
 //! - `energy`: `KE + IE + HE + RE + CE - EXTW` reproduces the total
 //!   `NO NAME` channel within 1e-6 scale-relative (7-digit TH rounding;
 //!   observed worst 3.1e-7 on all five cases). Scale-relative, not
@@ -103,6 +107,31 @@ fn close(a: f64, b: f64, abs: f64, rel: f64) -> bool {
     (a - b).abs() <= abs + rel * b.abs()
 }
 
+/// Energy-balance worst scale-relative residual cap (TH rounding).
+const ENERGY_BALANCE_SCALE_REL_TOL: f64 = 1.0e-6;
+/// Momentum-bound worst excess cap (exact Cauchy-Schwarz physics).
+const MOMENTUM_EXCESS_TOL: f64 = 1.0e-6;
+/// MASS absolute spread cap across the run.
+const MASS_SPREAD_ABS_TOL: f64 = 1.0e-9;
+/// Cycle TOTALMASS relative cap against the last MASS sample.
+const MASS_CYCLE_REL_TOL: f64 = 1.0e-3;
+/// Cycle MASERR absolute cap (mass error must be zero).
+const CYCLE_MASERR_ABS_TOL: f64 = 1.0e-12;
+/// LAW33 yield-bound slack factor (1%) plus an absolute floor.
+const LAW33_YIELD_FACTOR: f64 = 1.01;
+const LAW33_YIELD_ABS_TOL: f64 = 1.0e-9;
+/// Zero guard for the LAW33 yield-ratio denominator.
+const LAW33_YIELD_FLOOR: f64 = 1.0e-30;
+/// LAW51 cross-run pressure-match band (absolute + relative).
+const PE_CROSS_ABS_TOL: f64 = 1.0;
+const PE_CROSS_REL_TOL: f64 = 1.0e-5;
+/// LAW51 run-to-run energy-grid jitter cap.
+const TRAJECTORY_REL_TOL: f64 = 5.0e-3;
+/// Element activity flag threshold (flags at 1.0 when active).
+const ACTIVITY_THRESHOLD: f64 = 0.5;
+/// Zero guard for relative-error denominators.
+const ZERO_FLOOR: f64 = 1.0e-300;
+
 /// Raw series of a channel.
 fn series<'a>(doc: &'a Value, name: &str) -> &'a [Value] {
     doc["channels"][name]["values"]
@@ -110,7 +139,7 @@ fn series<'a>(doc: &'a Value, name: &str) -> &'a [Value] {
         .map_or(&[], Vec::as_slice)
 }
 
-/// Native min/max over a raw series.
+/// Min/max over a raw series.
 fn min_max(values: &[Value]) -> (f64, f64) {
     let mut min = f64::INFINITY;
     let mut max = f64::NEG_INFINITY;
@@ -236,23 +265,25 @@ fn probe_summary(doc: &Value) -> Probe {
             }
             let abs = ch["abs_tol"].as_f64().unwrap_or(0.0);
             let rel = ch["rel_tol"].as_f64().unwrap_or(0.0);
-            let native_final = values[values.len() - 1].as_f64().unwrap_or(f64::NAN);
-            let (native_min, native_max) = min_max(values);
-            for (field, native) in [
-                ("final", native_final),
-                ("min", native_min),
-                ("max", native_max),
+            let recomputed_final = values[values.len() - 1].as_f64().unwrap_or(f64::NAN);
+            let (recomputed_min, recomputed_max) = min_max(values);
+            for (field, recomputed) in [
+                ("final", recomputed_final),
+                ("min", recomputed_min),
+                ("max", recomputed_max),
             ] {
                 let stored = ch[field].as_f64().unwrap_or(f64::NAN);
-                let err = (native - stored).abs() / (abs + rel * stored.abs()).max(1.0e-300);
+                let err = (recomputed - stored).abs() / (abs + rel * stored.abs()).max(ZERO_FLOOR);
                 if err > worst {
                     worst = err;
                     worst_name = format!("{name}/{field}");
                 }
-                if !close(native, stored, abs, rel) {
+                if !close(recomputed, stored, abs, rel) {
                     return Probe::fail(
                         "summary",
-                        format!("{name}/{field}: native {native:.6e} vs stored {stored:.6e}"),
+                        format!(
+                            "{name}/{field}: recomputed {recomputed:.6e} vs stored {stored:.6e}"
+                        ),
                     );
                 }
             }
@@ -292,9 +323,9 @@ fn probe_energy(doc: &Value, n: usize) -> Probe {
         ];
         let resid: f64 = parts.iter().sum();
         let scale: f64 = parts.iter().map(|x| x.abs()).sum();
-        worst = worst.max(resid.abs() / scale.max(1.0e-300));
+        worst = worst.max(resid.abs() / scale.max(ZERO_FLOOR));
     }
-    if worst <= 1.0e-6 {
+    if worst <= ENERGY_BALANCE_SCALE_REL_TOL {
         Probe::ok(
             "energy",
             format!("KE+IE+HE+RE+CE-EXTW = total, worst scale-rel {worst:.3e}"),
@@ -302,7 +333,7 @@ fn probe_energy(doc: &Value, n: usize) -> Probe {
     } else {
         Probe::fail(
             "energy",
-            format!("balance worst scale-rel {worst:.3e} > 1e-6"),
+            format!("balance worst scale-rel {worst:.3e} > {ENERGY_BALANCE_SCALE_REL_TOL:.1e}"),
         )
     }
 }
@@ -326,13 +357,16 @@ fn probe_momentum(doc: &Value, n: usize) -> Probe {
             worst = worst.max(p2 / bound - 1.0);
         }
     }
-    if worst <= 1.0e-6 {
+    if worst <= MOMENTUM_EXCESS_TOL {
         Probe::ok(
             "momentum",
             format!("|p|^2 <= 2m KE, worst excess {worst:.3e}"),
         )
     } else {
-        Probe::fail("momentum", format!("bound excess {worst:.3e} > 1e-6"))
+        Probe::fail(
+            "momentum",
+            format!("bound excess {worst:.3e} > {MOMENTUM_EXCESS_TOL:.1e}"),
+        )
     }
 }
 
@@ -342,12 +376,15 @@ fn probe_mass(doc: &Value, n: usize) -> Probe {
         return Probe::fail("mass", "MASS channel missing or short".to_string());
     }
     let (min, max) = min_max(m);
-    if max - min > 1.0e-9 {
-        return Probe::fail("mass", format!("MASS spread {:.3e} > 1e-9", max - min));
+    if max - min > MASS_SPREAD_ABS_TOL {
+        return Probe::fail(
+            "mass",
+            format!("MASS spread {:.3e} > {MASS_SPREAD_ABS_TOL:.1e}", max - min),
+        );
     }
     let total = doc["cycle"]["TOTALMASS"].as_f64().unwrap_or(f64::NAN);
     let last = num(m, n - 1);
-    if !close(total, last, 0.0, 1.0e-3) {
+    if !close(total, last, 0.0, MASS_CYCLE_REL_TOL) {
         return Probe::fail(
             "mass",
             format!("TOTALMASS {total:.6e} vs MASS last {last:.6e}"),
@@ -361,8 +398,11 @@ fn probe_mass(doc: &Value, n: usize) -> Probe {
 
 fn probe_cycle(doc: &Value) -> Probe {
     let maserr = doc["cycle"]["MASERR"].as_f64().unwrap_or(f64::NAN);
-    if !maserr.is_finite() || maserr.abs() > 1.0e-12 {
-        return Probe::fail("cycle", format!("MASERR {maserr:.3e}"));
+    if !maserr.is_finite() || maserr.abs() > CYCLE_MASERR_ABS_TOL {
+        return Probe::fail(
+            "cycle",
+            format!("MASERR {maserr:.3e} exceeds {CYCLE_MASERR_ABS_TOL:.1e}"),
+        );
     }
     for key in ["TSTEP", "CYCLE", "TIME"] {
         let v = doc["cycle"][key].as_f64().unwrap_or(f64::NAN);
@@ -429,7 +469,7 @@ fn probe_law33_bound(doc: &Value, n: usize) -> Probe {
         }
         let rho0 = num(chans[8], 0);
         for i in 0..n {
-            if num(chans[0], i) < 0.5 {
+            if num(chans[0], i) < ACTIVITY_THRESHOLD {
                 continue;
             }
             let rho = num(chans[8], i);
@@ -453,8 +493,8 @@ fn probe_law33_bound(doc: &Value, n: usize) -> Probe {
             let (values, _) = jacobi_eigen_c1(&stress, 12);
             let most = values[0].abs().max(values[1].abs()).max(values[2].abs());
             checked += 1;
-            worst = worst.max(most / yield_.max(1.0e-30));
-            if most > yield_ * 1.01 + 1e-9 {
+            worst = worst.max(most / yield_.max(LAW33_YIELD_FLOOR));
+            if most > yield_ * LAW33_YIELD_FACTOR + LAW33_YIELD_ABS_TOL {
                 violations += 1;
             }
         }
@@ -483,7 +523,7 @@ fn probe_foam_part(doc: &Value, n: usize) -> Probe {
         }
         let (abs, rel) = tols(doc, global);
         let worst = (0..n)
-            .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(1.0e-300))
+            .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(ZERO_FLOOR))
             .fold(0.0f64, f64::max);
         if worst > 1.0 {
             return Probe::fail(
@@ -541,7 +581,7 @@ fn probe_solide_ie(doc: &Value, n: usize) -> Probe {
     }
     let (abs, rel) = tols(doc, "INTERNAL ENERGY");
     let worst = (0..n)
-        .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(1.0e-300))
+        .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(ZERO_FLOOR))
         .fold(0.0f64, f64::max);
     if worst > 1.0 {
         Probe::fail(
@@ -620,7 +660,7 @@ fn probe_hydrostatic(doc: &Value, n: usize) -> Probe {
     for i in 0..n {
         for pair in [(0, 1), (0, 2)] {
             let err = (num(p[pair.0], i) - num(p[pair.1], i)).abs()
-                / (abs + rel * num(p[0], i).abs()).max(1.0e-300);
+                / (abs + rel * num(p[0], i).abs()).max(ZERO_FLOOR);
             worst = worst.max(err);
         }
     }
@@ -717,9 +757,9 @@ fn probe_pe_cross(pa: &Value, pb: &Value) -> Probe {
     for i in 0..press.len() {
         let expected = interp_clamped(&pairs, ea[i]);
         let got = press[i] - p0;
-        let err = (got - expected).abs() / (1.0 + 1.0e-5 * expected.abs());
+        let err = (got - expected).abs() / (PE_CROSS_ABS_TOL + PE_CROSS_REL_TOL * expected.abs());
         worst = worst.max(err);
-        if !close(got, expected, 1.0, 1.0e-5) {
+        if !close(got, expected, PE_CROSS_ABS_TOL, PE_CROSS_REL_TOL) {
             return Probe::fail(
                 "pe_cross",
                 format!("sample {i}: dP {got:.6e} vs 01b {expected:.6e}"),
@@ -741,15 +781,18 @@ fn probe_trajectory(pa: &Value, pb: &Value) -> Probe {
     let worst = ea
         .iter()
         .zip(eb.iter())
-        .map(|(a, b)| (a - b).abs() / a.abs().max(1.0e-300))
+        .map(|(a, b)| (a - b).abs() / a.abs().max(ZERO_FLOOR))
         .fold(0.0f64, f64::max);
-    if worst <= 5.0e-3 {
+    if worst <= TRAJECTORY_REL_TOL {
         Probe::ok(
             "trajectory",
-            format!("run-to-run energy jitter {worst:.3e} <= 5e-3"),
+            format!("run-to-run energy jitter {worst:.3e} <= {TRAJECTORY_REL_TOL:.1e}"),
         )
     } else {
-        Probe::fail("trajectory", format!("energy jitter {worst:.3e} > 5e-3"))
+        Probe::fail(
+            "trajectory",
+            format!("energy jitter {worst:.3e} > {TRAJECTORY_REL_TOL:.1e}"),
+        )
     }
 }
 
@@ -767,7 +810,7 @@ fn probe_spec_ie(doc: &Value, n: usize) -> Probe {
     }
     let (abs, rel) = tols(doc, "INTERNAL ENERGY");
     let worst = (0..n)
-        .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(1.0e-300))
+        .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(ZERO_FLOOR))
         .fold(0.0f64, f64::max);
     if worst > 1.0 {
         Probe::fail(
@@ -812,7 +855,7 @@ fn probe_top_bottom(doc: &Value, n: usize) -> Probe {
     }
     let (abs, rel) = tols(doc, "spec 1000001 compr ~11");
     let worst = (0..n)
-        .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(1.0e-300))
+        .map(|i| (num(a, i) - num(b, i)).abs() / (abs + rel * num(b, i).abs()).max(ZERO_FLOOR))
         .fold(0.0f64, f64::max);
     if worst > 1.0 {
         Probe::fail(
@@ -939,7 +982,10 @@ fn main() -> ExitCode {
         ),
         (root.join("LOI76/shell/test1/compression.json"), "loi76"),
     ];
-    println!("qa-fem-foam-laws: lane 3C G-leg (LOIS foam-law cases)");
+    println!(
+        "qa-fem-foam-laws: lane 3C G-leg, golden-integrity only \
+         (LOIS foam-law cases; no native LAW evolution)"
+    );
     println!("goldens root: {}", root.display());
     let mut total = 0;
     let mut failed = 0;

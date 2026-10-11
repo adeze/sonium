@@ -1319,3 +1319,252 @@ fn waveholtz_accuracy_never_uses_a_five_percent_escape_hatch() {
     assert!(!source.contains("error < 0.05"));
     assert!(source.contains("waveholtz_vs_direct_error"));
 }
+
+#[test]
+fn acceptance_gates_enforce_their_advertised_tolerances() {
+    let galerkin = fs::read_to_string(manifest_dir().join("bin/bem_galerkin_single_layer.rs"))
+        .expect("read Galerkin single-layer QA");
+    assert!(
+        galerkin.contains("non-finite entries"),
+        "Galerkin QA must reject non-finite matrix entries"
+    );
+    assert!(
+        galerkin.contains("&physics, 7)"),
+        "Galerkin QA must confirm its bound against an independent order-7 reference"
+    );
+    assert!(
+        galerkin.contains(".maximum(\"maximum_matrix_asymmetry\", ASYMMETRY_TOLERANCE)")
+            && galerkin.contains(".maximum(\"reference_matrix_asymmetry\", ASYMMETRY_TOLERANCE)"),
+        "Galerkin QA must carry structured asymmetry thresholds"
+    );
+
+    let parity =
+        fs::read_to_string(manifest_dir().join("bin/bem_transmission_kernel_native_parity.rs"))
+            .expect("read kernel-native parity QA");
+    assert!(
+        parity.contains(".maximum(\"forward_action_error\", ACTION_ERROR_TOLERANCE)")
+            && parity.contains(".maximum(\"transpose_action_error\", ACTION_ERROR_TOLERANCE)"),
+        "kernel-native parity QA must carry structured action-error thresholds"
+    );
+    assert!(
+        parity.contains("forward action error")
+            && parity.contains("transpose action error")
+            && parity.contains("exceeds"),
+        "kernel-native parity QA must fail standalone runs that exceed the bound"
+    );
+
+    for filename in [
+        "bem_transmission_distributed_rows.rs",
+        "bem_transmission_distributed_higher_order_rows.rs",
+    ] {
+        let source = fs::read_to_string(manifest_dir().join("bin").join(filename))
+            .unwrap_or_else(|error| panic!("read {filename}: {error}"));
+        assert!(
+            source.contains(".maximum(\"maximum_local_action_error\", LOCAL_ACTION_TOLERANCE)")
+                && source.contains(".maximum(\"coverage_defects\", 0.0)"),
+            "{filename}: row QA must carry structured error and coverage thresholds"
+        );
+        assert!(
+            source.contains("binary_search") && source.contains("coverage_defects != 0"),
+            "{filename}: row QA must verify exact unique global row coverage"
+        );
+    }
+
+    let stokes = fs::read_to_string(manifest_dir().join("bin/fem_stokes_validation.rs"))
+        .expect("read Stokes validation QA");
+    assert!(
+        !stokes.contains("(0.0, 0.0, true)"),
+        "Stokes QA must not fabricate zero error for cases it did not run"
+    );
+    assert!(
+        stokes.contains("unknown SONIUM_STOKES_CASE"),
+        "Stokes QA must reject unknown case filters instead of omitting every case"
+    );
+    assert!(
+        stokes.contains("executed_cases") && stokes.contains(".minimum(\"executed_cases\", 1.0)"),
+        "Stokes QA must report executed counts with a nonzero threshold"
+    );
+
+    let numcalc = fs::read_to_string(manifest_dir().join("bin/bem_numcalc_parity.rs"))
+        .expect("read NumCalc parity QA");
+    let skip_offset = numcalc
+        .find("NumCalc not found")
+        .expect("NumCalc QA keeps its missing-executable branch");
+    let skip_arm: String = numcalc[skip_offset..].lines().take(20).collect();
+    assert!(
+        skip_arm.contains("QaResult::skipped"),
+        "missing NumCalc must emit a structured skipped record"
+    );
+    assert!(
+        skip_arm.contains("process::exit(1)") && !skip_arm.contains("SUCCESS"),
+        "missing NumCalc must fail the required parity gate, not print SUCCESS"
+    );
+}
+
+#[test]
+fn partial_implementations_solve_or_declare_their_scope() {
+    let beam = fs::read_to_string(manifest_dir().join("bin/fem_beam_validation.rs"))
+        .expect("read beam validation");
+    assert!(
+        beam.contains("BETA1L") && beam.contains("EIGEN_RESIDUAL_TOLERANCE"),
+        "beam validation must eigen-solve with the corrected beta^2 formula and a residual gate"
+    );
+    assert!(
+        !beam.contains("1.875_f64.powi(2)"),
+        "beam validation must not raise the already-squared beta coefficient again"
+    );
+
+    let maxwell = fs::read_to_string(manifest_dir().join("bin/fem_maxwell_validation.rs"))
+        .expect("read Maxwell validation");
+    assert!(
+        maxwell.contains("WAVEGUIDE_KC_TOLERANCE")
+            && maxwell.contains("CAVITY_K_TOLERANCE")
+            && maxwell.contains("relative_eigen_residual"),
+        "Maxwell validation must eigen-solve waveguide and cavity modes with residual gates"
+    );
+
+    let magnetostatics =
+        fs::read_to_string(manifest_dir().join("bin/fem_magnetostatics_validation.rs"))
+            .expect("read magnetostatics validation");
+    assert!(
+        magnetostatics.contains("DIPOLE_FIELD_TOLERANCE")
+            && magnetostatics.contains("TRUE_RESIDUAL_TOLERANCE")
+            && magnetostatics.contains("SHIELD_CONTRACTION_TOLERANCE"),
+        "magnetostatics validation must solve dipole, wire, shielding, and inductance scenarios"
+    );
+
+    let wrappers = fs::read_to_string(manifest_dir().join("bin/fem_eigenphysics_wrappers.rs"))
+        .expect("read eigenphysics wrappers");
+    assert!(
+        wrappers.contains("EM_WAVENUMBER_TOLERANCE")
+            && wrappers.contains("EIGEN_RESIDUAL_TOLERANCE"),
+        "eigenphysics wrappers must solve the EM leg and gate convergence plus residuals"
+    );
+
+    let thermal = fs::read_to_string(manifest_dir().join("bin/fem_thermal_validation.rs"))
+        .expect("read thermal validation");
+    assert!(
+        thermal.contains("quadrature_l2_error")
+            && thermal.contains("L2_RATE_MINIMUM")
+            && thermal.contains("FINE_L2_MAX_ERROR"),
+        "thermal validation must measure the convergence rate with quadrature L2 error"
+    );
+
+    let shell = fs::read_to_string(manifest_dir().join("bin/fem_shell_validation.rs"))
+        .expect("read shell validation");
+    assert!(
+        shell.contains("TOL_DEFLECTION") && shell.contains("TOL_ROTATION"),
+        "shell validation must solve deflections and gate them against a reference"
+    );
+
+    let plasticity = fs::read_to_string(manifest_dir().join("bin/fem_plasticity_validation.rs"))
+        .expect("read plasticity validation");
+    assert!(
+        plasticity.contains("return_mapping_3d")
+            && plasticity.contains("TOL_PLASTIC_WORK")
+            && plasticity.contains("TOL_UNLOAD_SLOPE"),
+        "plasticity validation must run yielding load/unload scenarios through production return mapping"
+    );
+
+    let biharmonic = fs::read_to_string(manifest_dir().join("bin/fem_biharmonic_validation.rs"))
+        .expect("read biharmonic validation");
+    assert!(
+        biharmonic.contains("TOL_FINE_U") && biharmonic.contains("TOL_RATE_U"),
+        "biharmonic validation must solve a manufactured plate with refinement gates"
+    );
+
+    let electroacoustics =
+        fs::read_to_string(manifest_dir().join("bin/fem_electroacoustics_validation.rs"))
+            .expect("read electroacoustics validation");
+    assert!(
+        electroacoustics.contains("TOL_RECIPROCITY") && electroacoustics.contains("TOL_POWER"),
+        "electroacoustics validation must solve the driven coupled response with reciprocity and power gates"
+    );
+
+    let nonlinear =
+        fs::read_to_string(manifest_dir().join("bin/fem_nonlinear_solid_validation.rs"))
+            .expect("read nonlinear-solid validation");
+    assert!(
+        nonlinear.contains("fem_newton_solve_with_bcs") && nonlinear.contains("from u=0"),
+        "nonlinear-solid validation must solve loaded problems from a nonequilibrium start"
+    );
+    assert!(
+        nonlinear.contains("nonzero iterations"),
+        "nonlinear-solid validation must not pass a zero-iteration equilibrium as a solve"
+    );
+
+    let acoustics = fs::read_to_string(manifest_dir().join("bin/fem_acoustics_integration.rs"))
+        .expect("read acoustics integration");
+    assert!(
+        acoustics.contains("quasi_1d_error") && acoustics.contains("TOL_QUASI_1D_100HZ"),
+        "acoustics integration must compare pressure against an independent reference"
+    );
+    assert!(
+        acoustics.contains("cached sweep solve failed")
+            && acoustics.contains("fresh sweep solve failed"),
+        "acoustics integration must compare cached sweeps against freshly assembled solves"
+    );
+
+    let analytical = fs::read_to_string(manifest_dir().join("bin/fem_analytical_validation.rs"))
+        .expect("read analytical validation");
+    assert!(
+        analytical.contains("assert_nontrivial_solve") && analytical.contains("interior_l2_error"),
+        "analytical validation must assert free unknowns and use interior norms"
+    );
+    assert!(
+        analytical.contains("-(kn * x).sin()/denom")
+            || analytical.contains("-(kn * x).sin() / denom"),
+        "analytical validation must use the FEM-sign Helmholtz exact mode"
+    );
+
+    let shoebox = fs::read_to_string(manifest_dir().join("bin/room_shoebox_fem_benchmark.rs"))
+        .expect("read shoebox benchmark");
+    assert!(
+        shoebox.contains("LOBPCG_TOLERANCE") && shoebox.contains("room.shoebox-fem-benchmark.v1"),
+        "shoebox benchmark must solve eigenpairs with residual gates"
+    );
+
+    let piston =
+        fs::read_to_string(manifest_dir().join("bin/speaker_piston_directivity_benchmark.rs"))
+            .expect("read piston benchmark");
+    assert!(
+        piston.contains("RAYLEIGH_OVERKILL_GRID")
+            && piston.contains("validate_numerical_rayleigh_radiation"),
+        "piston benchmark must converge numerical radiation against an overkill grid"
+    );
+
+    let modal = fs::read_to_string(manifest_dir().join("bin/room_modal_validation.rs"))
+        .expect("read room modal validation");
+    assert!(
+        modal.contains("SCOPE: analytical reference only"),
+        "room modal validation must declare its reference-only scope"
+    );
+
+    for filename in [
+        "fem_biharmonic_3d.rs",
+        "fem_fsi_mortar_3d.rs",
+        "fem_compressible_ns_3d.rs",
+    ] {
+        let source = fs::read_to_string(manifest_dir().join("bin").join(filename))
+            .unwrap_or_else(|error| panic!("read {filename}: {error}"));
+        assert!(
+            source.contains("deliberately limited") && source.contains("cite this binary as"),
+            "{filename}: thin 3D wrapper must declare its limited contract scope"
+        );
+    }
+
+    for filename in ["fem_axisym.rs", "fem_crash_shells.rs", "fem_foam_laws.rs"] {
+        let source = fs::read_to_string(manifest_dir().join("bin").join(filename))
+            .unwrap_or_else(|error| panic!("read {filename}: {error}"));
+        assert!(
+            source.contains("integrity-only"),
+            "{filename}: golden audit must declare its integrity-only scope"
+        );
+    }
+    let rupture =
+        fs::read_to_string(manifest_dir().join("bin/fem_rupture.rs")).expect("read rupture QA");
+    assert!(
+        rupture.contains("criterion-replay"),
+        "rupture QA must declare its criterion-replay scope"
+    );
+}

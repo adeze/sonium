@@ -21,6 +21,7 @@ use super::{RadError, TimeHistory, best_sibling, convert_with_th_to_csv, resolve
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
+use std::fmt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -588,7 +589,8 @@ pub fn decimate_history(
 
 /// Linearly interpolate `values` (on non-decreasing `grid`) at `t`.
 /// Returns `None` when `t` falls outside the grid span.
-fn interp_on_grid(grid: &[f64], values: &[f64], t: f64) -> Option<f64> {
+/// Shared crate-wide so the regen drift check interpolates identically.
+pub(crate) fn interp_on_grid(grid: &[f64], values: &[f64], t: f64) -> Option<f64> {
     if grid.len() != values.len() || grid.is_empty() {
         return None;
     }
@@ -610,7 +612,8 @@ fn interp_on_grid(grid: &[f64], values: &[f64], t: f64) -> Option<f64> {
 }
 
 /// True when a grid is non-decreasing (interpolation-safe).
-fn grid_monotone(grid: &[f64]) -> bool {
+/// Shared crate-wide so the regen drift check validates identically.
+pub(crate) fn grid_monotone(grid: &[f64]) -> bool {
     grid.windows(2).all(|pair| pair[1] >= pair[0])
 }
 
@@ -1357,6 +1360,128 @@ pub fn verify_deck_hashes(golden: &Golden, miniqa_root: &Path) -> Result<(), Rad
     Ok(())
 }
 
+/// Recompute deck hashes for a resolved deck without running the engine.
+///
+/// Reads the starter deck plus the concatenated engine decks from the
+/// miniqa `data/` dir and hashes them exactly the way [`harvest`]
+/// stamps [`GoldenMeta::deck_sha256`], so regen and replay tooling can
+/// pre-check staleness offline.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::oc_golden::{current_deck_hashes, find_deck};
+///
+/// let root = tempfile::tempdir().unwrap();
+/// let data = root.path().join("C").join("data");
+/// std::fs::create_dir_all(&data).unwrap();
+/// std::fs::write(data.join("A_0000.rad"), "starter").unwrap();
+/// std::fs::write(data.join("A_0001.rad"), "engine").unwrap();
+/// let deck = find_deck(root.path(), "C").unwrap();
+/// let hashes = current_deck_hashes(&deck).unwrap();
+/// assert_eq!(hashes.starter.len(), 64);
+/// assert!(hashes.engine.is_some());
+/// ```
+///
+/// # Errors
+///
+/// Returns [`RadError::Io`] when a deck file cannot be read.
+pub fn current_deck_hashes(deck: &MiniqaDeck) -> Result<DeckHashes, RadError> {
+    let starter = sha256_hex_file(&deck.data_dir.join(&deck.starter_deck))?;
+    let mut engine_bytes = Vec::new();
+    for engine_deck in &deck.engine_decks {
+        engine_bytes.extend_from_slice(&std::fs::read(deck.data_dir.join(engine_deck))?);
+    }
+    Ok(DeckHashes {
+        starter,
+        engine: Some(format!("{:x}", Sha256::digest(&engine_bytes))),
+    })
+}
+
+/// Fail-closed stamp presence check for a golden.
+///
+/// Returns one line per missing engine-stamp or deck-hash meta field
+/// (`engine`, `engine_commit`, exe names, `th_tool`, starter deck
+/// name, deck hashes, binary hashes); empty means fully stamped. The
+/// engine hash is required exactly when `engine_decks` is non-empty.
+/// Regen drift checks call this so unstamped goldens fail loudly.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::rad::oc_golden::{parse_golden_str, stamp_failures};
+///
+/// let text = r#"{
+///   "schema": "opencourant-golden-v1",
+///   "case": "DEMO/case",
+///   "meta": {
+///     "engine": "OpenRadioss linux64_gf CommitID deadbeef",
+///     "engine_commit": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+///     "starter_exe": "starter_linux64_gf",
+///     "engine_exe": "engine_linux64_gf",
+///     "deck_sha256": {"starter": "aa", "engine": "bb"},
+///     "starter_deck": "CASE_0000.rad",
+///     "engine_decks": ["CASE_0001.rad"],
+///     "starter_options": "-i CASE_0000.rad -np 1",
+///     "engine_options": "-i CASE_0001.rad",
+///     "mpi": "smp", "np": 1, "threads": 1, "precision": "dp",
+///     "harvest_date": "2026-01-01T00:00:00Z",
+///     "deck_units": ["kg", "m", "s"],
+///     "rootname": "CASE",
+///     "normal_termination": true,
+///     "th_tool": "th_to_csv_linux64_gf",
+///     "exe_sha256": {"starter": "s", "engine": "e", "th_to_csv": "t"},
+///     "decimation": null
+///   },
+///   "time": [0.0, 1.0],
+///   "channels": {
+///     "FORCE": {"values": [1.0, 2.0], "final": 2.0, "min": 1.0,
+///               "max": 2.0, "abs_tol": 2e-12, "rel_tol": 6.6e-4}
+///   },
+///   "cycle": {"CYCLE": 2.0}
+/// }"#;
+/// let golden = parse_golden_str(text, "demo").unwrap();
+/// assert!(stamp_failures(&golden).is_empty());
+/// ```
+pub fn stamp_failures(golden: &Golden) -> Vec<String> {
+    let meta = &golden.meta;
+    let mut failures = Vec::new();
+    for (field, value) in [
+        ("meta.engine", meta.engine.as_str()),
+        ("meta.engine_commit", meta.engine_commit.as_str()),
+        ("meta.starter_exe", meta.starter_exe.as_str()),
+        ("meta.engine_exe", meta.engine_exe.as_str()),
+        ("meta.th_tool", meta.th_tool.as_str()),
+        ("meta.starter_deck", meta.starter_deck.as_str()),
+        (
+            "meta.deck_sha256.starter",
+            meta.deck_sha256.starter.as_str(),
+        ),
+        ("meta.exe_sha256.starter", meta.exe_sha256.starter.as_str()),
+        ("meta.exe_sha256.engine", meta.exe_sha256.engine.as_str()),
+        (
+            "meta.exe_sha256.th_to_csv",
+            meta.exe_sha256.th_to_csv.as_str(),
+        ),
+    ] {
+        if value.is_empty() {
+            failures.push(format!("golden {} {field} stamp is missing", golden.case));
+        }
+    }
+    let engine_hash_missing = meta
+        .deck_sha256
+        .engine
+        .as_deref()
+        .is_none_or(|hash| hash.is_empty());
+    if !meta.engine_decks.is_empty() && engine_hash_missing {
+        failures.push(format!(
+            "golden {} meta.deck_sha256.engine hash is missing",
+            golden.case
+        ));
+    }
+    failures
+}
+
 /// Harvest inputs.
 #[derive(Debug, Clone)]
 pub struct HarvestOptions {
@@ -1505,6 +1630,72 @@ fn th_tool_name(exe: &Path) -> String {
 /// Returns [`RadError`] when the deck is unusable, a stage fails, the
 /// run does not terminate normally, or conversion/parsing fails.
 pub fn harvest(options: &HarvestOptions) -> Result<Golden, RadError> {
+    harvest_impl(options, &|_| {})
+}
+
+/// One vendor-pipeline progress event during [`harvest_with_hook`].
+#[derive(Debug, Clone)]
+pub struct HarvestEvent {
+    /// miniqa-relative case dir under harvest.
+    pub case: String,
+    /// Pipeline stage just reached.
+    pub stage: HarvestStage,
+    /// Stage detail (deck name, TH file count, channel/sample counts).
+    pub detail: String,
+}
+
+/// Pipeline stages reported through [`harvest_with_hook`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HarvestStage {
+    /// Harvest started (scratch copy and starter launch follow).
+    Start,
+    /// Starter run finished.
+    StarterDone,
+    /// One engine deck run finished (detail names the deck).
+    EngineRunDone,
+    /// Every `T0N` converted and concatenated.
+    Converted,
+    /// Golden curated (scratch already cleaned unless kept).
+    Done,
+}
+
+impl fmt::Display for HarvestStage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Start => write!(f, "start"),
+            Self::StarterDone => write!(f, "starter-done"),
+            Self::EngineRunDone => write!(f, "engine-run-done"),
+            Self::Converted => write!(f, "converted"),
+            Self::Done => write!(f, "done"),
+        }
+    }
+}
+
+/// Harvest a golden exactly like [`harvest`], reporting progress.
+///
+/// The hook runs on the calling thread after each pipeline stage; it
+/// must not block. Corpus regen drives this so one command can report
+/// per-deck progress across dozens of engine runs.
+///
+/// # Errors
+///
+/// Returns [`RadError`] under the same conditions as [`harvest`].
+pub fn harvest_with_hook(
+    options: &HarvestOptions,
+    hook: impl Fn(&HarvestEvent),
+) -> Result<Golden, RadError> {
+    harvest_impl(options, &hook)
+}
+
+fn harvest_impl(
+    options: &HarvestOptions,
+    hook: &dyn Fn(&HarvestEvent),
+) -> Result<Golden, RadError> {
+    hook(&HarvestEvent {
+        case: options.case.clone(),
+        stage: HarvestStage::Start,
+        detail: String::new(),
+    });
     let deck = find_deck(&options.miniqa_root, &options.case)?;
     let (starter_exe, engine_exe) = resolve_engine_pair(&options.exe)?;
     let exec_dir = if options.exe.is_dir() {
@@ -1539,6 +1730,11 @@ pub fn harvest(options: &HarvestOptions) -> Result<Golden, RadError> {
         "starter_output.log",
         "starter",
     )?;
+    hook(&HarvestEvent {
+        case: deck.case.clone(),
+        stage: HarvestStage::StarterDone,
+        detail: deck.starter_deck.clone(),
+    });
 
     for engine_deck in &deck.engine_decks {
         let args = vec!["-i".to_string(), engine_deck.clone()];
@@ -1551,14 +1747,28 @@ pub fn harvest(options: &HarvestOptions) -> Result<Golden, RadError> {
             "engine_output.log",
             "engine",
         )?;
+        hook(&HarvestEvent {
+            case: deck.case.clone(),
+            stage: HarvestStage::EngineRunDone,
+            detail: engine_deck.clone(),
+        });
     }
 
-    let outcome = harvest_from_scratch(options, &deck, &starter_exe, &engine_exe, &scratch);
+    let outcome = harvest_from_scratch(options, &deck, &starter_exe, &engine_exe, &scratch, hook);
     match outcome {
         Ok(golden) => {
             if !options.keep_scratch {
                 let _ = std::fs::remove_dir_all(&scratch);
             }
+            hook(&HarvestEvent {
+                case: deck.case.clone(),
+                stage: HarvestStage::Done,
+                detail: format!(
+                    "{} channels x {} samples",
+                    golden.channels.len(),
+                    golden.time.len()
+                ),
+            });
             Ok(golden)
         }
         Err(error) => Err(RadError::Parse(format!(
@@ -1612,6 +1822,7 @@ fn harvest_from_scratch(
     starter_exe: &Path,
     engine_exe: &Path,
     scratch: &Path,
+    hook: &dyn Fn(&HarvestEvent),
 ) -> Result<Golden, RadError> {
     let runs = deck.engine_decks.len();
     let engine_out = scratch.join(format!("{}_{runs:04}.out", deck.rootname));
@@ -1671,6 +1882,11 @@ fn harvest_from_scratch(
             Some(first) => concat_th_runs(first, &run_history)?,
         }
     }
+    hook(&HarvestEvent {
+        case: deck.case.clone(),
+        stage: HarvestStage::Converted,
+        detail: format!("{} TH files", th_files.len()),
+    });
     let mut history = if th_note.is_some() {
         TimeHistory::default()
     } else {
@@ -1744,6 +1960,39 @@ fn exe_file_name(exe: &Path) -> &str {
     exe.file_name()
         .and_then(|name| name.to_str())
         .unwrap_or_default()
+}
+
+/// Parse and validate golden JSON text (shared by [`load_golden`] and
+/// the `include_str!` replay tests).
+///
+/// # Errors
+///
+/// Returns [`RadError::Parse`] for invalid JSON or schema/shape
+/// violations.
+pub fn parse_golden_str(text: &str, origin: &str) -> Result<Golden, RadError> {
+    let golden: Golden = serde_json::from_str(text)
+        .map_err(|error| RadError::Parse(format!("golden {origin} is not valid JSON: {error}")))?;
+    if golden.schema != GOLDEN_SCHEMA {
+        return Err(RadError::Parse(format!(
+            "golden {origin} has schema {}, expected {GOLDEN_SCHEMA}",
+            golden.schema
+        )));
+    }
+    if (golden.time.is_empty() || golden.channels.is_empty()) && golden.meta.th_note.is_none() {
+        return Err(RadError::Parse(format!(
+            "golden {origin} has an empty time grid or no channels"
+        )));
+    }
+    for (name, channel) in &golden.channels {
+        if channel.values.len() != golden.time.len() {
+            return Err(RadError::Parse(format!(
+                "golden {origin} channel {name} has {} samples for {} stamps",
+                channel.values.len(),
+                golden.time.len()
+            )));
+        }
+    }
+    Ok(golden)
 }
 
 #[cfg(test)]
@@ -2212,37 +2461,62 @@ mod tests {
         let back = load_golden(&path).unwrap();
         assert_eq!(back.case, golden.case);
     }
-}
 
-/// Parse and validate golden JSON text (shared by [`load_golden`] and
-/// the `include_str!` replay tests).
-///
-/// # Errors
-///
-/// Returns [`RadError::Parse`] for invalid JSON or schema/shape
-/// violations.
-pub fn parse_golden_str(text: &str, origin: &str) -> Result<Golden, RadError> {
-    let golden: Golden = serde_json::from_str(text)
-        .map_err(|error| RadError::Parse(format!("golden {origin} is not valid JSON: {error}")))?;
-    if golden.schema != GOLDEN_SCHEMA {
-        return Err(RadError::Parse(format!(
-            "golden {origin} has schema {}, expected {GOLDEN_SCHEMA}",
-            golden.schema
-        )));
+    #[test]
+    fn deck_hashes_match_harvest_stamps() {
+        let dir = tempfile::tempdir().unwrap();
+        let data = dir.path().join("C").join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("A_0000.rad"), "starter-bytes").unwrap();
+        std::fs::write(data.join("A_0001.rad"), "engine-bytes").unwrap();
+        let deck = find_deck(dir.path(), "C").unwrap();
+        let hashes = current_deck_hashes(&deck).unwrap();
+        assert_eq!(
+            hashes.starter,
+            sha256_hex_file(&data.join("A_0000.rad")).unwrap()
+        );
+        let engine_bytes = std::fs::read(data.join("A_0001.rad")).unwrap();
+        let expected = format!("{:x}", Sha256::digest(&engine_bytes));
+        assert_eq!(hashes.engine.as_deref(), Some(expected.as_str()));
+        // One-file fallback: the starter doubles as the engine deck.
+        std::fs::remove_file(data.join("A_0001.rad")).unwrap();
+        let deck = find_deck(dir.path(), "C").unwrap();
+        let hashes = current_deck_hashes(&deck).unwrap();
+        let starter_bytes = std::fs::read(data.join("A_0000.rad")).unwrap();
+        let expected = format!("{:x}", Sha256::digest(&starter_bytes));
+        assert_eq!(hashes.engine.as_deref(), Some(expected.as_str()));
     }
-    if (golden.time.is_empty() || golden.channels.is_empty()) && golden.meta.th_note.is_none() {
-        return Err(RadError::Parse(format!(
-            "golden {origin} has an empty time grid or no channels"
-        )));
+
+    #[test]
+    fn stamp_check_flags_missing_fields() {
+        let golden = golden_from_history(&sample_history(), sample_inputs()).unwrap();
+        assert!(stamp_failures(&golden).is_empty());
+        let mut bare = golden.clone();
+        bare.meta.engine.clear();
+        bare.meta.engine_commit.clear();
+        bare.meta.deck_sha256.engine = None;
+        bare.meta.exe_sha256.th_to_csv.clear();
+        let failures = stamp_failures(&bare);
+        assert_eq!(failures.len(), 4);
+        assert!(failures.iter().any(|line| line.contains("meta.engine ")));
+        assert!(
+            failures
+                .iter()
+                .any(|line| line.contains("deck_sha256.engine"))
+        );
+        // Starter-only decks need no engine hash.
+        let mut solo = golden;
+        solo.meta.engine_decks.clear();
+        solo.meta.deck_sha256.engine = None;
+        assert!(stamp_failures(&solo).is_empty());
     }
-    for (name, channel) in &golden.channels {
-        if channel.values.len() != golden.time.len() {
-            return Err(RadError::Parse(format!(
-                "golden {origin} channel {name} has {} samples for {} stamps",
-                channel.values.len(),
-                golden.time.len()
-            )));
-        }
+
+    #[test]
+    fn harvest_stage_names() {
+        assert_eq!(HarvestStage::Start.to_string(), "start");
+        assert_eq!(HarvestStage::StarterDone.to_string(), "starter-done");
+        assert_eq!(HarvestStage::EngineRunDone.to_string(), "engine-run-done");
+        assert_eq!(HarvestStage::Converted.to_string(), "converted");
+        assert_eq!(HarvestStage::Done.to_string(), "done");
     }
-    Ok(golden)
 }

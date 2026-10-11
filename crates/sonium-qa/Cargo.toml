@@ -138,6 +138,60 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-rad-parse-corpus"
+path = "bin/rad_parse_corpus.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-rad-write-accept"
+path = "bin/rad_write_accept.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-rad-mesh-build"
+path = "bin/rad_mesh_build.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-oc-regen"
+path = "bin/oc_regen.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-airbag"
+path = "bin/fem_airbag.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-sph"
+path = "bin/fem_sph.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-ale"
+path = "bin/fem_ale.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-caa"
+path = "bin/fem_caa.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-rad-submodel"
+path = "bin/rad_submodel.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-bem-fmm-block-rows"
 path = "bin/bem_fmm_block_rows.rs"
 test = false
