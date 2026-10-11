@@ -140,6 +140,7 @@ pub mod linearized_navier_stokes;
 pub mod linearized_potential_flow;
 pub mod mean_flow;
 pub mod propeller_source;
+pub mod replay;
 pub mod snapshot;
 pub mod stabilisation;
 pub mod wave_diagnostics;
@@ -204,6 +205,12 @@ pub use mean_flow::{MeanFlow, MeanFlowField};
 pub use propeller_source::{
     PropellerSource, interaction_mode_directivity, interaction_mode_order,
     spinning_mode_directivity,
+};
+pub use replay::{
+    Detrended, PeakTone, ZERO_TOLERANCE, detrend, directivity_factor, fwh_component_gap,
+    grid_nonuniformity, lighthill_far_field_gap, lighthill_reciprocity_gap, mean_step,
+    observer_at_kr, peak_tone, quadrupole_from_history, revolved_cross_check, ring_point_gap,
+    spreading_error, within_band,
 };
 pub use snapshot::{
     area_cell_from_series, azimuthal_mode_coefficient, dft_peak_phasor, fwh_contour_from_series,

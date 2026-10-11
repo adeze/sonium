@@ -1,0 +1,69 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law68_crushfoam",
+		"units":"SI"
+	},
+	"inputs":{
+		"young_pa":2000000000,
+		"poisson":0.1,
+		"alpha":1.5,
+		"initial_yield_pa":5000000,
+		"hardening_pa":50000000,
+		"couple_young_pa":1100000000,
+		"couple_poisson":0.1
+	},
+	"values":{
+		"couple_modulus":{
+			"values":[
+				"5.e8"
+			],
+			"exact":"11*10^8\/(2*1.1) = 5*10^8"
+		},
+		"crush_virgin":{
+			"values":[
+				"5.e6"
+			],
+			"exact":"5*10^6"
+		},
+		"crush_tenth":{
+			"values":[
+				"1.e7"
+			],
+			"exact":"5*10^6 + 5*10^6 = 10^7"
+		},
+		"couple_elastic":{
+			"values":[
+				"100000."
+			],
+			"exact":"2 Gc 10^-4 = 10^5"
+		},
+		"couple_capped":{
+			"values":[
+				"5.e6"
+			],
+			"exact":"trial 10^8 caps at 5*10^6"
+		},
+		"couple_flow":{
+			"values":[
+				"0.095"
+			],
+			"exact":"(10^8 - 5*10^6)\/10^9 = 19\/200"
+		}
+	},
+	"tolerances":{
+		"couple_modulus_abs":1.0e-6,
+		"couple_modulus_rel":1.0e-12,
+		"crush_virgin_abs":1.0e-6,
+		"crush_virgin_rel":1.0e-12,
+		"crush_tenth_abs":1.0e-6,
+		"crush_tenth_rel":1.0e-12,
+		"couple_elastic_abs":1.0e-9,
+		"couple_elastic_rel":1.0e-12,
+		"couple_capped_abs":1.0e-6,
+		"couple_capped_rel":1.0e-12,
+		"couple_flow_abs":1.0e-15,
+		"couple_flow_rel":1.0e-12
+	}
+}

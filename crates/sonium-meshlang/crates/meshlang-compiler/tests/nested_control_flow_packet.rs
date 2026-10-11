@@ -61,11 +61,12 @@ pub fn nested_compile_time_control_flow_has_composite_bindings_and_backend_parit
             .count(),
         4
     );
-    assert!(ir
-        .entities
-        .iter()
-        .filter(|entity| entity.name.starts_with("model.cell_"))
-        .all(|entity| !entity.provenance.is_empty()));
+    assert!(
+        ir.entities
+            .iter()
+            .filter(|entity| entity.name.starts_with("model.cell_"))
+            .all(|entity| !entity.provenance.is_empty())
+    );
 }
 
 #[test]

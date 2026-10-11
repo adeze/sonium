@@ -1,0 +1,104 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"fabric_concrete",
+		"units":"SI"
+	},
+	"inputs":{
+		"fabric_e1t_pa":10000000,
+		"fabric_e1c_pa":1000000,
+		"fabric_g12_pa":2000000,
+		"fabric_eu_pa":20000000,
+		"concrete_young_pa":30000000000,
+		"concrete_poisson":0.2,
+		"mazars_strain0":1.0e-4,
+		"mazars_at":0.8,
+		"mazars_bt":15000,
+		"concrete_cap0_pa":30000000
+	},
+	"values":{
+		"fabric_tension":{
+			"values":[
+				"100000."
+			],
+			"exact":"10^7 * 0.01 = 10^5"
+		},
+		"fabric_compression":{
+			"values":[
+				"-10000."
+			],
+			"exact":"-10^6 * 0.01 = -10^4"
+		},
+		"fabric_shear":{
+			"values":[
+				"20000."
+			],
+			"exact":"2*10^6 * 0.01 = 2*10^4"
+		},
+		"fabric_loaded":{
+			"values":[
+				"500000."
+			],
+			"exact":"loading curve at 0.05 = 5*10^5"
+		},
+		"fabric_unloaded":{
+			"values":[
+				"-100000."
+			],
+			"exact":"5*10^5 - 2*10^7 * 0.03 = -10^5"
+		},
+		"mazars_uniaxial":{
+			"values":[
+				"0.72149587188125613685337562338878998292626269651114"
+			],
+			"exact":"9\/10 - (4\/5) e^-1.5 at eq = 2*10^-4"
+		},
+		"mazars_below_threshold":{
+			"values":[
+				"0"
+			],
+			"exact":"0 below the threshold strain"
+		},
+		"concrete_cap":{
+			"values":[
+				"3.e7"
+			],
+			"exact":"trial 5*10^8 caps at 3*10^7"
+		},
+		"concrete_trial_pressure":{
+			"values":[
+				"5.e8"
+			],
+			"exact":"K * 0.03 = 5*10^8"
+		},
+		"concrete_visco_ratio":{
+			"values":[
+				"0.5"
+			],
+			"exact":"(inviscid + w old)\/(1 + w) halves at w = 1"
+		}
+	},
+	"tolerances":{
+		"fabric_tension_abs":1.0e-9,
+		"fabric_tension_rel":1.0e-12,
+		"fabric_compression_abs":1.0e-12,
+		"fabric_compression_rel":1.0e-12,
+		"fabric_shear_abs":1.0e-9,
+		"fabric_shear_rel":1.0e-12,
+		"fabric_loaded_abs":1.0e-9,
+		"fabric_loaded_rel":1.0e-12,
+		"fabric_unloaded_abs":1.0e-9,
+		"fabric_unloaded_rel":1.0e-12,
+		"mazars_uniaxial_abs":1.0e-12,
+		"mazars_uniaxial_rel":1.0e-12,
+		"mazars_below_threshold_abs":1.0e-15,
+		"mazars_below_threshold_rel":1.0e-15,
+		"concrete_cap_abs":1.0e-6,
+		"concrete_cap_rel":1.0e-9,
+		"concrete_trial_pressure_abs":1.0e-6,
+		"concrete_trial_pressure_rel":1.0e-12,
+		"concrete_visco_ratio_abs":1.0e-15,
+		"concrete_visco_ratio_rel":1.0e-15
+	}
+}

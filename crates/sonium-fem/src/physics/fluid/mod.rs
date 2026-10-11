@@ -5,12 +5,15 @@
 
 // Rust guideline compliant 2026-02-21
 
+pub mod airbag;
+pub mod ale;
 pub mod compressible_flow;
 pub mod lubrication;
 pub mod phase_field_flow;
 pub mod porous_flow;
 pub mod reacting_flow;
 pub mod shallow_water;
+pub mod sph;
 pub mod stokes;
 pub mod transport;
 pub mod turbulence;

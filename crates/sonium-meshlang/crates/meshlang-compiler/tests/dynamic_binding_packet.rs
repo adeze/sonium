@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use meshlang_ast::VersionedCanonicalIr;
-use meshlang_compiler::{compile_to_geo_full, compile_to_python_full, CompileResult};
+use meshlang_compiler::{CompileResult, compile_to_geo_full, compile_to_python_full};
 
 fn public_entity_names(result: &CompileResult) -> Vec<String> {
     let ir = serde_json::from_str::<VersionedCanonicalIr>(&result.canonical_ir_json)
@@ -170,30 +170,37 @@ pub fn dynamic_else_if_multi_bindings_have_one_canonical_branch_plan() {
     assert_eq!(ir.controls.len(), 1);
     assert_eq!(ir.controls[0].branches.len(), 3);
     assert!(!ir.controls[0].provenance.is_empty());
-    assert!(ir.controls[0]
-        .branches
-        .iter()
-        .all(|branch| !branch.provenance.is_empty()));
-    assert!(ir.controls[0]
-        .branches
-        .iter()
-        .all(|branch| branch.entities.len() == 2));
-    assert!(ir
-        .entities
-        .iter()
-        .all(|entity| !entity.provenance.is_empty()));
+    assert!(
+        ir.controls[0]
+            .branches
+            .iter()
+            .all(|branch| !branch.provenance.is_empty())
+    );
+    assert!(
+        ir.controls[0]
+            .branches
+            .iter()
+            .all(|branch| branch.entities.len() == 2)
+    );
+    assert!(
+        ir.entities
+            .iter()
+            .all(|entity| !entity.provenance.is_empty())
+    );
     assert!(matches!(
         ir.controls[0].branches[0].condition,
         Some(meshlang_ast::IrValue::Parameter(_))
     ));
-    assert!(ir
-        .entities
-        .iter()
-        .any(|entity| entity.name == "model.__if_0_0.primary"));
-    assert!(ir
-        .entities
-        .iter()
-        .any(|entity| entity.name == "model.__if_0_1.fallback"));
+    assert!(
+        ir.entities
+            .iter()
+            .any(|entity| entity.name == "model.__if_0_0.primary")
+    );
+    assert!(
+        ir.entities
+            .iter()
+            .any(|entity| entity.name == "model.__if_0_1.fallback")
+    );
 }
 
 #[test]

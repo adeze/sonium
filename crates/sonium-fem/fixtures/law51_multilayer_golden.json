@@ -1,0 +1,89 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law51_multilayer",
+		"units":"SI"
+	},
+	"inputs":{
+		"a_pa":2000000000,
+		"b_pa":500000000,
+		"r1":4.5,
+		"r2":1.2,
+		"omega":0.25,
+		"rho0":1500,
+		"e0":100000,
+		"reacted_a_pa":1000000000,
+		"mu":0.3,
+		"energy":200000,
+		"burn":0.25
+	},
+	"values":{
+		"pressure":{
+			"values":[
+				"3.0057704678978703011016170786044863089425425624741e8"
+			],
+			"exact":"JWL closed form at (3\/10, 2*10^5)"
+		},
+		"dp_dmu":{
+			"values":[
+				"2.8802860776875008603974262157413697283134937367335e8"
+			],
+			"exact":"d\/dmu of the JWL closed form"
+		},
+		"dp_de":{
+			"values":[
+				"487.5"
+			],
+			"exact":"omega rho0 eta = 975\/2"
+		},
+		"mixture":{
+			"values":[
+				"2.9329829479773018176186439584169243762613409716521e8"
+			],
+			"exact":"(3 Pu + Pr)\/4 at burn 1\/4"
+		},
+		"burn_ramp":{
+			"values":[
+				"0.5"
+			],
+			"exact":"(t - tdet)\/tburn = 1\/2 at t = 3"
+		},
+		"burn_before":{
+			"values":[
+				"0"
+			],
+			"exact":"clamped 0 before detonation"
+		},
+		"burn_instant_on":{
+			"values":[
+				"1."
+			],
+			"exact":"instant burn at tdet"
+		},
+		"burn_instant_off":{
+			"values":[
+				"0"
+			],
+			"exact":"instant burn stays 0 before tdet"
+		}
+	},
+	"tolerances":{
+		"pressure_abs":1.0e-6,
+		"pressure_rel":1.0e-12,
+		"dp_dmu_abs":1.0e-6,
+		"dp_dmu_rel":1.0e-12,
+		"dp_de_abs":1.0e-12,
+		"dp_de_rel":1.0e-12,
+		"mixture_abs":1.0e-6,
+		"mixture_rel":1.0e-12,
+		"burn_ramp_abs":1.0e-15,
+		"burn_ramp_rel":1.0e-15,
+		"burn_before_abs":1.0e-15,
+		"burn_before_rel":1.0e-15,
+		"burn_instant_on_abs":1.0e-15,
+		"burn_instant_on_rel":1.0e-15,
+		"burn_instant_off_abs":1.0e-15,
+		"burn_instant_off_rel":1.0e-15
+	}
+}

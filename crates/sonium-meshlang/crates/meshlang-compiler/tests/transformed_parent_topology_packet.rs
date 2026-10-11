@@ -1,4 +1,4 @@
-use meshlang_compiler::{compile_to_geo_full, compile_to_python_full, CompileResult};
+use meshlang_compiler::{CompileResult, compile_to_geo_full, compile_to_python_full};
 use serde_json::Value;
 
 const SOURCE: &str = r#"
