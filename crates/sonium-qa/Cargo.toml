@@ -102,6 +102,12 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-fem-explicit-taylor-elastic"
+path = "bin/fem_explicit_taylor_elastic.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-bem-fmm-block-rows"
 path = "bin/bem_fmm_block_rows.rs"
 test = false

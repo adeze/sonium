@@ -2,12 +2,19 @@
 
 Sonium is a Rust workspace for multi-physics simulation: boundary-element (BEM) and finite-element (FEM)
 solvers, simulation applications, and the numerical infrastructure underneath them (vectorised math, FFTs,
-mesh generation, iterative/direct solvers, WASM deployment). It can also do shape and tolopology optimation.
+mesh generation, iterative/direct solvers, WASM deployment). It can also do shape and tolopology optimisation.
 
 - List of supported physics is in [PHYSICS.md](crates/sonium-fem/PHYSICS.md).
 - License: GPL V3, as declared in `Cargo.toml`.
 - Repository: <https://github.com/pierreaubert/sonium>
 - Website: <https://sonium.spinorama.org>
+
+Who is Sonium for or not? Sonium
+- is easy to install (no dependencies except CUDA driver) and fully open-source.
+- is fast enough (aka not the fastest but not too far 0.8x of SOTA, see PERF benchmarks).
+- is accurate (extensive QA with automatic comparisong to many solvers and or analytical solutions, see QA).
+- is design to make it easy to add a new physics module.
+- works well with agents.
 
 ## This repo vs the full checkout
 

@@ -3006,6 +3006,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "sonium-compute",
  "sonium-solvers-core",
  "sonium-solvers-sparse",
  "thiserror 2.0.21",

@@ -39,9 +39,12 @@
 //! ```
 
 pub mod augmented_lagrangian;
+pub mod broad_phase;
+pub mod candidates;
 pub mod detection;
 pub mod explicit;
 pub mod gap;
+pub mod tiebreak;
 
 pub use augmented_lagrangian::{ContactConfig, ContactManager, ContactResult};
 pub use detection::{AabbTree, ContactSurface};
@@ -73,5 +76,9 @@ pub fn winkler_layer_pressure(displacement: f64, modulus: f64, thickness: f64) -
 
 /// Penalty contact pressure for a signed normal gap.
 pub fn penalty_contact_pressure(gap: f64, penalty: f64) -> f64 {
-    if gap < 0.0 { -penalty * gap } else { 0.0 }
+    if gap < 0.0 {
+        -penalty * gap
+    } else {
+        0.0
+    }
 }

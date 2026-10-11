@@ -8,8 +8,12 @@
 
 // Rust guideline compliant 2026-02-21
 
+mod imposed;
+mod rbody;
 mod rigid;
 mod zero_d;
 
+pub use imposed::*;
+pub use rbody::*;
 pub use rigid::*;
 pub use zero_d::*;
