@@ -5963,3 +5963,9 @@ name = "qa-oc-replay"
 path = "bin/oc_replay.rs"
 test = false
 required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-oc-bench"
+path = "bin/oc_bench.rs"
+test = false
+required-features = ["qa-binaries"]

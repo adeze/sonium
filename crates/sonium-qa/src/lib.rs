@@ -21,9 +21,9 @@ use std::f64::consts::PI;
 pub mod analytical;
 pub mod fem_physics_3d;
 pub mod fixtures;
+pub mod funct_python;
 #[cfg(feature = "cuda")]
 pub mod pcfan_cuda_adjoint;
-pub mod funct_python;
 pub mod rad_cards;
 pub mod rad_mesh;
 pub mod rad_parse;

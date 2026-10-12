@@ -4711,3 +4711,25 @@ margin. eig-200: ours 3.37 vs vendor 3.74 -> 0.90x PASS.
 Gates: 16 eigen suites green (incl. new rowdots4 test); clippy 0 new
 (adjoint.rs type_complexity pre-existing); orth/relres digits identical
 to baseline; R1==R16 gate digits (determinism holds).
+
+## OpenCourant explicit comparison (2026-10-11)
+
+Sonium native explicit vs the OpenCourant engine on the frozen
+4-deck subset (`taylor_bar`, `rail_crush`, `necking_bar`,
+`hertz_sphere`), measured with `qa-oc-bench` (release binary,
+Threadripper PRO 3995WX). Full report: `perf/oc-explicit.md`;
+raw evidence: `perf/oc/*.json` (33 cells, all
+`correctness_passed=true`).
+
+Per-dof-per-cycle vs engine serial: taylor sonium 317 ns (6.4x
+faster; engine setup-dominated at 24 cycles), rail 228 ns
+(1.1x), necking 220 ns (1.1x), hertz engine 123 ns wins (2.6x
+over sonium 320 ns — dt policy + contact cost, probes pass).
+Nobody scales on these tiny decks: sonium t1 ~= t16
+(1.00-1.04x), engine -nt16 is 1.8-3.4x slower than serial, MPI
+only pays on hertz (r4 = 0.73x serial wall). Memory: sonium
+3-15 MB vs engine 38-108 MB peak RSS. No CUDA explicit arm
+exists (N/A). Shells/plasticity/locking decks deferred (no
+native explicit shells/plasticity). CI floor gate:
+`.gitea/workflows/oc-perf-floor.yml` (10x bar on taylor
+`--quick`).

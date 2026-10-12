@@ -33,7 +33,10 @@ const RAYLEIGH_PROBE_ANGLES_DEG: [f64; 7] = [0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 
 // that serves as the self-convergence reference.
 const RAYLEIGH_REFINEMENTS: [(usize, usize); 3] = [(12, 48), (24, 96), (48, 192)];
 const RAYLEIGH_OVERKILL_GRID: (usize, usize) = (96, 384);
-const RAYLEIGH_MAX_NORMALIZED_ERROR: f64 = 0.05;
+// Fine-grid agreement with the closed-form 2J1/u directivity, which carries
+// finite-R error no quadrature can remove. Measured 3.2e-3/5.3e-3 at ka=3,5;
+// the bound keeps about a 2x margin.
+const RAYLEIGH_MAX_NORMALIZED_ERROR: f64 = 1e-2;
 const RAYLEIGH_MAX_SELF_ERROR: f64 = 1.0e-4;
 
 #[derive(Clone, Copy, Debug)]

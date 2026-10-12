@@ -1001,7 +1001,37 @@ fn form_bt_diag_b<T: ComplexField>(a: &CsrMatrix<T>, b: &CsrMatrix<T>) -> CsrMat
     );
 
     // S = B^T * (W * B) via Gustavson SpGEMM.
-    transpose_csr(b).matmul(&wb)
+    let schur = transpose_csr(b).matmul(&wb);
+    repair_schur_zero_diagonal(schur)
+}
+
+/// Replace structurally zero diagonal entries of an assembled Schur
+/// approximation with a unit diagonal.
+///
+/// Constrained pressure rows (for example a pinned pressure DOF whose
+/// coupling column was zeroed by symmetric Dirichlet elimination) produce
+/// empty product rows. The true Schur complement carries an identity row
+/// there, so a unit diagonal matches its structure and keeps the block
+/// factorizable for ILUT-style subsolvers instead of forcing a fabricated
+/// pivot or a singular block.
+fn repair_schur_zero_diagonal<T: ComplexField>(schur: CsrMatrix<T>) -> CsrMatrix<T> {
+    let diagonal = schur.diagonal();
+    if diagonal
+        .iter()
+        .all(|entry| entry.norm_sqr() > T::Real::zero())
+    {
+        return schur;
+    }
+    let mut triplets = Vec::with_capacity(schur.nnz() + schur.num_rows);
+    for row in 0..schur.num_rows {
+        for index in schur.row_range(row) {
+            triplets.push((row, schur.col_indices[index], schur.values[index]));
+        }
+        if diagonal[row].norm_sqr() <= T::Real::zero() {
+            triplets.push((row, row, T::one()));
+        }
+    }
+    CsrMatrix::from_triplets(schur.num_rows, schur.num_cols, triplets)
 }
 
 /// Build a preconditioner from configuration.

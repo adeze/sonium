@@ -98,7 +98,8 @@ const EXACT_CAP_CONTINUITY_MAX: f64 = 1.0e-6;
 // Linear-reference gate bounds. These are passed explicitly to
 // `validate_coupled_against_linear_reference` (instead of relying on its
 // defaults) so the enforced gate and the structured 3D thresholds share one
-// definition. Values match `LinearReferenceGateConfig::default()`.
+// definition. Values match `LinearReferenceGateConfig::default()` except
+// `GATE_MAX_ENERGY_PHYSICAL_RELATIVE_CLOSURE`, which is tightened below.
 const GATE_MAX_IMPEDANCE_RELATIVE_ERROR: f64 = 0.03;
 const GATE_MAX_FLOW_RATIO_RELATIVE_ERROR: f64 = 0.03;
 const GATE_MAX_TRANSFER_IDENTITY_RELATIVE_ERROR: f64 = 0.02;
@@ -106,7 +107,10 @@ const GATE_MAX_CAP_CONTINUITY_RELATIVE_ERROR: f64 = 1.0e-6;
 const GATE_MAX_REFERENCE_RELATIVE_RESIDUAL: f64 = 1.0e-8;
 const GATE_MAX_REFERENCE_FLUX_RELATIVE_DIFFERENCE: f64 = 1.0e-6;
 const GATE_MAX_ENERGY_ALGEBRAIC_RELATIVE_CLOSURE: f64 = 1.0e-8;
-const GATE_MAX_ENERGY_PHYSICAL_RELATIVE_CLOSURE: f64 = 0.05;
+// Deliberately tighter than `LinearReferenceGateConfig::default()`: matches the
+// operative 2D coupled gate (measured 8.4e-3, 4.8x margin) and the pre-existing
+// reduced-3D 0.04 energy envelope in this file.
+const GATE_MAX_ENERGY_PHYSICAL_RELATIVE_CLOSURE: f64 = 0.04;
 const GATE_MAX_ENERGY_INTERFACE_RELATIVE_RESIDUAL: f64 = 1.0e-8;
 const GATE_MAX_THD_FRACTION: f64 = 0.005;
 const GATE_MAX_MACH: f64 = 0.05;

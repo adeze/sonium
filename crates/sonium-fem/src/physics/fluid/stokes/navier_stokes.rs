@@ -4180,8 +4180,6 @@ fn solve_cached_bdf_linear_system<PSpace: crate::spaces::FunctionSpace>(
                             csr.values.len()
                         );
                     }
-                    let pressure_schur =
-                        pressure_mass_schur_csr(p_space, mesh, mu_step, workspace.pressure_pin);
                     let block_config = match config.linear_solver_cpu_preconditioner {
                         LinearSolverCpuPreconditionerKind::JacobiSchur => {
                             sonium_solvers::BlockPreconditionerConfig::Diagonal
@@ -4193,16 +4191,45 @@ fn solve_cached_bdf_linear_system<PSpace: crate::spaces::FunctionSpace>(
                         }
                         LinearSolverCpuPreconditionerKind::Ilu => unreachable!(),
                     };
+                    // BtDiagB assembles B^T*diag(F)^{-1}*B from the actual
+                    // unsteady momentum block F = sigma*M + mu*K
+                    // (sigma = rho*a0/dt). A steady-Stokes Mp/mu Schur
+                    // approximation mis-scales the preconditioned Schur
+                    // block by ~sigma/mu, splitting the spectrum across 4+
+                    // orders of magnitude and stalling FGMRES on refined
+                    // unsteady systems (speaker-port fine-3D: 5000
+                    // iterations without reaching 1e-8). The assembled
+                    // Schur block is Laplacian-like, so it always gets an
+                    // ILUT subsolver (same drop/fill/pivot values as the
+                    // IlutSchur velocity block); point Jacobi on a
+                    // Laplacian leaves an h^{-2} spread that still costs
+                    // thousands of iterations on fine meshes. If ILUT setup
+                    // rejects the Schur block, fall back to Jacobi rather
+                    // than failing the step.
+                    let schur_ilut = sonium_solvers::BlockPreconditionerConfig::Ilut(
+                        sonium_solvers::IlutConfig::new(1.0e-3, 2, 1.0e-12),
+                    );
                     let sp_config = sonium_solvers::SaddlePointConfig {
                         block1_size: velocity_block_size,
-                        block1_config: block_config.clone(),
-                        block2_config: block_config,
-                        schur_strategy: sonium_solvers::SchurStrategy::External,
+                        block1_config: block_config,
+                        block2_config: schur_ilut,
+                        schur_strategy: sonium_solvers::SchurStrategy::BtDiagB,
                         upper_triangular: true,
                     };
-                    let preconditioner = sonium_solvers::SaddlePointPreconditioner::<f64>::
-                            try_from_matrix_with_schur(csr, &pressure_schur, sp_config)
-                            .ok()?;
+                    let mut fallback_config = sp_config.clone();
+                    fallback_config.block2_config =
+                        sonium_solvers::BlockPreconditionerConfig::Diagonal;
+                    let preconditioner =
+                        sonium_solvers::SaddlePointPreconditioner::<f64>::try_from_matrix(
+                            csr, sp_config,
+                        )
+                        .or_else(|_| {
+                            sonium_solvers::SaddlePointPreconditioner::<f64>::try_from_matrix(
+                                csr,
+                                fallback_config,
+                            )
+                        })
+                        .ok()?;
                     *cache = Some(BdfCachedLinearSolver::JacobiSchur {
                         matrix: csr.clone(),
                         preconditioner,
@@ -6368,6 +6395,116 @@ mod tests {
             .sqrt()
             .max(f64::MIN_POSITIVE);
         assert!(pressure_error / pressure_scale <= 1.0e-6);
+    }
+
+    #[test]
+    fn jacobi_schur_converges_mass_dominated_unsteady_step() {
+        use crate::physics::fluid::stokes::time_stepping::{BdfConfig, BdfState};
+        use crate::physics::fluid::stokes::traction::PressureTraction;
+        use crate::physics::fluid::stokes::workspace::BdfWorkspace;
+
+        // Port-flow regime (speaker-port 3D failure): the momentum block is
+        // mass-dominated (rho/dt >> mu/h^2), so a steady-Stokes Mp/mu Schur
+        // approximation is off by orders of magnitude and FGMRES stalls. The
+        // Schur approximation must account for the unsteady mass term.
+        let (mesh, inlet, outlet) = marked_channel_mesh(1.0, 0.1, 32, 16);
+        let v_space = VectorH1Space::new(PolynomialDegree::P2, 2);
+        let p_space = H1Space::new(PolynomialDegree::P1);
+        let n_v = v_space.num_global_dofs(&mesh);
+        let n_p = p_space.num_global_dofs(&mesh);
+        let mut bc_dofs = v_space.boundary_dofs(&mesh, 3);
+        bc_dofs.sort_unstable();
+        bc_dofs.dedup();
+        let bc_fn = |_: f64, _: f64, _: f64| vec![0.0, 0.0];
+        let bdf = BdfConfig::bdf2(8.844870228e-5, 2);
+        let base = NavierStokesConfig {
+            mu: 1.85e-5,
+            rho: 1.2,
+            use_residual_stabilisation: false,
+            linear_solver_max_iterations: 5000,
+            linear_solver_tolerance: 1.0e-8,
+            linear_solver_backend: LinearSolverBackend::Cpu,
+            ..Default::default()
+        };
+        let direct_config = NavierStokesConfig {
+            use_direct_solver: true,
+            ..base.clone()
+        };
+        let iterative_config = NavierStokesConfig {
+            use_direct_solver: false,
+            linear_solver_cpu_preconditioner: LinearSolverCpuPreconditionerKind::JacobiSchur,
+            ..base
+        };
+        let direct_workspace = BdfWorkspace::new(&mesh, &v_space, &p_space);
+        let iterative_workspace = BdfWorkspace::new(&mesh, &v_space, &p_space);
+        let tractions = [
+            PressureTraction {
+                marker: inlet,
+                pressure_pa: 1.0,
+            },
+            PressureTraction {
+                marker: outlet,
+                pressure_pa: 0.0,
+            },
+        ];
+        let mut direct = BdfState::from_rest(n_v, n_p);
+        assert!(solve_bdf_step_cached(
+            &mesh,
+            &v_space,
+            &p_space,
+            &direct_config,
+            &bdf,
+            &mut direct,
+            &bc_fn,
+            &bc_dofs,
+            &tractions,
+            &direct_workspace,
+        ));
+        let mut iterative = BdfState::from_rest(n_v, n_p);
+        assert!(solve_bdf_step_cached(
+            &mesh,
+            &v_space,
+            &p_space,
+            &iterative_config,
+            &bdf,
+            &mut iterative,
+            &bc_fn,
+            &bc_dofs,
+            &tractions,
+            &iterative_workspace,
+        ));
+        let telemetry = iterative_workspace
+            .last_linear_solve_telemetry()
+            .expect("telemetry recorded");
+        assert!(telemetry.true_relative_residual <= 1.0e-8);
+        // Regression bound for the speaker-port fine-3D stall: the
+        // steady-Stokes Schur needed 19629 iterations here (5850 with
+        // rescaling, 2049 with BtDiagB plus a Jacobi Schur subsolver).
+        // BtDiagB plus an ILUT Schur subsolver converges in 68.
+        const MAX_UNSTEADY_STALL_REGRESSION_ITERATIONS: usize = 500;
+        assert!(
+            telemetry.iterations <= MAX_UNSTEADY_STALL_REGRESSION_ITERATIONS,
+            "unsteady Schur stall: {} iterations",
+            telemetry.iterations
+        );
+        let velocity_error = direct
+            .velocity
+            .iter()
+            .zip(&iterative.velocity)
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let velocity_scale = direct
+            .velocity
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt()
+            .max(f64::MIN_POSITIVE);
+        eprintln!(
+            "REPRO_DIAG velocity_error={velocity_error:.6e} velocity_scale={velocity_scale:.6e}"
+        );
+        assert!(velocity_error / velocity_scale <= 1.0e-6);
     }
 
     /// Run the pressure-driven Task-2 channel fixture to steady state with

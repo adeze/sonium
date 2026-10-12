@@ -7,14 +7,14 @@ validated cases, not every runnable QA binary.
 
 ## Summary
 
-- Registered Cargo QA binaries: 976
-- Manifest-backed validation cases: 689
+- Registered Cargo QA binaries: 977
+- Manifest-backed validation cases: 690
 
 | Tier | Cases |
 | --- | ---: |
 | accelerator-gate | 8 |
 | contract-gate | 21 |
-| physics-gate | 346 |
+| physics-gate | 347 |
 | reference-only | 54 |
 | smoke | 155 |
 | solver-gate | 105 |
@@ -665,6 +665,7 @@ validated cases, not every runnable QA binary.
 | speaker.native-x86-golden.v1 | sonium-sim-speaker | `qa-speaker-native-x86-golden` | accelerator-gate | deterministic CPU CEA/directivity/config/reduced/full/projected DriverModel artifact generation with explicit native x86 dispatch metadata and required accepted aarch64 comparison |
 | speaker.piston-directivity-benchmark.v1 | sim-speaker-modeling | `qa-speaker-piston-directivity-benchmark` | physics-gate | baffled-piston Rayleigh surface integral at ka=3,5 over 3 refinement levels against an overkill grid |
 | speaker.port-flow-promotion-contract.v1 | sim-speaker-modeling | `qa-speaker-port-flow-promotion` | smoke | deterministic accepted-trace phasor, residual, continuity, and energy gate |
+| speaker.port-nonlinear-2d.v1 | sim-speaker-modeling | `qa-speaker-port-nonlinear` | physics-gate | plane-Poiseuille gate, lumped-limit gate, and 3-drive nonlinear coupled port runs with energy closure |
 | structural.backend-capability-catalogue.v1 | structural-mechanics | `qa-structural-backend-capabilities` | reference-only | CPU-reference capability catalogue with fail-closed CUDA, Metal, and WASM declarations |
 | structural.beam-mesh-convergence.v1 | structural-mechanics | `qa-structural-beam-convergence` | physics-gate | production cantilever solves over five deterministic mesh resolutions |
 | structural.beam-modal-orthogonality.v1 | structural-mechanics | `qa-structural-beam-modal` | physics-gate | production generalized beam eigenproblem with mass-normalized modes |

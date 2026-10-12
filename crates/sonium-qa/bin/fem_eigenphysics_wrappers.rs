@@ -27,8 +27,9 @@ const STRUCTURAL_SELF_CONVERGENCE_TOLERANCE: f64 = 0.06;
 // Cross-theory consistency of the fine-mesh structural frequency against
 // Euler-Bernoulli beam theory. The 2D strip carries shear deformation that
 // beam theory omits (a few percent at L/h = 5), so the bound covers that
-// modeling gap plus residual P1 discretization error.
-const STRUCTURAL_BEAM_THEORY_TOLERANCE: f64 = 0.05;
+// modeling gap plus residual P1 discretization error. Measured 1.96e-2;
+// the bound keeps a 1.5x margin.
+const STRUCTURAL_BEAM_THEORY_TOLERANCE: f64 = 3e-2;
 // Buckling eigenvalue accuracy on the 2x2 diagonal pencil.
 const BUCKLING_EIGENVALUE_TOLERANCE: f64 = 1e-8;
 // Thermal decay-rate accuracy against the analytic rod rate.

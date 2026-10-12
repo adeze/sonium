@@ -1,0 +1,58 @@
+# Phase 6 lane 6C: explicit-dynamics perf floor.
+#
+# Runs the sonium-arm-only quick bench and gates it against the
+# checked-in baseline (crates/sonium-bench/baselines/oc_floor.json).
+# The comparison fails closed: a missing/stale baseline, schema or
+# protocol drift, deck-set drift, or a failed correctness preflight
+# all fail the gate instead of passing silently.
+#
+# Threshold justification: the gate trips only past a 10x slowdown
+# per dof-cycle (see DEFAULT_MAX_SLOWDOWN_FRACTION in
+# crates/sonium-bench/src/oc_floor.rs). Shared CI runners show
+# multi-x clock jitter under load, so a tight bound would flake;
+# 10x sits an order of magnitude above plausible noise while still
+# catching the contracted bar ("new waves can't silently 10x the
+# explicit cycle"). An ISA/architecture change is incomparable, so
+# this job pins an x86_64 runner matching the baseline.
+#
+# SONIUM_FLOOR_DECK: coordinator-frozen --quick deck (taylor_bar, the
+# fastest frozen-subset member at ~0.1 s; see PHASE6_CONTRACTS.md).
+name: oc perf floor
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/oc-perf-floor.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Justfile"
+      - "crates/sonium-bench/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-fem/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitea/workflows/oc-perf-floor.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "Justfile"
+      - "crates/sonium-bench/**"
+      - "crates/sonium-compute/**"
+      - "crates/sonium-fem/**"
+
+jobs:
+  oc-floor-required:
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    env:
+      SONIUM_FLOOR_DECK: taylor_bar
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run offline floor-gate tests
+        run: cargo test -p sonium-bench --test oc_floor
+      - name: Run live sonium quick-arm gate
+        run: >-
+          SONIUM_QA_SCRATCH="${RUNNER_TEMP}/sonium-oc-floor"
+          TMPDIR="${RUNNER_TEMP}/sonium-oc-floor"
+          RAYON_NUM_THREADS=1
+          cargo test -p sonium-bench --test oc_floor -- --ignored live

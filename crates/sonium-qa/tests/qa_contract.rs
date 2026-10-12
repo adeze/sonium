@@ -1567,4 +1567,25 @@ fn partial_implementations_solve_or_declare_their_scope() {
         rupture.contains("criterion-replay"),
         "rupture QA must declare its criterion-replay scope"
     );
+
+    let port = fs::read_to_string(manifest_dir().join("bin/speaker_port_nonlinear.rs"))
+        .expect("read speaker port QA");
+    assert!(
+        port.contains("CASE_ID_2D")
+            && port.contains("CASE_ID_3D")
+            && port.contains("SUBCASE_SUMMARY"),
+        "speaker port QA must emit independent 2D and 3D subcase statuses"
+    );
+    assert!(
+        port.contains("ThreeDOutcome::Skipped") && port.contains("covers the 2D subcase only"),
+        "speaker port QA must honestly scope whole-binary SUCCESS to 2D when 3D did not run"
+    );
+    assert!(
+        port.contains("ThreeDOutcome::Failed") && port.contains("3D subcase failed"),
+        "speaker port QA must fail closed when the executed 3D leg fails"
+    );
+    assert!(
+        port.contains(".minimum(\"executed_3d\", 1.0)"),
+        "a 3D pass claim must require the executed 3D flag"
+    );
 }

@@ -1,9 +1,4 @@
-//! Analytical reference check.
-//!
-//! This binary validates a closed-form benchmark or helper without assembling a `sonium_fem` finite-element system.
-//! Keep FEM solver and assembly validations in binaries that import `sonium_fem`.
-
-//! CFD linear-solve backend parity QA.
+//! CFD linear-solve backend parity QA (numerical backend comparison, not an analytical reference check).
 //!
 //! Validates the GPU-offload track that the Picard-loop linear solve goes
 //! through:
