@@ -571,7 +571,9 @@ impl<T: ComplexField> CsrMatrix<T> {
     /// validation (rows accumulate). Callers that need value-finiteness or
     /// canonical ordering must use [`validate_structure`](Self::validate_structure)
     /// or [`validate_canonical_structure`](Self::validate_canonical_structure).
-    fn validate_hot_structure(&self) -> Result<(), sonium_solvers_core::traits::SolverError> {
+    pub(crate) fn validate_hot_structure(
+        &self,
+    ) -> Result<(), sonium_solvers_core::traits::SolverError> {
         use sonium_solvers_core::traits::SolverError;
         if self.row_ptrs.len() != self.num_rows + 1 {
             return Err(SolverError::OperationFailed {

@@ -172,7 +172,7 @@ pub use optimization::{PowellConfig, powell};
 // Re-export main types
 pub use sparse::{
     BsrMatrix, CompositeOperator, CsrBuilder, CsrMatrix, FnOperator, ScaledOperator, SumOperator,
-    TripletMatrix,
+    TripletMatrix, ValidatedCsr,
 };
 pub use sparse::{
     BsrPlanAnalysis, CompactCsrMatrix, RowBucketPlanAnalysis, RowBucketedCsrMatrix,

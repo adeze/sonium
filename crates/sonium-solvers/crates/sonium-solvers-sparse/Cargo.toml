@@ -28,3 +28,7 @@ sonium-solvers-sys = { workspace = true }
 [[bench]]
 name = "sparse_x86"
 harness = false
+
+[[bench]]
+name = "spmv_host_scale"
+harness = false

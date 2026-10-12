@@ -25,7 +25,7 @@ pub use numa::{
     NumaStorageEstimate, PartitionStats, detect_numa_partitions,
 };
 pub use numa::{InputVectorPlacement, NumaSpmvPolicy};
-pub use operator::{CompositeOperator, FnOperator, ScaledOperator, SumOperator};
+pub use operator::{CompositeOperator, FnOperator, ScaledOperator, SumOperator, ValidatedCsr};
 pub use partition::try_extract_submatrix;
 pub use sonium_compute::{DeviceBlock, DeviceBlockOperator, SquareDeviceBlock};
 pub use spmv_plan::{

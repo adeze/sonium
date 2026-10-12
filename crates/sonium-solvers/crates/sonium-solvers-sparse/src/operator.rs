@@ -3,7 +3,9 @@
 //! Building blocks for constructing operators without assembling a global matrix.
 //! All combinators implement [`LinearOperator<T>`] and can be used with any Krylov solver.
 
+use crate::CsrMatrix;
 use num_traits::Float;
+use sonium_solvers_core::dense::DenseMatrix;
 use sonium_solvers_core::traits::{AdjointCapability, ComplexField, LinearOperator, SolverError};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -605,6 +607,178 @@ impl<T: ComplexField> LinearOperator<T> for FnOperator<T> {
     }
 }
 
+/// Borrowed CSR matrix validated once for repeated applies.
+///
+/// Every `CsrMatrix` hot apply re-scans the full structure (an O(nnz)
+/// column-bounds pass plus an O(rows) monotonicity pass) because the
+/// storage is publicly mutable. That re-validation dominates the
+/// per-iteration cost of Krylov solvers on large matrices. This wrapper
+/// runs the same hot-structure check once at construction; the shared
+/// borrow then freezes the storage for the wrapper lifetime, so every
+/// apply takes the unchecked kernel without re-scanning.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_solvers_sparse::{CsrMatrix, ValidatedCsr};
+/// use sonium_solvers_core::traits::LinearOperator;
+///
+/// let matrix = CsrMatrix::from_raw_parts(2, 2, vec![0, 1, 2], vec![0, 1], vec![2.0, 3.0]);
+/// let op = ValidatedCsr::try_new(&matrix).expect("valid structure");
+/// let mut y = vec![0.0; 2];
+/// op.apply_into(&[1.0, 1.0], &mut y);
+/// assert_eq!(y, vec![2.0, 3.0]);
+/// ```
+#[derive(Debug, Clone, Copy)]
+pub struct ValidatedCsr<'a, T: ComplexField> {
+    matrix: &'a CsrMatrix<T>,
+}
+
+impl<'a, T: ComplexField> ValidatedCsr<'a, T> {
+    /// Checked constructor validating the hot-structure contract once.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`SolverError`] from the CSR hot-structure check when
+    /// row pointers are not monotone rooted at zero with terminal count
+    /// equal to the value count, when storage lengths disagree, or when
+    /// any column index is out of bounds.
+    pub fn try_new(matrix: &'a CsrMatrix<T>) -> Result<Self, SolverError> {
+        matrix.validate_hot_structure()?;
+        Ok(Self { matrix })
+    }
+
+    /// Compatibility constructor preserving the historical panic boundary.
+    ///
+    /// # Panics
+    ///
+    /// Panics with the same message as the `CsrMatrix` hot applies when
+    /// the storage fails the hot-structure check.
+    pub fn new(matrix: &'a CsrMatrix<T>) -> Self {
+        Self::try_new(matrix).expect("invalid CSR storage")
+    }
+
+    /// Borrow the wrapped matrix.
+    pub fn inner(&self) -> &'a CsrMatrix<T> {
+        self.matrix
+    }
+}
+
+impl<T: ComplexField> LinearOperator<T> for ValidatedCsr<'_, T> {
+    fn num_rows(&self) -> usize {
+        self.matrix.num_rows
+    }
+
+    fn num_cols(&self) -> usize {
+        self.matrix.num_cols
+    }
+
+    fn apply_into(&self, x: &[T], y: &mut [T]) {
+        // SAFETY: `try_new` validated the hot-structure contract and the
+        // shared borrow freezes the public storage for this lifetime, so
+        // no mutation can invalidate it. Length asserts re-run per call.
+        unsafe { self.matrix.matvec_into_buf_unchecked(x, y) };
+    }
+
+    /// Multi-vector apply via the SpMM kernel without re-validation.
+    fn apply_block(&self, x: &DenseMatrix<T>, y: &mut DenseMatrix<T>) {
+        // SAFETY: same borrow-frozen contract as `apply_into` above.
+        unsafe { self.matrix.spmm_into_unchecked(x, y) };
+    }
+
+    fn apply_transpose_into(&self, x: &[T], y: &mut [T]) {
+        // SAFETY: same borrow-frozen contract as `apply_into` above.
+        unsafe { self.matrix.matvec_transpose_into_buf_unchecked(x, y) };
+    }
+
+    /// Multi-vector transpose apply with validate-once checking.
+    ///
+    /// Mirrors the `CsrMatrix` override: the structure cannot change
+    /// between columns of one call, so the construction-time validation
+    /// covers all `k` unchecked column applies.
+    fn apply_transpose_block(&self, x: &DenseMatrix<T>, y: &mut DenseMatrix<T>) {
+        assert_eq!(
+            x.nrows(),
+            self.matrix.num_rows,
+            "block transpose input row mismatch"
+        );
+        assert_eq!(
+            y.nrows(),
+            self.matrix.num_cols,
+            "block transpose output row mismatch"
+        );
+        assert_eq!(
+            x.ncols(),
+            y.ncols(),
+            "block transpose column count mismatch"
+        );
+        let m = self.matrix.num_rows;
+        let n = self.matrix.num_cols;
+        let mut xj = vec![T::zero(); m];
+        let mut yj = vec![T::zero(); n];
+        for j in 0..x.ncols() {
+            for i in 0..m {
+                xj[i] = x[[i, j]];
+            }
+            // SAFETY: same borrow-frozen contract as `apply_into` above.
+            unsafe {
+                self.matrix
+                    .matvec_transpose_into_buf_unchecked(&xj, &mut yj)
+            };
+            y.set_column(j, &yj);
+        }
+    }
+
+    fn apply_hermitian(&self, x: &[T]) -> Vec<T> {
+        let mut y = vec![T::zero(); self.matrix.num_cols];
+        // SAFETY: same borrow-frozen contract as `apply_into` above.
+        unsafe { self.matrix.matvec_hermitian_into_buf_unchecked(x, &mut y) };
+        y
+    }
+
+    /// Multi-vector Hermitian apply with validate-once checking.
+    fn apply_hermitian_block(&self, x: &DenseMatrix<T>, y: &mut DenseMatrix<T>) {
+        assert_eq!(
+            x.nrows(),
+            self.matrix.num_rows,
+            "block Hermitian input row mismatch"
+        );
+        assert_eq!(
+            y.nrows(),
+            self.matrix.num_cols,
+            "block Hermitian output row mismatch"
+        );
+        assert_eq!(
+            x.ncols(),
+            y.ncols(),
+            "block Hermitian column count mismatch"
+        );
+        let m = self.matrix.num_rows;
+        let n = self.matrix.num_cols;
+        let mut xj = vec![T::zero(); m];
+        let mut yj = vec![T::zero(); n];
+        for j in 0..x.ncols() {
+            for i in 0..m {
+                xj[i] = x[[i, j]];
+            }
+            // SAFETY: same borrow-frozen contract as `apply_into` above.
+            unsafe {
+                self.matrix
+                    .matvec_hermitian_into_buf_unchecked(&xj, &mut yj)
+            };
+            y.set_column(j, &yj);
+        }
+    }
+
+    fn transpose_capability(&self) -> AdjointCapability {
+        AdjointCapability::Exact
+    }
+
+    fn hermitian_capability(&self) -> AdjointCapability {
+        AdjointCapability::Exact
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -904,5 +1078,117 @@ mod tests {
         let y = helmholtz.apply(&x); // (4 - 2) * [1,1] = [2, 2]
         assert!((y[0] - 2.0).abs() < 1e-12);
         assert!((y[1] - 2.0).abs() < 1e-12);
+    }
+
+    fn nonsymmetric_3x3() -> CsrMatrix<f64> {
+        // [[2, -1, 0], [0, 3, -1], [1, 0, 4]]
+        CsrMatrix::from_raw_parts(
+            3,
+            3,
+            vec![0, 2, 4, 6],
+            vec![0, 1, 1, 2, 0, 2],
+            vec![2.0, -1.0, 3.0, -1.0, 1.0, 4.0],
+        )
+    }
+
+    #[test]
+    fn validated_csr_matches_checked_applies() {
+        let matrix = nonsymmetric_3x3();
+        let op = ValidatedCsr::try_new(&matrix).expect("valid structure");
+        assert_eq!(op.num_rows(), 3);
+        assert_eq!(op.num_cols(), 3);
+        assert_eq!(op.transpose_capability(), AdjointCapability::Exact);
+        assert_eq!(op.hermitian_capability(), AdjointCapability::Exact);
+
+        let x = vec![1.0_f64, 2.0, 3.0];
+        let mut y = vec![0.0; 3];
+        op.apply_into(&x, &mut y);
+        assert_eq!(y, matrix.matvec(&x));
+        assert_eq!(op.apply(&x), matrix.matvec(&x));
+
+        let mut yt = vec![0.0; 3];
+        op.apply_transpose_into(&x, &mut yt);
+        assert_eq!(yt, matrix.matvec_transpose(&x));
+        assert_eq!(op.apply_transpose(&x), matrix.matvec_transpose(&x));
+
+        assert_eq!(op.apply_hermitian(&x), matrix.matvec_hermitian(&x));
+
+        // Checked trait defaults still gate shapes and finiteness.
+        assert!(op.try_apply(&x).is_ok());
+        assert!(op.try_apply_transpose(&x).is_ok());
+        assert!(op.try_apply_hermitian(&x).is_ok());
+        assert!(op.try_apply(&[1.0, 2.0]).is_err());
+        assert!(op.try_apply(&[1.0, f64::NAN, 3.0]).is_err());
+    }
+
+    #[test]
+    fn validated_csr_matches_checked_block_applies() {
+        use sonium_solvers_core::dense::DenseMatrix;
+
+        let matrix = nonsymmetric_3x3();
+        let op = ValidatedCsr::try_new(&matrix).expect("valid structure");
+        let x = DenseMatrix::from_row_major_vec(3, 2, vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+
+        let mut y = DenseMatrix::zeros(3, 2);
+        let mut expected = DenseMatrix::zeros(3, 2);
+        op.apply_block(&x, &mut y);
+        matrix.spmm_into(&x, &mut expected);
+        assert_eq!(y.as_slice(), expected.as_slice());
+
+        let mut yt = DenseMatrix::zeros(3, 2);
+        let mut expected_t = DenseMatrix::zeros(3, 2);
+        op.apply_transpose_block(&x, &mut yt);
+        matrix.apply_transpose_block(&x, &mut expected_t);
+        assert_eq!(yt.as_slice(), expected_t.as_slice());
+
+        let mut yh = DenseMatrix::zeros(3, 2);
+        let mut expected_h = DenseMatrix::zeros(3, 2);
+        op.apply_hermitian_block(&x, &mut yh);
+        matrix.apply_hermitian_block(&x, &mut expected_h);
+        assert_eq!(yh.as_slice(), expected_h.as_slice());
+    }
+
+    #[test]
+    fn validated_csr_rejects_corrupt_structure() {
+        // Out-of-bounds column.
+        let mut bad_col = nonsymmetric_3x3();
+        bad_col.col_indices[0] = 3;
+        assert!(ValidatedCsr::try_new(&bad_col).is_err());
+
+        // Non-monotone row pointers.
+        let mut bad_rows = nonsymmetric_3x3();
+        bad_rows.row_ptrs[1] = 5;
+        assert!(ValidatedCsr::try_new(&bad_rows).is_err());
+
+        // Terminal pointer diverging from the value count.
+        let mut bad_terminal = nonsymmetric_3x3();
+        bad_terminal.row_ptrs[3] = 5;
+        assert!(ValidatedCsr::try_new(&bad_terminal).is_err());
+
+        // Length disagreement.
+        let mut bad_len = nonsymmetric_3x3();
+        bad_len.values.pop();
+        assert!(ValidatedCsr::try_new(&bad_len).is_err());
+    }
+
+    #[test]
+    fn validated_csr_matches_complex_hermitian() {
+        let matrix = CsrMatrix::from_raw_parts(
+            2,
+            2,
+            vec![0, 2, 3],
+            vec![0, 1, 1],
+            vec![
+                Complex64::new(2.0, 1.0),
+                Complex64::new(-1.0, 0.5),
+                Complex64::new(3.0, -2.0),
+            ],
+        );
+        let op = ValidatedCsr::try_new(&matrix).expect("valid structure");
+        let x = vec![Complex64::new(1.0, -1.0), Complex64::new(0.5, 2.0)];
+        assert_eq!(op.apply_hermitian(&x), matrix.matvec_hermitian(&x));
+        let mut y = vec![Complex64::new(0.0, 0.0); 2];
+        op.apply_into(&x, &mut y);
+        assert_eq!(y, matrix.matvec(&x));
     }
 }
