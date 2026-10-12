@@ -1,0 +1,23 @@
+{
+  "schema": "sonium-shell-plate-golden-v1",
+  "engine_normal_termination": true,
+  "engine_commit": "33e685176cccf0c539a3ce07aa2096985a284e2a",
+  "engine_sha256": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+  "model": {
+    "radius_m": 1.0,
+    "thickness_m": 0.02,
+    "youngs_modulus_pa": 200000000000.0,
+    "poisson_ratio": 0.3,
+    "density_kg_per_m3": 7800.0,
+    "pressure_pa": 1000.0,
+    "rings": 8,
+    "sectors": 32
+  },
+  "deck_sha256": {
+    "shell_clamped_plate_0000.rad": "55883d6b5a20163162ccd081aa50c158bea0574a8e65d6822009374910de6e53",
+    "shell_clamped_plate_0001.rad": "da05b81057c6610e8e6b46d02f57c769408dc51aff4db683669730a6db7dd058"
+  },
+  "history_sha256": "03c4cbbda2aa57e46f4d889906a5d0620ab6490f1941736ce18f7d39cf77ae85",
+  "engine_log_sha256": "bce66eeeb132c73cc19ac67b44087b132a5453b65fcf74f85e5dfe95a570df0f",
+  "scope": "elastic quasistatic pressure-hold; no plastic-impact or transient-ramp claim"
+}

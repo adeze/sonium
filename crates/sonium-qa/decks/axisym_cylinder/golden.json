@@ -1,0 +1,42 @@
+{
+  "schema": "sonium-axisym-golden-v1",
+  "model": {
+    "inner_radius_m": 0.05,
+    "outer_radius_m": 0.1,
+    "length_m": 0.05,
+    "internal_pressure_pa": 1000000.0,
+    "external_pressure_pa": 0.0,
+    "youngs_modulus_pa": 200000000000.0,
+    "poisson_ratio": 0.3,
+    "radial_elements": 32,
+    "axial_elements": 2,
+    "n2d3d": 1,
+    "element": "QUAD",
+    "plane_strain": true
+  },
+  "deck_sha256": {
+    "axisym_cylinder_0000.rad": "260abc0a3aa18710ea771a6f41c7e3edf0a9ebe28d11b934ea1d0fea9b707314",
+    "axisym_cylinder_0001.rad": "fbbf3de5992d87c792a8c4334b4b1e77146c59ffa9d826defc8e857f5d16af6d"
+  },
+  "engine_sha256": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+  "engine_log_sha256": "0b99c67f50008c89d5cf72ada0a80293be43d2565f6c09688ab7a8286f8bfbac",
+  "history_sha256": "5c10e1e1cc22cd9514d3b8530a1e22675311558b1ff9f6ca5f42c11e57364f86",
+  "engine_normal_termination": true,
+  "hold_samples": 80,
+  "hold_start_s": 0.0021,
+  "channels": {
+    "inner_displacement_m": {
+      "mean": 4.7672886625e-07,
+      "minimum": 4.767184e-07,
+      "maximum": 4.767387e-07
+    },
+    "outer_displacement_m": {
+      "mean": 3.03350575e-07,
+      "minimum": 3.033423e-07,
+      "maximum": 3.033584e-07
+    }
+  },
+  "strain_energy_per_radian_j": 0.00059598736,
+  "maximum_kinetic_energy_ratio": 5.288524704045281e-10,
+  "scope": "quasistatic pressure-hold response; excludes transient-ramp agreement"
+}

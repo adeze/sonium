@@ -1,0 +1,46 @@
+{
+  "schema": "sonium-guided-foam-reference-v1",
+  "geometry": {
+    "length_m": 0.1,
+    "side_m": 0.01,
+    "guided_transverse": true,
+    "axial_planes_tied": true,
+    "fixed_plane": "x=0"
+  },
+  "young_pa": 350000000.0,
+  "traction_shape": "peak * (0.6 + 0.4 * (x/L)^2)",
+  "loads_pa": {
+    "law33_mixed": 650000.0,
+    "law33_smooth": 900000.0,
+    "law76": 1300000.0
+  },
+  "law33": {
+    "a_pa": -177000.0,
+    "b_pa": 677000.0,
+    "c": -3.34,
+    "pressure0_pa": 100000.0,
+    "porosity": 0.1,
+    "gamma0": 0.0
+  },
+  "law76": {
+    "tension_pa": 500000.0,
+    "compression_pa": 900000.0,
+    "shear_pa": 420000.0,
+    "poisson": 0.0,
+    "nu_p": 0.5,
+    "iform": 0,
+    "iquad": 1,
+    "hardening_slope": 20.0
+  },
+  "reference": "closed-form inverse and continuum force equilibrium; no harvested or native outputs fed to reference",
+  "mesh_elements": [
+    16,
+    32,
+    64
+  ],
+  "load_steps": [
+    128,
+    256
+  ],
+  "scope": "quasistatic guided H8 rods; no unconstrained 3D dynamics, rate, failure, or full original fall-pad reproduction"
+}

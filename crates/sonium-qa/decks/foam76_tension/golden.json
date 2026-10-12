@@ -1,0 +1,51 @@
+{
+  "schema": "sonium-foam76-golden-v1",
+  "mode": "tension",
+  "engine_normal_termination": true,
+  "engine_commit": "33e685176cccf0c539a3ce07aa2096985a284e2a",
+  "engine_sha256": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+  "path_s_m": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      0.001,
+      2e-05
+    ],
+    [
+      0.0015,
+      2e-05
+    ],
+    [
+      0.0025,
+      0.0
+    ],
+    [
+      0.003,
+      0.0
+    ]
+  ],
+  "model": {
+    "young_pa": 350000000.0,
+    "poisson": 0.0,
+    "density_kg_m3": 433.0,
+    "side_m": 0.01,
+    "tension_pa": 500000.0,
+    "compression_pa": 900000.0,
+    "shear_pa": 420000.0,
+    "hardening_slope": 20.0,
+    "nu_p": 0.5,
+    "iform": 0,
+    "iquad": 1,
+    "iconv": 1,
+    "isolid": 18
+  },
+  "deck_sha256": {
+    "foam76_cube_0000.rad": "597118cb5e965ab8c6bcf77bbb38eddc5f7c4ffa5359d05e57c6e12f99cb5185",
+    "foam76_cube_0001.rad": "f0f75b4354887d918921f593bd04fece0c629b84afba0426eb6dfef5d0e21f01"
+  },
+  "history_sha256": "3b91befd3d9929bba0f1b6576f25fa80fcfc730361e26228a55151a15d1fa7f1",
+  "engine_log_sha256": "daa81427ca46c53433654cabe07998db0b102b4e043077d0249f9205254fd1ae",
+  "scope": "actual quadratic LAW76 material replay; all nodal kinematics prescribed"
+}

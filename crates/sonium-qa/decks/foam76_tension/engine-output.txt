@@ -1,0 +1,74 @@
+************************************************************************
+**                                                                    **
+**                                                                    **
+**                         OpenRadioss Engine                         **
+**                                                                    **
+**            Non-linear Finite Element Analysis Software             **
+**                                                                    **
+**                                                                    **
+**                                                                    **
+**                    Linux 64 bits, GNU compiler                     **
+**                      Double Precision Version                      **
+**                                                                    **
+**                                                                    **
+** CommitID: 33e685176cccf0c539a3ce07aa2096985a284e2a                 **
+************************************************************************
+** OpenRadioss Software                                               **
+** COPYRIGHT (C) 2026 Siemens                                         **
+** Licensed under GNU Affero General Public License.                  **
+** See License file.                                                  **
+************************************************************************
+ 
+ ROOT: foam76_cube  RESTART: 0001
+ NUMBER OF HMPP PROCESSES     1
+ 12/10/2026
+ NC=       0 T= 0.0000E+00 DT= 5.2902E-07 ERR=  0.0% DM/M= 0.0000E+00
+ NC=    1000 T= 5.2902E-04 DT= 5.2902E-07 ERR= -0.0% DM/M= 0.0000E+00
+ ELAPSED TIME=          0.12 s  REMAINING TIME=          0.58 s
+ NC=    2000 T= 1.0580E-03 DT= 5.2902E-07 ERR= -0.0% DM/M= 0.0000E+00
+ ELAPSED TIME=          0.24 s  REMAINING TIME=          0.43 s
+ NC=    3000 T= 1.5871E-03 DT= 5.2902E-07 ERR= -0.0% DM/M= 0.0000E+00
+ ELAPSED TIME=          0.35 s  REMAINING TIME=          0.31 s
+ NC=    4000 T= 2.1161E-03 DT= 5.2902E-07 ERR= -0.0% DM/M= 0.0000E+00
+ ELAPSED TIME=          0.46 s  REMAINING TIME=          0.19 s
+ NC=    5000 T= 2.6451E-03 DT= 5.2902E-07 ERR= -0.0% DM/M= 0.0000E+00
+ ELAPSED TIME=          0.56 s  REMAINING TIME=          0.08 s
+     RESTART FILES: foam76_cube_0001_[0001-0001].rst WRITTEN
+  
+                           ** CPU USER TIME **
+  
+  
+                        ** SUMMARY **
+  
+ #PROC  ELEMENT   KINCOND   INTEG     IO        T0        ASM       RESOL    
+   1   .1200E+00 .2023E-01 .1439E-01 .3446E-01 .4498E-01 .8842E-02 .3210E+00
+ 
+                   ** CUMULATIVE CPU TIME SUMMARY **
+  
+ CONTACT SORTING.............: .0000E+00     0.00 % 
+ CONTACT FORCES..............: .2239E-02     0.70 % 
+ ELEMENT FORCES..............: .1200E+00    37.39 % 
+ KINEMATIC COND..............: .2023E-01     6.30 % 
+ INTEGRATION.................: .1439E-01     4.48 % 
+ ASSEMBLING..................: .8842E-02     2.75 % 
+ OTHERS (including I/O)......: .1553E+00    48.37 % 
+ TOTAL.......................: .3210E+00   100.00 % 
+  
+                   ** MEMORY USAGE STATISTICS **
+  
+ TOTAL MEMORY USED .........................:       37 MB
+ MAXIMUM MEMORY PER PROCESSOR...............:       37 MB
+ MINIMUM MEMORY PER PROCESSOR...............:       37 MB
+ AVERAGE MEMORY PER PROCESSOR...............:       37 MB
+  
+                   ** DISK USAGE STATISTICS **
+  
+ TOTAL DISK SPACE USED .....................:          0 MB
+ ANIMATION/H3D/TH/OUTP SIZE ................:          0 MB
+ RESTART FILE SIZE .........................:          0 MB
+  
+ ELAPSED TIME     =          0.64 s
+                          0:00:00
+  
+     NORMAL TERMINATION      
+     TOTAL NUMBER OF CYCLES  :    5671

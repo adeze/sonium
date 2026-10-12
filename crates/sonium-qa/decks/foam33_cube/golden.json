@@ -1,0 +1,48 @@
+{
+  "schema": "sonium-foam33-golden-v1",
+  "engine_normal_termination": true,
+  "engine_commit": "33e685176cccf0c539a3ce07aa2096985a284e2a",
+  "engine_sha256": "9e2a9c0a674765c20d997f2205431477ad871839268f26b46b700bca3d2b20df",
+  "model": {
+    "young_pa": 350000000.0,
+    "a_pa": -177000.0,
+    "b_pa": 677000.0,
+    "c": -3.34,
+    "pressure0_pa": 100000.0,
+    "porosity": 0.1,
+    "gamma0": 0.0,
+    "density_kg_m3": 433.0,
+    "side_m": 0.01,
+    "ka": 0,
+    "isolid": 18
+  },
+  "path_s_m": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      0.001,
+      -0.0005
+    ],
+    [
+      0.0015,
+      -0.0005
+    ],
+    [
+      0.0025,
+      0.0
+    ],
+    [
+      0.003,
+      0.0
+    ]
+  ],
+  "deck_sha256": {
+    "foam33_cube_0000.rad": "9aa06a2868ea92479194299ebe1709d409ae1d3c57a5599b200ab7c8c8e13bf7",
+    "foam33_cube_0001.rad": "3fdc04476ac5447ab52a7b9f943b20eece1c2a99476436b2a03ef08fbb3d5137"
+  },
+  "history_sha256": "7fb5dccc494520f1fb797e851859992c722c143bd875b119ff028f7eff6250ad",
+  "engine_log_sha256": "2ae8dcdb001e948ddcb95d6b418c1f8b67fa3c6643c0eadd00df02765f611023",
+  "scope": "plain FOAM_PLAS Ka=0 card material replay; all nodal kinematics prescribed"
+}
