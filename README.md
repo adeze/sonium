@@ -181,7 +181,7 @@ Rayon parallelism is always on. Optional features:
    for large BEM, mixed precision where applicable. For CUDA, budget
    against free VRAM, never host RAM.
 
-Details, per-platform records, and methodology: `PERF.md` and `perf/`. You
+Details, per-platform records, and methodology: `perf/PERF.md` and `perf/`. You
 can visualise the same data at https://sonium.spinorama.org/perf/
 
 ## Key APIs
@@ -200,6 +200,6 @@ can visualise the same data at https://sonium.spinorama.org/perf/
 | `AGENTS.md` | Contributor/agent guide: commands, architecture, traits, testing |
 | `crates/sonium-fem/AGENTS.md` | FEM physics-module catalogue and layer rules |
 | `REFERENCES.md` | Literature and standards index (ISO, IEC, AES69, …) backing the code |
-| `PERF.md` + `perf/` | Performance methodology and per-platform records |
+| `perf/PERF.md` + `perf/` | Performance methodology and per-platform records |
 | `gotchas.md` | Working agreements (pre-production, CUDA budgets, test scale) |
 | `Justfile` | Executable docs — `just --list`, grouped `test`/`qa`/`bench`/`run`/`perf` |

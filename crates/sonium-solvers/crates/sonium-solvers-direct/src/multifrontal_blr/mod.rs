@@ -183,7 +183,7 @@ impl Default for BlrConfig {
             // finer trees collapse fill/flops faster than front-count costs
             // grow — 128²: 54.7 -> 46.2 wall; 256²: ~204 -> ~176 wall, both
             // with better residuals. min32 is within noise at 256² but
-            // loses at 128²; 64 wins both sizes. See PERF.md.
+            // loses at 128²; 64 wins both sizes. See perf/PERF.md.
             min_block_size: 64,
             max_levels: None,
             pivot_strategy: PivotStrategy::Partial,
@@ -1421,7 +1421,7 @@ mod tests {
 
     #[test]
     #[ignore = "delayed-pivot machinery fails (SingularFront) on well-conditioned \
-                row-permuted matrices under multi-front configs; see PERF.md \
+                row-permuted matrices under multi-front configs; see perf/PERF.md \
                 2026-09-25 entry. Re-enable after the delay path is fixed."]
     fn partial_row_reversed_multi_front_factorises() {
         // cond ~3, nonsingular — must factorise, but today aborts with

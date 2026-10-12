@@ -230,6 +230,25 @@ pub fn thick_cylinder_radial_displacement_plane_strain(
         * ((1.0 - 2.0 * poisson_ratio) * big_a * r_m - big_b / r_m)
 }
 
+/// MacNeal-Harder pinched-cylinder deflection under a unit load.
+///
+/// Radial deflection per unit pinch load of the short pinched cylinder
+/// with diaphragm ends: radius 300, length 600, thickness 3, Young
+/// modulus 3e6, Poisson ratio 0.3, two opposite radial loads (all in
+/// consistent units). Literature target 1.8248e-5 from MacNeal and
+/// Harder, "A proposed standard set of problems to test finite
+/// element accuracy", Finite Elements in Analysis and Design 1
+/// (1985), 3-20, Table 1.
+pub const PINCHED_CYLINDER_UNIT_DEFLECTION: f64 = 1.8248e-5;
+
+/// Radial deflection of the MacNeal-Harder pinched cylinder.
+///
+/// Returns the linear static deflection under the pinch loads,
+/// scaling the literature unit-load target by `load`.
+pub fn pinched_cylinder_macneal_harder(load: f64) -> f64 {
+    load * PINCHED_CYLINDER_UNIT_DEFLECTION
+}
+
 /// Radial displacement of a thick cylinder under pressure loading.
 ///
 /// Returns the plane-stress displacement for combined internal and
@@ -324,6 +343,20 @@ mod tests {
             u,
             1.3 / 200.0e9 * (0.4 * big_a * 0.1 - big_b / 0.1),
             epsilon = 1e-15
+        );
+    }
+
+    #[test]
+    fn pinched_cylinder_matches_macneal_harder_target() {
+        assert_abs_diff_eq!(
+            pinched_cylinder_macneal_harder(1.0),
+            1.8248e-5,
+            epsilon = 1e-12
+        );
+        assert_abs_diff_eq!(
+            pinched_cylinder_macneal_harder(2.0),
+            2.0 * PINCHED_CYLINDER_UNIT_DEFLECTION,
+            epsilon = 1e-12
         );
     }
 }

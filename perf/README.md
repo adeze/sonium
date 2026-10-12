@@ -79,8 +79,20 @@ Standalone vendor benches (see `just --list`, group `bench`):
 
 ## Relation to `PERF.md` / `ITERATIVE_PERF.json`
 
-The root `PERF.md` remains the living worklog (per-experiment notes,
-falsified trials). These files are the committed per-platform records the
-showcase website's perf page is built from. Seed content transcribed from
-the worklog is marked `status: seed` until a real `just perf-*` run
-overwrites it.
+`perf/PERF.md` (direct solvers) and `perf/ITERATIVE_PERF.json`
+(iterative solvers) are the committed solver reports; both live in
+`perf/` since 2026-10-12 (moved from the repo root). Regenerate
+with `just perf-solvers` (full matrix) or the bounded form below;
+each platform owner regenerates and commits on their own box.
+`DIRECT_PERF_*` / `ITERATIVE_PERF_*` env vars pass through to the
+underlying scripts (`scripts/direct_solver_perf.sh`,
+`scripts/iterative_solver_perf.sh`).
+
+```bash
+just perf-solvers            # full direct + iterative matrices
+DIRECT_PERF_DENSE_SIZES=64 DIRECT_PERF_SPARSE_GRIDS=8 ITERATIVE_PERF_QUICK=1 \
+  just perf-solvers          # bounded smoke of the regen plumbing
+```
+
+Seed content transcribed from the old root worklog is marked
+`status: seed` until a real `just perf-*` run overwrites it.

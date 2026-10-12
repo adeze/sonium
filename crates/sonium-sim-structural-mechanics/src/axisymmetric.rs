@@ -19,7 +19,7 @@ use sonium_fem::mesh::{Mesh, rectangular_mesh_triangles};
 use sonium_fem::physics::solid::axisymmetric::AxisymmetricElasticityForm;
 use sonium_fem::physics::solid::elasticity::IsotropicMaterial;
 use sonium_fem::spaces::{FunctionSpace, VectorH1Space};
-use sonium_solvers::{CgConfig, cg};
+use sonium_solvers::{CgConfig, DiagonalPreconditioner, pcg};
 
 const INNER_BOUNDARY_MARKER: i32 = 1;
 const OUTER_BOUNDARY_MARKER: i32 = 2;
@@ -288,8 +288,24 @@ pub fn run_axisymmetric_cylinder(
             message: error.to_string(),
         }
     })?;
-    let solved = cg(
-        &system.matrix.to_csr(),
+    let matrix = system.matrix.to_csr();
+    // Use a dimensionless Jacobi preconditioner. Its uniform scaling leaves
+    // PCG unchanged in exact arithmetic, while avoiding tiny preconditioned
+    // dot products caused by SI stiffness magnitudes. Physical equations,
+    // relative convergence tolerance and final force checks remain unchanged.
+    let stiffness_scale = matrix
+        .values
+        .iter()
+        .map(|value| value.abs())
+        .fold(0.0, f64::max);
+    let mut normalized = matrix.clone();
+    for value in &mut normalized.values {
+        *value /= stiffness_scale;
+    }
+    let preconditioner = DiagonalPreconditioner::from_csr(&normalized);
+    let mut solved = pcg(
+        &matrix,
+        &preconditioner,
         &system.rhs,
         &CgConfig {
             max_iterations: 20_000,
@@ -297,11 +313,53 @@ pub fn run_axisymmetric_cylinder(
             print_interval: 0,
         },
     );
-    if !solved.converged {
+    let rhs_norm = system
+        .rhs
+        .iter()
+        .map(|value| value * value)
+        .sum::<f64>()
+        .sqrt();
+    let mut verified_residual = f64::INFINITY;
+    // Restart on the independently recomputed defect to recover the final
+    // digits lost in CG's recurrence. Correction solves need only reduce that
+    // defect; the original 1e-11 physical-system tolerance remains the gate.
+    for refinement in 0..=3 {
+        let applied = matrix.matvec(&solved.x);
+        let defect: Vec<_> = system
+            .rhs
+            .iter()
+            .zip(applied)
+            .map(|(b, ax)| b - ax)
+            .collect();
+        let defect_norm = defect.iter().map(|value| value * value).sum::<f64>().sqrt();
+        verified_residual = if rhs_norm > 0.0 {
+            defect_norm / rhs_norm
+        } else {
+            defect_norm
+        };
+        if verified_residual < 1e-11 || !verified_residual.is_finite() || refinement == 3 {
+            break;
+        }
+        let correction = pcg(
+            &matrix,
+            &preconditioner,
+            &defect,
+            &CgConfig {
+                max_iterations: 20_000,
+                tolerance: 1e-3,
+                print_interval: 0,
+            },
+        );
+        for (value, change) in solved.x.iter_mut().zip(correction.x) {
+            *value += change;
+        }
+        solved.iterations += correction.iterations;
+    }
+    if !verified_residual.is_finite() || verified_residual >= 1e-11 {
         return Err(StructuralMechanicsError::StaticNonConvergence {
             model: StructuralModelAssumption::AxisymmetricElasticity,
             iterations: solved.iterations,
-            residual: solved.residual,
+            residual: verified_residual,
         });
     }
 
@@ -387,8 +445,8 @@ pub fn run_axisymmetric_cylinder(
         elements: mesh.num_elements(),
         dofs: space.num_global_dofs(&mesh),
         solver_iterations: solved.iterations,
-        solver_residual: solved.residual,
-        converged: solved.converged,
+        solver_residual: verified_residual,
+        converged: true,
         free_equilibrium_residual_n,
         strain_energy_j,
         energy_balance_relative_error,
@@ -407,6 +465,22 @@ pub fn run_axisymmetric_cylinder(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refined_axisymmetric_solve_preserves_accuracy_under_stiffness_scaling() {
+        for modulus in [20e9, 2000e9] {
+            let mut study = AxisymmetricCylinderStudy::introductory();
+            study.geometry.radial_elements = 32;
+            study.geometry.axial_elements = 32;
+            study.material.youngs_modulus_pa = modulus;
+            let result =
+                run_axisymmetric_cylinder(&study).expect("scaled refined solve should converge");
+            assert!(result.solver_residual < 1e-11);
+            assert!(result.free_equilibrium_residual_n < 1e-6);
+            assert!(result.energy_balance_relative_error < 1e-10);
+            assert!(result.max_radial_displacement_relative_error < 0.005);
+        }
+    }
 
     #[test]
     fn axisymmetric_cylinder_matches_lame_solution_and_balance() {

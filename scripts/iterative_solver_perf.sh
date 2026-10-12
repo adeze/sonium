@@ -34,7 +34,7 @@ EOF
     exit 0
 fi
 
-output="${1:-${repo_root}/ITERATIVE_PERF.json}"
+output="${1:-${repo_root}/perf/ITERATIVE_PERF.json}"
 if [[ $# -gt 0 ]]; then
     shift
 fi

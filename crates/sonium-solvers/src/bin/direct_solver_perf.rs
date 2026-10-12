@@ -120,7 +120,7 @@ fn run() -> Result<(), String> {
 }
 
 fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Config, String> {
-    let mut output = PathBuf::from("PERF.md");
+    let mut output = PathBuf::from("perf/PERF.md");
     let mut dense_sizes = vec![64, 128, 256, 512];
     let mut sparse_grids = vec![8, 12, 16, 20, 28];
     let mut repeats = 3;
@@ -143,7 +143,7 @@ fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Config, String> 
                 }
             }
             "--help" | "-h" => {
-                return Err("usage: direct-solver-perf [--output PERF.md] \
+                return Err("usage: direct-solver-perf [--output perf/PERF.md] \
                      [--dense-sizes 64,128,...] [--sparse-grids 8,12,...] \
                      [--repeats 3]"
                     .into());
@@ -1030,7 +1030,7 @@ mod tests {
     #[test]
     fn generated_report_keeps_future_backend_slots() {
         let config = Config {
-            output: "PERF.md".into(),
+            output: "perf/PERF.md".into(),
             dense_sizes: vec![],
             sparse_grids: vec![],
             repeats: 3,
@@ -1046,7 +1046,7 @@ mod tests {
     #[test]
     fn generated_report_contains_split_stage_and_rss_columns() {
         let config = Config {
-            output: "PERF.md".into(),
+            output: "perf/PERF.md".into(),
             dense_sizes: vec![],
             sparse_grids: vec![],
             repeats: 3,

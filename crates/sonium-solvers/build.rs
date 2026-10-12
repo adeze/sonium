@@ -36,7 +36,7 @@ fn configure_superlu() {
         }
         _ => {
             println!(
-                "cargo:warning=SuperLU not found through pkg-config; PERF.md will mark it unavailable"
+                "cargo:warning=SuperLU not found through pkg-config; perf/PERF.md will mark it unavailable"
             );
             return;
         }
@@ -64,7 +64,7 @@ fn configure_superlu() {
         .expect("failed to execute C compiler for SuperLU benchmark shim");
     if !status.success() {
         println!(
-            "cargo:warning=SuperLU benchmark shim failed to compile; PERF.md will mark it unavailable"
+            "cargo:warning=SuperLU benchmark shim failed to compile; perf/PERF.md will mark it unavailable"
         );
         return;
     }

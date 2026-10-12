@@ -130,6 +130,68 @@ perf-cuda:
 perf-cell platform cell:
     SONIUM_CARGO="{{cargo}}" python3 scripts/perf_cells.py {{platform}} --cells {{cell}}
 
+# Regenerate the committed solver reports perf/PERF.md (direct) and
+# perf/ITERATIVE_PERF.json (iterative). Full matrices by default;
+# DIRECT_PERF_* / ITERATIVE_PERF_* env vars pass through for bounded runs.
+[group('perf')]
+perf-solvers out='perf':
+    bash scripts/direct_solver_perf.sh {{out}}/PERF.md
+    bash scripts/iterative_solver_perf.sh {{out}}/ITERATIVE_PERF.json
+
+# --- OpenCourant explicit-dynamics matrix (perf/oc-explicit.md) ---
+#
+# Each recipe runs qa-oc-bench cells serially into perf/oc/*.json and
+# republishes the markdown tables. Needs a vendor install for engine
+# cells (OPENCOURANT_EXE / OPENCOURANT_MINIQA + LD_LIBRARY_PATH /
+# RAD_CFG_PATH); run on a quiet box. PERF_OC_QUICK=1 selects one
+# repeat, no warmup everywhere (smoke); PERF_OC_HERTZ_FULL=1 forces
+# the full protocol on hertz_sphere too (slow: ~360 s/repeat native).
+# Failing cells never block publish (their rows stay unpublished by
+# policy); the recipe still exits nonzero so CI notices.
+
+# Full 6-deck matrix (elastic + plastic), then publish.
+[group('perf')]
+perf-oc out='perf/oc':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    export TMPDIR="${TMPDIR:-$HOME/src/all_of_sonium/tmp}"
+    bash scripts/perf_oc_matrix.sh {{out}}; code=$?
+    python3 scripts/perf_oc_publish.py {{out}} perf/oc-explicit.md
+    exit $code
+
+# LAW1 elastic decks only (taylor_bar, hertz_sphere, necking_bar,
+# rail_crush), then publish.
+[group('perf')]
+perf-oc-elastic out='perf/oc':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    export TMPDIR="${TMPDIR:-$HOME/src/all_of_sonium/tmp}"
+    PERF_OC_DECKS='taylor_bar hertz_sphere necking_bar rail_crush' bash scripts/perf_oc_matrix.sh {{out}}; code=$?
+    python3 scripts/perf_oc_publish.py {{out}} perf/oc-explicit.md
+    exit $code
+
+# Plastic decks only (taylor_plastic, plasticity_thick_cylinder),
+# then publish.
+[group('perf')]
+perf-oc-plastic out='perf/oc':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    export TMPDIR="${TMPDIR:-$HOME/src/all_of_sonium/tmp}"
+    PERF_OC_DECKS='taylor_plastic plasticity_thick_cylinder' bash scripts/perf_oc_matrix.sh {{out}}; code=$?
+    python3 scripts/perf_oc_publish.py {{out}} perf/oc-explicit.md
+    exit $code
+
+# Single deck (all 8 cells), then publish. Example:
+# just perf-oc-deck plasticity_thick_cylinder
+[group('perf')]
+perf-oc-deck deck out='perf/oc':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    export TMPDIR="${TMPDIR:-$HOME/src/all_of_sonium/tmp}"
+    PERF_OC_DECKS='{{deck}}' bash scripts/perf_oc_matrix.sh {{out}}; code=$?
+    python3 scripts/perf_oc_publish.py {{out}} perf/oc-explicit.md
+    exit $code
+
 # --- Benchmarks ---
 
 # Run every supported native benchmark, then available CUDA benchmark arms.
@@ -140,7 +202,7 @@ bench *args:
 
 # --- Vendor-comparison benchmarks (one per missing perf cell) ---
 #
-# Threading follows PERF.md methodology: Sonium at 16 threads, vendor
+# Threading follows perf/PERF.md methodology: Sonium at 16 threads, vendor
 # tuned and never oversubscribed. Override with RAYON_NUM_THREADS /
 # OPENBLAS_NUM_THREADS / VECLIB_MAXIMUM_THREADS.
 

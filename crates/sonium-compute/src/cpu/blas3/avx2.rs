@@ -3423,7 +3423,7 @@ pub unsafe fn sgemm(
         // it wins only square-896/1024 (+10-35%) and loses ~45-58%
         // everywhere else (sq512/sq768/rects) — the 8-vs-16-core deficit
         // beats the 1-CCD sharing gain except at one resonance. See
-        // PERF.md; do not re-ship without a proven win-domain gate.
+        // perf/PERF.md; do not re-ship without a proven win-domain gate.
         let workers = super::workers_for_macs(macs_n);
         let cpt = cols_per_task(
             m,

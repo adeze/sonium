@@ -4,7 +4,7 @@ High-performance linear, nonlinear, and optimization solvers for computational a
 
 Current direct-solver timing, residual, factor-fill, factor-storage, and
 modeled-memory evidence against available external backends is recorded in
-[`PERF.md`](PERF.md). The modeled memory value is a deterministic lower bound,
+[`perf/PERF.md`](../../perf/PERF.md). The modeled memory value is a deterministic lower bound,
 not OS peak RSS; the snapshot is correctness/performance evidence, not a claim
 of competitiveness across all matrix classes.
 
