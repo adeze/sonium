@@ -22,7 +22,10 @@ fn main() {
             k_plus, k_minus
         );
     });
-    reference_result::emit("reference.fem-aeroacoustics-convected-duct.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-aeroacoustics-convected-duct.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

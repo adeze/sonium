@@ -4,13 +4,18 @@
 //! foam-law miniqa cases (`LOIS/FOAM/FOAM429/input_100/isolid_101.json`,
 //! `LOIS/LOI50/test1/pid_6/input_44.json`,
 //! `LOIS/LOI51/JWL/01-PG_degenerated/01a_P-E.json` and `01b_dP-E.json`,
-//! `LOIS/LOI76/shell/test1/compression.json`). Scope is integrity-only: NO
-//! native LAW33/50/51/76 material evolution is executed and NO solved foam
-//! case is compared; the harvested histories carry stresses, densities,
-//! and energies but no strain inputs, so native material-point replay and
-//! solved foam cases stay future work. Offline: reads only
-//! `goldens/miniqa/**/*.json` plus the `SCHEMA.md` contract compiled
-//! into the probes below. No engine, no network.
+//! `LOIS/LOI76/shell/test1/compression.json`). The original LOI76-directory
+//! tracked shell selects LAW66, so its integrity probes do not validate LAW76.
+//! These original checks are
+//! integrity-only and reported separately with zero numerical solves. A native
+//! LAW51 material-point replay compares both PG-degenerated engine histories
+//! against prescribed-volume evolution. A separate plain LAW33 replay checks
+//! compression/hold/unload against a newly harvested cube. Actual quadratic
+//! LAW76 compression and tension replays use bricks selecting LAW76 explicitly.
+//! Guided H8 spatial LAW33/LAW76 rods solve nonuniform force-loaded displacement
+//! fields against independent continuum references, with mesh/load refinement
+//! and elastic counterfactuals. These do not claim unconstrained 3D dynamics.
+//! No engine or network is required at runtime.
 //!
 //! Each probe re-derives a quantity from the harvested raw series and
 //! compares it against the harvested summary or a physics identity, with
@@ -64,7 +69,7 @@
 //! - `compression` (LOI76): `~1` stays non-positive, ending negative.
 //! - `top_bottom` (LOI76): `~10` equals `~11` (symmetric faces).
 //! - `plastic` (LOI76): PLASTIC WORK is non-decreasing, positive at
-//!   the end, and below total internal energy (SAMP yields).
+//!   the end, and below total internal energy (the tracked LAW66 shell yields).
 //! - `spec_flag` (LOI76): `~9` equals 1.0 on all samples.
 //!
 //! Exit 0 = all probes pass on all cases; exit 1 = any failure, with
@@ -72,8 +77,19 @@
 
 // Rust guideline compliant 2026-02-21
 
+#[path = "support/foam33_golden.rs"]
+mod foam33_golden;
+#[path = "support/foam76_golden.rs"]
+mod foam76_golden;
+#[path = "support/foam_material_golden.rs"]
+mod foam_material_golden;
+#[path = "support/foam_spatial.rs"]
+mod foam_spatial;
+
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use sonium_fem::physics::solid::plasticity::law_foams::jacobi_eigen_c1;
+use sonium_qa::QaResult;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -984,7 +1000,7 @@ fn main() -> ExitCode {
     ];
     println!(
         "qa-fem-foam-laws: lane 3C G-leg, golden-integrity only \
-         (LOIS foam-law cases; no native LAW evolution)"
+         (LOIS integrity subcase; native LAW51 replay follows)"
     );
     println!("goldens root: {}", root.display());
     let mut total = 0;
@@ -1053,6 +1069,84 @@ fn main() -> ExitCode {
         total - failed,
         failed
     );
+    let mut integrity = QaResult::passed("fem.foam-laws-integrity.v1")
+        .formulation(
+            "external-engine golden schema and harvested yield/symmetry self-consistency only",
+        )
+        .dimension("five external LOIS fixtures; no native spatial field")
+        .reference("checked-in original foam-law golden histories")
+        .reference_checksum("original engine deck SHA-256 recorded in golden metadata")
+        .metric("numerical_solve_executed", 0.0)
+        .maximum("numerical_solve_executed", 0.0)
+        .metric("failed_probes", failed as f64)
+        .maximum("failed_probes", 0.0);
+    for (path, _) in &cases {
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                integrity = integrity.artifact_with_provenance(
+                    path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_else(|_| "goldens/miniqa/LOIS/unknown.json".into()),
+                    "original external-engine foam-law golden",
+                    "harvested TH series; integrity checks only",
+                    "opencourant-golden-v1",
+                    format!("{:x}", Sha256::digest(bytes)),
+                );
+            }
+            Err(error) => {
+                eprintln!("foam artifact read failed: {error}");
+                failed += 1;
+            }
+        }
+    }
+    if failed != 0 {
+        integrity.status = sonium_qa::QaStatus::Failed;
+    }
+    match integrity.to_json_line() {
+        Ok(line) => println!("QA_RESULT: {line}"),
+        Err(error) => {
+            eprintln!("integrity reporting failed: {error}");
+            failed += 1;
+        }
+    }
+    match foam_material_golden::run_law51()
+        .and_then(|r| r.to_json_line().map_err(|e| e.to_string()))
+    {
+        Ok(line) => println!("QA_RESULT: {line}"),
+        Err(error) => {
+            eprintln!("native LAW51 replay failed: {error}");
+            failed += 1;
+        }
+    }
+    match foam33_golden::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
+        Ok(line) => println!("QA_RESULT: {line}"),
+        Err(error) => {
+            eprintln!("native LAW33 replay failed: {error}");
+            failed += 1;
+        }
+    }
+    for compression in [true, false] {
+        match foam76_golden::run(compression)
+            .and_then(|r| r.to_json_line().map_err(|e| e.to_string()))
+        {
+            Ok(line) => println!("QA_RESULT: {line}"),
+            Err(error) => {
+                eprintln!("native LAW76 replay failed: {error}");
+                failed += 1;
+            }
+        }
+    }
+    for (plain, smooth) in [(true, false), (true, true), (false, false)] {
+        match foam_spatial::run(plain, smooth)
+            .and_then(|r| r.to_json_line().map_err(|e| e.to_string()))
+        {
+            Ok(line) => println!("QA_RESULT: {line}"),
+            Err(error) => {
+                eprintln!("native spatial foam failed: {error}");
+                failed += 1;
+            }
+        }
+    }
     if failed == 0 {
         println!("SUCCESS: qa-fem-foam-laws");
         ExitCode::SUCCESS

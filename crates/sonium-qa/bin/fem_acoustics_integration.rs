@@ -27,6 +27,7 @@ use sonium_fem::physics::acoustics::pressure::{
 };
 use sonium_fem::solver::{GmresConfigF64, SolverConfig, SolverType, solve};
 use sonium_fem::spaces::H1Space;
+use sonium_qa::QaResult;
 use sonium_solvers::gmres;
 use sonium_xem::io::binary_output_dir;
 
@@ -107,6 +108,37 @@ fn main() -> anyhow::Result<()> {
         residual: sweep_residual,
         passed: sweep_passed,
     });
+
+    let integration = if source_passed && sweep_passed {
+        QaResult::passed("fem.acoustics-driven-sweep.v1")
+    } else {
+        QaResult::failed("fem.acoustics-driven-sweep.v1", "driven pressure or sweep gate failed")
+    }
+    .requested_backend("cpu")
+    .actual_backend("cpu")
+    .metric("driven_pressure_and_solver_error", source_error)
+    .maximum("driven_pressure_and_solver_error", TOL_QUASI_1D_100HZ)
+    .metric("driven_true_residual", source_residual)
+    .maximum("driven_true_residual", TOL_TRUE_RESIDUAL)
+    .metric("cached_fresh_solution_error", sweep_error)
+    .maximum("cached_fresh_solution_error", TOL_SWEEP_SOLVE)
+    .metric("cached_fresh_matrix_error", sweep_residual)
+    .maximum("cached_fresh_matrix_error", TOL_SWEEP_MATRIX)
+    .metric("swept_solves", sweep_points as f64)
+    .minimum("swept_solves", 3.0)
+    .metric("numerical_solve_executed", 1.0)
+    .minimum("numerical_solve_executed", 1.0)
+    .seed("P1-square-n10:1-100Hz;P1-square-n4:50-100-200Hz")
+    .input_checksum("uniform-normal-velocity:anechoic-Robin:complex-sweep-load:v1")
+    .reference("independent p=A cos(kx)+B sin(kx), -p'(0)=i omega rho, p'(1)-ik p(1)=0; fresh stiffness/mass assembly and direct solves")
+    .reference_checksum("analytic:driven-duct-and-fresh-triplets:v1")
+    .dimension("2D unit square, uniform driven/Robin opposite edges, natural zero-flux side walls")
+    .formulation("production acoustic source and impedance assembly; GMRES and direct pressure solves; prebaked Helmholtz sweep against fresh assembly")
+    .tolerance("100/1Hz pressure <=2%/1%; GMRES/direct<=1e-6; true residual<=1e-8; sweep solve/matrix<=1e-9/1e-12");
+    println!(
+        "QA_RESULT: {}",
+        integration.to_json_line().map_err(anyhow::Error::msg)?
+    );
 
     // 2. Cylinder Scattering Tests (2D)
     println!("\nRunning Cylinder Scattering Tests...");
@@ -384,7 +416,7 @@ fn test_acoustics_helmholtz_with_source_and_impedance() -> (bool, f64, usize, f6
         return fail("direct solve of the driven system failed");
     }
     let agreement = relative_complex_difference(&result.x, &direct_solution);
-    if agreement > TOL_GMRES_DIRECT_AGREEMENT {
+    if !agreement.is_finite() || agreement > TOL_GMRES_DIRECT_AGREEMENT {
         return fail(&format!(
             "GMRES/direct agreement {agreement:.3e} exceeds {TOL_GMRES_DIRECT_AGREEMENT:.1e}"
         ));
@@ -392,7 +424,7 @@ fn test_acoustics_helmholtz_with_source_and_impedance() -> (bool, f64, usize, f6
 
     // True algebraic residual of the iterative solution.
     let true_residual = relative_complex_residual(&dense, &result.x, &rhs);
-    if true_residual > TOL_TRUE_RESIDUAL {
+    if !true_residual.is_finite() || true_residual > TOL_TRUE_RESIDUAL {
         return fail(&format!(
             "true residual {true_residual:.3e} exceeds {TOL_TRUE_RESIDUAL:.1e}"
         ));
@@ -425,7 +457,7 @@ fn test_acoustics_helmholtz_with_source_and_impedance() -> (bool, f64, usize, f6
         (error / norm).sqrt()
     };
     let exact_100hz = quasi_1d_error(100.0, &result.x, &mesh);
-    if exact_100hz > TOL_QUASI_1D_100HZ {
+    if !exact_100hz.is_finite() || exact_100hz > TOL_QUASI_1D_100HZ {
         return fail(&format!(
             "quasi-1D error {exact_100hz:.3e} at 100 Hz exceeds {TOL_QUASI_1D_100HZ:.1e}"
         ));
@@ -439,11 +471,15 @@ fn test_acoustics_helmholtz_with_source_and_impedance() -> (bool, f64, usize, f6
         return fail("direct solve of the low-frequency system failed");
     }
     let exact_1hz = quasi_1d_error(LOW_CHECK_FREQUENCY, &low_solution, &low_mesh);
-    if exact_1hz > TOL_QUASI_1D_1HZ {
+    if !exact_1hz.is_finite() || exact_1hz > TOL_QUASI_1D_1HZ {
         return fail(&format!(
             "quasi-1D error {exact_1hz:.3e} at 1 Hz exceeds {TOL_QUASI_1D_1HZ:.1e}"
         ));
     }
+
+    println!(
+        "Driven pressure: 100Hz error={exact_100hz:.6e}, 1Hz error={exact_1hz:.6e}, GMRES/direct={agreement:.6e}, true residual={true_residual:.6e}"
+    );
 
     write_helmholtz_vtu("helmholtz_source_impedance", &mesh, &result.x);
 
@@ -508,7 +544,7 @@ fn test_acoustics_frequency_sweep() -> (bool, f64, usize, f64) {
         }
         let matrix_error = matrix_difference / matrix_norm;
         worst_matrix_error = worst_matrix_error.max(matrix_error);
-        if matrix_error > TOL_SWEEP_MATRIX {
+        if !matrix_error.is_finite() || matrix_error > TOL_SWEEP_MATRIX {
             return fail(&format!(
                 "sweep matrix error {matrix_error:.3e} at {f} Hz exceeds {TOL_SWEEP_MATRIX:.1e}"
             ));
@@ -530,7 +566,7 @@ fn test_acoustics_frequency_sweep() -> (bool, f64, usize, f64) {
         }
         let solve_error = relative_complex_difference(&cached_solution, &fresh_solution);
         worst_solve_error = worst_solve_error.max(solve_error);
-        if solve_error > TOL_SWEEP_SOLVE {
+        if !solve_error.is_finite() || solve_error > TOL_SWEEP_SOLVE {
             return fail(&format!(
                 "sweep solve error {solve_error:.3e} at {f} Hz exceeds {TOL_SWEEP_SOLVE:.1e}"
             ));

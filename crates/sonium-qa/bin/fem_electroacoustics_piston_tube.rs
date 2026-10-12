@@ -15,7 +15,10 @@ fn main() {
         assert!((p - expected).abs() < 1e-12);
         println!("Piston tube pressure = {:.6e} Pa", p);
     });
-    reference_result::emit("reference.fem-electroacoustics-piston-tube.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-electroacoustics-piston-tube.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

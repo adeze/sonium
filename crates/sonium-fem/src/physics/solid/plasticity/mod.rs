@@ -18,12 +18,14 @@ pub mod crash;
 pub mod eos;
 pub mod finite_strain;
 pub mod foam_explicit;
+pub mod foam_plas33;
 pub mod funct;
 pub mod funct_deck;
 pub mod law_foams;
 pub mod law_metals;
 mod material;
 mod return_mapping;
+pub mod samp76_quadratic;
 pub mod update;
 
 pub use crash::{

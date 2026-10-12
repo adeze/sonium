@@ -27,7 +27,7 @@
 // Rust guideline compliant 2026-02-21
 
 use crate::analytical::rad::{
-    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadError,
+    OpenCourantCase, RadBoundaryCondition, RadConcentratedLoad, RadElasticMaterial, RadError,
     RadExtendedCase, RadFunction, RadMesh, RadNodeSet, RadProbe, RadShellMesh, RadShellProperty,
     RadThRequest, RadWall, shel_channel,
 };

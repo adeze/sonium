@@ -200,50 +200,91 @@ impl FsiMortarOperators {
             }
             let normal = triangle_normal(slave, slave_triangle);
             let face_scale = triangle_diameter(slave, slave_triangle);
-            for barycentric in QUADRATURE {
-                let point = interpolate_triangle(slave, slave_triangle, barycentric);
-                let query_radius = config.search_radius_factor * face_scale;
-                let query = Aabb {
-                    min: [
-                        point[0] - query_radius,
-                        point[1] - query_radius,
-                        point[2] - query_radius,
-                    ],
-                    max: [
-                        point[0] + query_radius,
-                        point[1] + query_radius,
-                        point[2] + query_radius,
-                    ],
-                };
-                let mut candidates = Vec::new();
-                tree.query(&query, &mut candidates);
-                let projection = candidates
-                    .into_iter()
-                    .map(|triangle_index| {
-                        let triangle = master.triangles[triangle_index];
-                        let result = project_point_to_triangle(
-                            point,
-                            master.coordinates[triangle[0]],
-                            master.coordinates[triangle[1]],
-                            master.coordinates[triangle[2]],
-                        );
-                        (result.distance, triangle, result)
-                    })
-                    .min_by(|left, right| left.0.total_cmp(&right.0));
-                let Some((distance, master_triangle, projection)) = projection else {
-                    uncovered_area += area / 3.0;
-                    continue;
-                };
-                if distance > projection_tolerance {
-                    uncovered_area += area / 3.0;
-                    continue;
+            // Coplanar nonmatching facets require an overlap partition:
+            // a master P1 basis is only polynomial within its own facet.
+            let vertices: Vec<_> = slave_triangle
+                .iter()
+                .map(|&j| slave.coordinates[j])
+                .collect();
+            let mut query = Aabb::from_points(&vertices);
+            for a in 0..3 {
+                query.min[a] -= projection_tolerance;
+                query.max[a] += projection_tolerance;
+            }
+            let mut candidates = Vec::new();
+            tree.query(&query, &mut candidates);
+            let mut integration = Vec::new();
+            if let Some((points, covered)) = coplanar_overlap_points(
+                slave,
+                master,
+                slave_triangle,
+                &candidates,
+                projection_tolerance,
+            ) {
+                if covered > area * (1.0 + config.maximum_uncovered_area_fraction) {
+                    return Err(FsiError::MortarProjectionCoverage);
                 }
-                let master_basis = [
-                    1.0 - projection.xi - projection.eta,
-                    projection.xi,
-                    projection.eta,
-                ];
-                let weight = area / 3.0;
+                uncovered_area += (area - covered).max(0.0);
+                integration = points;
+            } else {
+                // Noncoplanar interfaces retain the configured closest-point
+                // projection path; exact overlap integration applies to planes.
+                for barycentric in QUADRATURE {
+                    let point = interpolate_triangle(slave, slave_triangle, barycentric);
+                    let query_radius = config.search_radius_factor * face_scale;
+                    let query = Aabb {
+                        min: [
+                            point[0] - query_radius,
+                            point[1] - query_radius,
+                            point[2] - query_radius,
+                        ],
+                        max: [
+                            point[0] + query_radius,
+                            point[1] + query_radius,
+                            point[2] + query_radius,
+                        ],
+                    };
+                    let mut candidates = Vec::new();
+                    tree.query(&query, &mut candidates);
+                    let projection = candidates
+                        .into_iter()
+                        .map(|triangle_index| {
+                            let triangle = master.triangles[triangle_index];
+                            let result = project_point_to_triangle(
+                                point,
+                                master.coordinates[triangle[0]],
+                                master.coordinates[triangle[1]],
+                                master.coordinates[triangle[2]],
+                            );
+                            (result.distance, triangle, result)
+                        })
+                        .min_by(|left, right| left.0.total_cmp(&right.0));
+                    let Some((distance, master_triangle, projection)) = projection else {
+                        uncovered_area += area / 3.0;
+                        continue;
+                    };
+                    if distance > projection_tolerance {
+                        uncovered_area += area / 3.0;
+                        continue;
+                    }
+                    let master_basis = [
+                        1.0 - projection.xi - projection.eta,
+                        projection.xi,
+                        projection.eta,
+                    ];
+                    integration.push(MortarPoint {
+                        slave_basis: barycentric,
+                        master_basis,
+                        master_triangle,
+                        weight: area / 3.0,
+                    });
+                }
+            }
+            for q in integration {
+                let barycentric = q.slave_basis;
+                let master_basis = q.master_basis;
+                let master_triangle = q.master_triangle;
+                let weight = q.weight;
                 for local_multiplier in 0..3 {
                     let multiplier_node = slave_triangle[local_multiplier];
                     let dual_value = 4.0 * barycentric[local_multiplier] - 1.0;
@@ -482,6 +523,125 @@ fn add_trace_row(
     }
 }
 
+struct MortarPoint {
+    slave_basis: [f64; 3],
+    master_basis: [f64; 3],
+    master_triangle: [usize; 3],
+    weight: f64,
+}
+#[derive(Clone, Copy)]
+struct OverlapVertex {
+    slave: [f64; 3],
+    master: [f64; 3],
+}
+fn barycentric_coordinates(
+    surface: &FsiMortarSurface,
+    triangle: [usize; 3],
+    point: [f64; 3],
+) -> Option<[f64; 3]> {
+    let a = surface.coordinates[triangle[0]];
+    let u = sub3(surface.coordinates[triangle[1]], a);
+    let v = sub3(surface.coordinates[triangle[2]], a);
+    let q = sub3(point, a);
+    let uu = dot(&u, &u);
+    let uv = dot(&u, &v);
+    let vv = dot(&v, &v);
+    let denominator = uu * vv - uv * uv;
+    if denominator <= 0.0 {
+        return None;
+    }
+    let x = (dot(&q, &u) * vv - dot(&q, &v) * uv) / denominator;
+    let y = (dot(&q, &v) * uu - dot(&q, &u) * uv) / denominator;
+    Some([1.0 - x - y, x, y])
+}
+fn clip_overlap_polygon(polygon: Vec<OverlapVertex>, axis: usize) -> Vec<OverlapVertex> {
+    let mut out = Vec::new();
+    if polygon.is_empty() {
+        return out;
+    }
+    let mut previous = polygon[polygon.len() - 1];
+    for current in polygon {
+        let a = previous.slave[axis];
+        let b = current.slave[axis];
+        if (a >= 0.0) != (b >= 0.0) {
+            let t = a / (a - b);
+            out.push(OverlapVertex {
+                slave: std::array::from_fn(|i| {
+                    previous.slave[i] + t * (current.slave[i] - previous.slave[i])
+                }),
+                master: std::array::from_fn(|i| {
+                    previous.master[i] + t * (current.master[i] - previous.master[i])
+                }),
+            });
+        }
+        if b >= 0.0 {
+            out.push(current);
+        }
+        previous = current;
+    }
+    out
+}
+fn coplanar_overlap_points(
+    slave: &FsiMortarSurface,
+    master: &FsiMortarSurface,
+    triangle: [usize; 3],
+    candidates: &[usize],
+    tolerance: f64,
+) -> Option<(Vec<MortarPoint>, f64)> {
+    let normal = triangle_normal(slave, triangle);
+    let origin = slave.coordinates[triangle[0]];
+    let mut points = Vec::new();
+    let mut covered = 0.0;
+    const RULE: [[f64; 3]; 3] = [
+        [2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0],
+        [1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0],
+        [1.0 / 6.0, 1.0 / 6.0, 2.0 / 3.0],
+    ];
+    for &index in candidates {
+        let master_triangle = master.triangles[index];
+        let mut polygon = Vec::new();
+        for (local, &node) in master_triangle.iter().enumerate() {
+            let position = master.coordinates[node];
+            if dot(&sub3(position, origin), &normal).abs() > tolerance {
+                return None;
+            }
+            polygon.push(OverlapVertex {
+                slave: barycentric_coordinates(slave, triangle, position)?,
+                master: std::array::from_fn(|i| if i == local { 1.0 } else { 0.0 }),
+            });
+        }
+        for axis in 0..3 {
+            polygon = clip_overlap_polygon(polygon, axis);
+        }
+        for i in 1..polygon.len().saturating_sub(1) {
+            let vertices = [polygon[0], polygon[i], polygon[i + 1]];
+            let positions = vertices.map(|v| interpolate_triangle(slave, triangle, v.slave));
+            let area = 0.5
+                * norm3(cross3(
+                    sub3(positions[1], positions[0]),
+                    sub3(positions[2], positions[0]),
+                ));
+            if area <= f64::EPSILON {
+                continue;
+            }
+            covered += area;
+            for bary in RULE {
+                points.push(MortarPoint {
+                    slave_basis: std::array::from_fn(|a| {
+                        (0..3).map(|b| bary[b] * vertices[b].slave[a]).sum()
+                    }),
+                    master_basis: std::array::from_fn(|a| {
+                        (0..3).map(|b| bary[b] * vertices[b].master[a]).sum()
+                    }),
+                    master_triangle,
+                    weight: area / 3.0,
+                });
+            }
+        }
+    }
+    Some((points, covered))
+}
+
 fn apply_triplets(matrix: &TripletMatrix<f64>, x: &[f64], scale: f64, y: &mut [f64]) {
     for k in 0..matrix.nnz() {
         y[matrix.rows[k]] += scale * matrix.values[k] * x[matrix.cols[k]];
@@ -612,6 +772,112 @@ mod tests {
             )
             .unwrap()
         }
+    }
+
+    fn grid_surface(n: usize) -> FsiMortarSurface {
+        let coordinates: Vec<_> = (0..=n)
+            .flat_map(|j| (0..=n).map(move |i| [i as f64 / n as f64, j as f64 / n as f64, 0.0]))
+            .collect();
+        let mut triangles = Vec::new();
+        for j in 0..n {
+            for i in 0..n {
+                let a = j * (n + 1) + i;
+                let b = a + 1;
+                let c = a + n + 2;
+                let d = a + n + 1;
+                triangles.push([a, b, c]);
+                triangles.push([a, c, d]);
+            }
+        }
+        let parent_nodes = (0..coordinates.len()).collect();
+        FsiMortarSurface::new(coordinates, triangles, parent_nodes).unwrap()
+    }
+
+    #[test]
+    fn constant_traction_matches_each_independent_surface_nodal_load() {
+        for (fluid, solid) in [
+            (square_surface(false), square_surface(true)),
+            (grid_surface(1), grid_surface(2)),
+            (grid_surface(2), grid_surface(3)),
+        ] {
+            for side in [FsiMortarSide::Fluid, FsiMortarSide::Solid] {
+                let operators = FsiMortarOperators::build(
+                    &fluid,
+                    &solid,
+                    FsiMortarConfig {
+                        slave: FsiMortarSideSelection::Explicit(side),
+                        ..FsiMortarConfig::default()
+                    },
+                )
+                .unwrap();
+                let traction = [1.0, -2.0, 0.5];
+                let multipliers: Vec<_> = (0..operators.multiplier_dofs)
+                    .map(|i| traction[i % 3])
+                    .collect();
+                let transfer = operators.multiplier_forces(&multipliers);
+                for (surface, forces, sign) in [
+                    (&fluid, &transfer.fluid_forces, 1.0),
+                    (&solid, &transfer.solid_forces, -1.0),
+                ] {
+                    // A constant traction has area/3 at each P1 triangle node.
+                    // Integrate each surface independently, without mortar matrices.
+                    let mut weights = vec![0.0; surface.coordinates.len()];
+                    for &triangle in &surface.triangles {
+                        for node in triangle {
+                            weights[node] += triangle_area(surface, triangle) / 3.0;
+                        }
+                    }
+                    for (node, &weight) in weights.iter().enumerate() {
+                        for component in 0..3 {
+                            let expected = sign * weight * traction[component];
+                            let actual = forces[3 * node + component];
+                            assert!(
+                                (actual - expected).abs() < 2e-12,
+                                "slave={side:?}, node={node}, component={component}, actual={actual}, expected={expected}"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn coplanar_overlap_rejects_a_hole_in_master_coverage() {
+        let fluid = grid_surface(1);
+        let mut solid = grid_surface(4);
+        solid.triangles.drain(12..14);
+        assert!(matches!(
+            FsiMortarOperators::build(&fluid, &solid, FsiMortarConfig::default()),
+            Err(FsiError::MortarProjectionCoverage)
+        ));
+    }
+
+    #[test]
+    fn tilted_nonmatching_plane_reproduces_affine_vector_traces() {
+        let mut fluid = grid_surface(2);
+        let mut solid = grid_surface(3);
+        for surface in [&mut fluid, &mut solid] {
+            for p in &mut surface.coordinates {
+                p[2] = 0.3 * p[0] - 0.2 * p[1] + 0.4;
+            }
+        }
+        let operators =
+            FsiMortarOperators::build(&fluid, &solid, FsiMortarConfig::default()).unwrap();
+        let values = |surface: &FsiMortarSurface| {
+            surface
+                .coordinates
+                .iter()
+                .flat_map(|p| {
+                    [
+                        1.0 + p[0] + 2.0 * p[1],
+                        2.0 - p[0] + p[2],
+                        3.0 + 2.0 * p[1] - p[2],
+                    ]
+                })
+                .collect::<Vec<_>>()
+        };
+        assert!(norm(&operators.constraint_residual(&values(&fluid), &values(&solid))) < 2e-12);
     }
 
     #[test]

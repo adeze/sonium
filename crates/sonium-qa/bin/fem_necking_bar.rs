@@ -1,18 +1,36 @@
-//! QA: necking-bar benchmark references and validation legs.
+//! Necking references and native finite-strain spatial bar evolution.
 //!
-//! Documents the benchmark status: the full necking bar has NO closed form.
-//! Validation rests on three legs: (1) the Consider diffuse-necking strain
-//! and Bridgman correction checked here, (2) the Wolfram incremental
-//! reference behind the necking C2 golden, and (3) the OpenCourant necking-bar
-//! deck (`qa-fem-opencourant-necking-bar`). Prints PASS; exits 1 on mismatch.
+//! Analytical helper assertions are reported separately from a native
+//! finite-strain slender-bar evolution gate. The spatial gate resolves
+//! diffuse necking onset and the reaction turning point; it makes no
+//! post-localization fracture or three-dimensional Bridgman claim.
 
 // Rust guideline compliant 2026-02-21
 
 use sonium_fem::physics::solid::fracture::ductile::{bridgman_correction, hollomon_necking_strain};
 
+#[path = "support/reference_result.rs"]
+mod reference_result;
+
+#[path = "support/necking_bar.rs"]
+mod necking_bar;
+
 fn main() {
-    match run() {
-        Ok(()) => println!("SUCCESS: qa-fem-necking-bar"),
+    let result = run();
+    reference_result::emit("reference.fem-necking-bar.v1", result.is_ok());
+    match result {
+        Ok(()) => {
+            match necking_bar::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
+                Ok(line) => {
+                    println!("{line}");
+                    println!("SUCCESS: qa-fem-necking-bar");
+                }
+                Err(error) => {
+                    eprintln!("FAILED: native bar: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Err(error) => {
             eprintln!("FAILED: qa-fem-necking-bar: {error}");
             std::process::exit(1);
@@ -21,10 +39,7 @@ fn main() {
 }
 
 fn run() -> Result<(), String> {
-    println!("necking-bar: no closed form exists for the full post-necking response;");
-    println!(
-        "necking-bar: legs are (1) considere/bridgman, (2) wolfram incremental reference, (3) OpenCourant deck."
-    );
+    println!("analytical subcase: Considere/Bridgman identities; numerical_solve_executed=0");
     // Leg 1a: Consider uniform strain equals the Hollomon exponent.
     for n in [0.1, 0.2, 0.3] {
         let uniform = hollomon_necking_strain(n);

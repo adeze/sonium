@@ -18,7 +18,10 @@ fn main() {
         assert!((back + 1.0).abs() < 1e-12);
         println!("Oscillating sphere dipole directivity = {:.6e}", axial);
     });
-    reference_result::emit("reference.fem-electroacoustics-oscillating-sphere.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-electroacoustics-oscillating-sphere.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

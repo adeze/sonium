@@ -8,7 +8,8 @@
 //! - Coupled system symmetry (when applicable)
 //! - Driven coupled solve with pressure/displacement response
 //! - Decoupled-limit reference against independent block solves
-//! - Transpose reciprocity identity
+//! - Physical reciprocity under swapped forward drives
+//! - Independent cavity/bar pressure and displacement convergence
 //! - Input/dissipated power balance
 
 use num_complex::Complex64;
@@ -331,20 +332,17 @@ fn run() -> Result<Metrics, String> {
         format!("decoupled solid error {decoupled_solid_error:.3e} exceeds {TOL_DECOUPLED:.1e}"),
     )?;
 
-    // Transpose reciprocity: x[j] from A x = e_i equals y[i] from A^T y = e_j.
+    // Physical reciprocity uses the same forward operator for swapped drives.
+    // Dividing fluid rows by rho*omega^2 symmetrizes the pressure/displacement
+    // coupling, hence H_ps/(rho*omega^2) = H_sp.
     let sense_dof = SENSE_NODE;
-    let mut transpose = vec![Complex64::new(0.0, 0.0); total * total];
-    for row in 0..total {
-        for col in 0..total {
-            transpose[col * total + row] = dense[row * total + col];
-        }
-    }
-    let mut reciprocal_load = vec![Complex64::new(0.0, 0.0); total];
-    reciprocal_load[sense_dof] = Complex64::new(1.0, 0.0);
-    let mut reciprocal_solution = reciprocal_load.clone();
-    dense_complex_solve(&mut transpose, &mut reciprocal_solution)?;
-    let reciprocity_error = (solution[sense_dof] - reciprocal_solution[drive_dof]).norm()
-        / solution[sense_dof].norm().max(1e-30);
+    let mut reciprocal_matrix = dense.clone();
+    let mut reciprocal_solution = vec![Complex64::new(0.0, 0.0); total];
+    reciprocal_solution[sense_dof] = Complex64::new(1.0, 0.0);
+    dense_complex_solve(&mut reciprocal_matrix, &mut reciprocal_solution)?;
+    let scaled_pressure = solution[sense_dof] / (FLUID_DENSITY * omega * omega);
+    let reciprocity_error = (scaled_pressure - reciprocal_solution[drive_dof]).norm()
+        / scaled_pressure.norm().max(1e-30);
     check(
         reciprocity_error <= TOL_RECIPROCITY,
         format!("reciprocity error {reciprocity_error:.3e} exceeds {TOL_RECIPROCITY:.1e}"),
@@ -401,7 +399,303 @@ fn run() -> Result<Metrics, String> {
     })
 }
 
+/// Restrict assembled 2D forms to uniform cross-section pressure and axial motion.
+///
+/// This is a cavity coupled to a clamped axial bar, each of unit length and
+/// cross-section. Coordinates in each domain point away from the shared x=0
+/// interface; the bar's global axial displacement follows the fluid x axis.
+/// Transverse displacement is constrained and Poisson's ratio is zero.
+fn duct_system(n: usize) -> (CoupledSystem, Vec<usize>) {
+    let mesh = unit_square_triangles(n);
+    let scalar = H1Space::new(PolynomialDegree::P1);
+    let vector = VectorH1Space::new(PolynomialDegree::P1, 2);
+    let nf = scalar.num_global_dofs(&mesh);
+    let ns = vector.num_global_dofs(&mesh);
+    let axial: Vec<usize> = mesh
+        .nodes
+        .iter()
+        .map(|p| (p.x * n as f64).round() as usize)
+        .collect();
+    let reduce = |a: &TripletMatrix<f64>, vector_rows: bool, vector_cols: bool| {
+        let mut b = TripletMatrix::new(n + 1, n + 1);
+        for k in 0..a.nnz() {
+            let row = a.rows[k];
+            let col = a.cols[k];
+            if (vector_rows && !row.is_multiple_of(2)) || (vector_cols && !col.is_multiple_of(2)) {
+                continue;
+            }
+            b.push(
+                axial[if vector_rows { row / 2 } else { row }],
+                axial[if vector_cols { col / 2 } else { col }],
+                a.values[k],
+            );
+        }
+        b
+    };
+    let mass = reduce(
+        &assemble_bilinear(&MassForm, &scalar, &scalar, &mesh, 2),
+        false,
+        false,
+    );
+    let stiffness = reduce(
+        &assemble_bilinear(&LaplacianForm, &scalar, &scalar, &mesh, 2),
+        false,
+        false,
+    );
+    let elastic = ElasticityForm::new_2d(
+        IsotropicMaterial::new(20_000.0, 0.0),
+        PlaneAssumption::PlaneStress,
+    );
+    let solid_stiffness = reduce(
+        &assemble_bilinear(&elastic, &vector, &vector, &mesh, 2),
+        true,
+        true,
+    );
+    let scaled_mass = |coefficient: f64| {
+        let mut a = mass.clone();
+        for value in &mut a.values {
+            *value *= coefficient;
+        }
+        a
+    };
+    let coupling = reduce(&assemble_coupling_matrix(&mesh, 1, nf, ns, 2), false, true);
+    (
+        CoupledSystem {
+            n_fluid: n + 1,
+            n_solid: n + 1,
+            fluid_stiffness: stiffness,
+            fluid_mass: mass.clone(),
+            fluid_damping: scaled_mass(1e-5),
+            solid_stiffness,
+            solid_mass: scaled_mass(2.0),
+            solid_damping: scaled_mass(0.2),
+            coupling,
+            interface_load: None,
+            electrical: None,
+        },
+        vec![2 * n + 1],
+    )
+}
+
+fn quadratic(a: &TripletMatrix<f64>, x: &[Complex64]) -> f64 {
+    (0..a.nnz())
+        .map(|k| a.values[k] * (x[a.rows[k]].conj() * x[a.cols[k]]).re)
+        .sum()
+}
+
+fn duct_reference_gate() -> QaResult {
+    let run_reference = || -> Result<QaResult, String> {
+        let mut fine_pressure = 0.0_f64;
+        let mut fine_displacement = 0.0_f64;
+        let mut rate = f64::INFINITY;
+        let mut residual = 0.0_f64;
+        let mut power_error = 0.0_f64;
+        let mut reciprocity = 0.0_f64;
+        let mut minimum_fluid_power_fraction = f64::INFINITY;
+        let mut negative_error = f64::INFINITY;
+        let mut executed = 0usize;
+        let mut free_pressure = usize::MAX;
+        let mut free_displacement = usize::MAX;
+        for frequency in [10.0, 20.0, 30.0] {
+            let omega = 2.0 * std::f64::consts::PI * frequency;
+            // Independent continuum equations and interface force balance.
+            // p''+q^2*p=0, p'(1)=0, p'(0)=rho*omega^2*u(0).
+            // E*u''+(rho_s*omega^2-i*omega*d_s)*u=0, u(1)=0.
+            // -E*u'(0)+p(0)=1, with exp(+i*omega*t).
+            let q = Complex64::new((omega / SOUND_SPEED).powi(2), -omega * 1e-5).sqrt();
+            let s = (Complex64::new(2.0 * omega * omega, -omega * 0.2) / 20_000.0).sqrt();
+            let fluid_impedance = FLUID_DENSITY * omega * omega * q.cos() / (q * q.sin());
+            let bar_impedance = 20_000.0 * s * s.cos() / s.sin();
+            let u0 = Complex64::new(1.0, 0.0) / (bar_impedance + fluid_impedance);
+            let amplitude = FLUID_DENSITY * omega * omega * u0 / (q * q.sin());
+            let mut previous: Option<(f64, f64)> = None;
+            for n in [8, 16, 32] {
+                let (system, constrained) = duct_system(n);
+                let nf = n + 1;
+                let total = 2 * nf;
+                let pressure_dofs = (0..nf).filter(|dof| !constrained.contains(dof)).count();
+                let displacement_dofs =
+                    (nf..total).filter(|dof| !constrained.contains(dof)).count();
+                check(
+                    pressure_dofs > 0 && displacement_dofs > 0,
+                    "reference case has no free field unknowns".into(),
+                )?;
+                free_pressure = free_pressure.min(pressure_dofs);
+                free_displacement = free_displacement.min(displacement_dofs);
+                let point = HarmonicCoupledPoint {
+                    omega_rad_per_s: omega,
+                    sound_speed_m_per_s: SOUND_SPEED,
+                    fluid_density_kg_per_m3: FLUID_DENSITY,
+                };
+                let interface_integral: f64 = system.coupling.values.iter().sum();
+                check(
+                    (interface_integral + 1.0).abs() < 1e-12,
+                    "interface normal/area differs from independent reference".into(),
+                )?;
+                let assembled = system
+                    .assemble_harmonic(point)
+                    .map_err(|e| format!("{e:?}"))?;
+                let mut matrix = dense_from_triplet(&assembled);
+                for &dof in &constrained {
+                    for k in 0..total {
+                        matrix[dof * total + k] = 0.0.into();
+                        matrix[k * total + dof] = 0.0.into();
+                    }
+                    matrix[dof * total + dof] = 1.0.into();
+                }
+                let mut rhs = vec![Complex64::new(0.0, 0.0); total];
+                rhs[nf] = 1.0.into();
+                let mut solution = rhs.clone();
+                dense_complex_solve(&mut matrix.clone(), &mut solution)?;
+                residual = residual.max(relative_residual(&matrix, &solution, &rhs, total));
+                // Integrate squared error of piecewise-linear solved fields with
+                // independent 3-point Gauss quadrature in the axial coordinate.
+                let mut errors = [0.0_f64; 2];
+                let mut norms = [0.0_f64; 2];
+                for element in 0..n {
+                    for (z, weight) in [
+                        (-0.7745966692414834, 5.0 / 9.0),
+                        (0.0, 8.0 / 9.0),
+                        (0.7745966692414834, 5.0 / 9.0),
+                    ] {
+                        let t = 0.5 * (z + 1.0);
+                        let x = (element as f64 + t) / n as f64;
+                        let exact = [
+                            amplitude * (q * (1.0 - x)).cos(),
+                            u0 * (s * (1.0 - x)).sin() / s.sin(),
+                        ];
+                        for field in 0..2 {
+                            let offset = field * nf;
+                            let value = solution[offset + element] * (1.0 - t)
+                                + solution[offset + element + 1] * t;
+                            errors[field] += weight * (value - exact[field]).norm_sqr();
+                            norms[field] += weight * exact[field].norm_sqr();
+                        }
+                    }
+                }
+                let p_error = (errors[0] / norms[0]).sqrt();
+                let u_error = (errors[1] / norms[1]).sqrt();
+                check(
+                    p_error.is_finite() && u_error.is_finite(),
+                    "nonfinite solved reference error".into(),
+                )?;
+                executed += 1;
+                if let Some((p, u)) = previous {
+                    rate = rate.min((p / p_error).log2()).min((u / u_error).log2());
+                }
+                previous = Some((p_error, u_error));
+                if n == 32 {
+                    fine_pressure = fine_pressure.max(p_error);
+                    fine_displacement = fine_displacement.max(u_error);
+                }
+                let p = &solution[..nf];
+                let u = &solution[nf..];
+                let input = -0.5 * omega * u[0].im;
+                let fluid_power = quadratic(&system.fluid_damping, p) / (2.0 * FLUID_DENSITY);
+                let solid_power = 0.5 * omega * omega * quadratic(&system.solid_damping, u);
+                check(
+                    input > 0.0 && fluid_power > 0.0 && solid_power > 0.0,
+                    "nonpassive cavity/bar response".into(),
+                )?;
+                power_error = power_error.max((input - fluid_power - solid_power).abs() / input);
+                minimum_fluid_power_fraction =
+                    minimum_fluid_power_fraction.min(fluid_power / input);
+                let sense = n / 2;
+                let mut swapped = vec![Complex64::new(0.0, 0.0); total];
+                swapped[sense] = 1.0.into();
+                dense_complex_solve(&mut matrix.clone(), &mut swapped)?;
+                let scaled = p[sense] / (FLUID_DENSITY * omega * omega);
+                reciprocity = reciprocity.max((scaled - swapped[nf]).norm() / scaled.norm());
+                if n == 32 {
+                    // Missing coupling must destroy the independent pressure reference.
+                    let mut uncoupled = system;
+                    uncoupled.coupling = TripletMatrix::new(nf, nf);
+                    let a = uncoupled
+                        .assemble_harmonic(point)
+                        .map_err(|e| format!("{e:?}"))?;
+                    let mut a = dense_from_triplet(&a);
+                    for &dof in &constrained {
+                        for k in 0..total {
+                            a[dof * total + k] = 0.0.into();
+                            a[k * total + dof] = 0.0.into();
+                        }
+                        a[dof * total + dof] = 1.0.into();
+                    }
+                    let mut control = rhs.clone();
+                    dense_complex_solve(&mut a, &mut control)?;
+                    negative_error = negative_error.min(
+                        (control[0] - amplitude * q.cos()).norm() / (amplitude * q.cos()).norm(),
+                    );
+                }
+                println!(
+                    "Cavity/bar {frequency}Hz n={n}: pressure={p_error:.6e}, displacement={u_error:.6e}, power={:.6e}",
+                    (input - fluid_power - solid_power).abs() / input
+                );
+            }
+        }
+        let mut result = QaResult::passed("fem.electroacoustics-cavity-bar.v1")
+            .requested_backend("cpu")
+            .actual_backend("cpu");
+        for (name, value, bound) in [
+            ("fine_pressure_error", fine_pressure, 0.003),
+            ("fine_displacement_error", fine_displacement, 0.003),
+            ("true_residual", residual, 1e-9),
+            ("power_error", power_error, 1e-9),
+            ("physical_reciprocity_error", reciprocity, 1e-9),
+        ] {
+            check(
+                value.is_finite() && value <= bound,
+                format!("{name}={value:.6e} exceeds {bound}"),
+            )?;
+            result = result.metric(name, value).maximum(name, bound);
+        }
+        for (name, value, bound) in [
+            ("minimum_spatial_rate", rate, 1.8),
+            (
+                "minimum_fluid_power_fraction",
+                minimum_fluid_power_fraction,
+                0.01,
+            ),
+            ("missing_coupling_error", negative_error, 0.9),
+        ] {
+            check(
+                value.is_finite() && value >= bound,
+                format!("{name}={value:.6e} below {bound}"),
+            )?;
+            result = result.metric(name, value).minimum(name, bound);
+        }
+        Ok(result.metric("coupled_reference_solves",executed as f64).minimum("coupled_reference_solves",9.0)
+            .metric("minimum_free_pressure_dofs",free_pressure as f64).minimum("minimum_free_pressure_dofs",1.0)
+            .metric("minimum_free_displacement_dofs",free_displacement as f64).minimum("minimum_free_displacement_dofs",1.0)
+            .reference("independent closed-form damped cavity/bar waves and interface impedance sum, swapped forward drives and separate fluid/solid dissipation")
+            .reference_checksum("analytic:unit-cavity-clamped-bar-exp-plus-iwt:v1")
+            .input_checksum("P1-2D-forms-uniform-axial-restriction:n8-16-32:10-20-30Hz:E20000:rho_s2:df1e-5:ds0.2")
+            .dimension("uniform transverse mode restricted from native 2D scalar/vector assembly; unit cavity and axial clamped bar, Poisson ratio zero")
+            .formulation("native coupled harmonic operator, consistent pressure/solid mass, two dissipative blocks, conservative interface normal coupling")
+            .tolerance("pressure/displacement quadrature errors<=0.003 and rates>=1.8; residual/power/physical reciprocity<=1e-9; omitted coupling error>=0.9"))
+    };
+    match run_reference() {
+        Ok(result) => result,
+        Err(error) => QaResult::failed("fem.electroacoustics-cavity-bar.v1", error),
+    }
+}
+
+fn emit_result(result: QaResult) {
+    match result.to_json_line() {
+        Ok(json) => println!("QA_RESULT: {json}"),
+        Err(error) => {
+            eprintln!("FAILED: {error}");
+            std::process::exit(1);
+        }
+    }
+    if result.status != QaStatus::Passed {
+        std::process::exit(1);
+    }
+}
+
 fn main() {
+    let reference_result = duct_reference_gate();
+    emit_result(reference_result);
     let result = match run() {
         Ok(metrics) => QaResult::passed(CASE_ID)
             .requested_backend("cpu")
@@ -428,7 +722,7 @@ fn main() {
             .minimum("dissipated_power", 0.0)
             .metric("power_error", metrics.power_error)
             .maximum("power_error", TOL_POWER)
-            .reference("decoupled block solves, transpose reciprocity, and power balance")
+            .reference("decoupled block solves, physical scaled reciprocity, and power balance")
             .reference_checksum("analytic/deterministic-fixture:fem-electroacoustics-validation-v1")
             .dimension("unit square, 25 fluid plus 50 solid DOFs, 5 Hz interface drive")
             .formulation("harmonic coupled block with lumped solid mass and damping")

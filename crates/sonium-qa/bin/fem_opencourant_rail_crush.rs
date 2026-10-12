@@ -13,8 +13,9 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    OpenCourantCase, RadElasticMaterial, RadFunction, RadNodeSet, RadProbe, RadWall, assert_probe_close,
-    cantilever_brick_mesh, engine_exe, probes_json, run_case, write_engine, write_starter,
+    OpenCourantCase, RadElasticMaterial, RadFunction, RadNodeSet, RadProbe, RadWall,
+    assert_probe_close, cantilever_brick_mesh, engine_exe, probes_json, run_case, write_engine,
+    write_starter,
 };
 use std::path::PathBuf;
 

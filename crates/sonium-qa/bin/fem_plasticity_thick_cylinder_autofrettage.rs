@@ -1,4 +1,4 @@
-//! Thick-cylinder autofrettage: analytic reference plus finite-strain check.
+//! Thick-cylinder autofrettage: references and native spatial pressure-cycle accuracy.
 //!
 //! An internally pressurized thick cylinder (plane strain, von Mises,
 //! elastic-perfectly plastic) is loaded past first yield and unloaded
@@ -12,6 +12,14 @@
 //!   path, against the small-strain model.
 //!
 //! The C3 Radioss comparison case lives in `bin/fem_opencourant_plasticity_thick_cylinder.rs`.
+//! The separate spatial gate uses a near-incompressible radial B-bar FEM mesh
+//! with native J2 updates and pressure loading/unloading; reference and bore
+//! material-point assertions remain separate from this numerical evidence.
+
+// Rust guideline compliant 2026-02-21
+
+#[path = "support/autofrettage.rs"]
+mod autofrettage;
 
 use sonium_fem::physics::solid::plasticity::{
     FiniteStrainJ2Material, FiniteStrainState, HardeningLaw, J2Material, PlasticState,
@@ -256,7 +264,20 @@ fn main() {
         test_finite_strain_bore_overstrain();
     });
     match result {
-        Ok(()) => println!("SUCCESS"),
+        Ok(()) => {
+            match autofrettage::run()
+                .and_then(|result| result.to_json_line().map_err(|e| e.to_string()))
+            {
+                Ok(json) => {
+                    println!("QA_RESULT: {json}");
+                    println!("SUCCESS");
+                }
+                Err(error) => {
+                    eprintln!("FAILED: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
         Err(_) => {
             println!("FAILED");
             std::process::exit(1);

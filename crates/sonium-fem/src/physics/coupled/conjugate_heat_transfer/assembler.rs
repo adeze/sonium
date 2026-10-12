@@ -34,7 +34,9 @@ pub fn build_conjugate_heat_transfer_assembler(
     let mass_order = quadrature::required_order_for_mass(degree.degree());
     let k = assemble_bilinear_by_region(&conduction, &space, &space, mesh, stiffness_order)?;
     let m = assemble_bilinear_by_region(&capacity, &space, &space, mesh, mass_order)?;
-    let a = assemble_bilinear_by_region(&advection, &space, &space, mesh, stiffness_order)?;
+    // Advection has degree 2*p-1, higher than the 2*p-2 stiffness
+    // integrand. The mass rule also integrates this mixed value/gradient term.
+    let a = assemble_bilinear_by_region(&advection, &space, &space, mesh, mass_order)?;
     Ok(PrebakedAssembler::from_triplets([k, m, a], &[]))
 }
 
@@ -61,6 +63,33 @@ impl ConjugateHeatTransferAssemblerExt for ConjugateHeatTransferAssembler {
 mod tests {
     use super::*;
     use crate::mesh::unit_square_triangles;
+    use crate::spaces::FunctionSpace;
+
+    #[test]
+    fn quadratic_three_dimensional_advection_matches_exact_polynomial_power() {
+        let mut mesh = crate::mesh::unit_cube_tetrahedra(1);
+        for element in &mut mesh.elements {
+            element.marker = 1;
+        }
+        let mut regions = RegionMap::new();
+        regions.insert(1, ConjugateRegion::fluid(1.0, 1.0, 2.0, [0.0, 0.3, -0.2]));
+        let space = H1Space::new(PolynomialDegree::P2);
+        let values: Vec<f64> = space
+            .dof_coordinates(&mesh)
+            .expect("H1 coordinates")
+            .iter()
+            .map(|p| p.iter().map(|x| x * x).sum())
+            .collect();
+        let assembler =
+            build_conjugate_heat_transfer_assembler(&mesh, PolynomialDegree::P2, &regions)
+                .expect("fluid region");
+        let action = assembler.assemble_real(&[0.0, 0.0, 1.0]).matvec(&values);
+        let actual: f64 = values.iter().zip(action).map(|(u, au)| u * au).sum();
+        // phi=x^2+y^2+z^2: integral phi*d_y(phi) and phi*d_z(phi)
+        // both equal 7/6, so integral 2*phi*v.grad(phi)=2*(.3-.2)*7/6.
+        let expected = 2.0 * (0.3 - 0.2) * 7.0 / 6.0;
+        assert!((actual - expected).abs() < 1e-12, "{actual} != {expected}");
+    }
 
     #[test]
     fn shared_h1_interface_is_conservative_and_temperature_conforming() {

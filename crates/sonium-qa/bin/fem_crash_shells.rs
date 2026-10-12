@@ -1,13 +1,11 @@
 //! Phase-3 lane 3A G-leg (lane-owned): crash golden-integrity audit.
 //!
-//! Golden-integrity and harvested-response self-consistency checks for the
-//! CRASH miniqa cases (`CRASH/crashsection/box1_42.json`,
-//! `CRASH/crashtriangles.json`). Scope is integrity-only: NO native Sonium
-//! shell dynamics is executed and NO native-vs-harvested simulation
-//! comparison is performed; a native shell run against the harvested
-//! response stays future work. Offline: reads only
-//! `goldens/miniqa/**/*.json` plus the `SCHEMA.md` contract compiled into
-//! the probes below. No engine, no network.
+//! The CRASH fixtures retain integrity-only checks, reported with zero
+//! numerical solves. A separate native CST/DKT shell dynamics case compares
+//! a clamped circular plate with an independently harvested engine response.
+//! That physics gate covers elastic pressure-hold equilibrium, not impact
+//! plasticity or reproduction of the CRASH vendor models. All fixtures are
+//! checked in; no engine or network is required at QA runtime.
 //!
 //! Each probe re-derives a quantity from the harvested raw series and
 //! compares it against the harvested summary or a physics identity, with
@@ -44,7 +42,12 @@
 
 // Rust guideline compliant 2026-02-21
 
+#[path = "support/shell_plate_golden.rs"]
+mod shell_plate_golden;
+
 use serde_json::Value;
+use sha2::{Digest, Sha256};
+use sonium_qa::QaResult;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -528,7 +531,7 @@ fn main() -> ExitCode {
     ];
     println!(
         "qa-fem-crash-shells: lane 3A G-leg, golden-integrity only \
-         (CRASH/crashsection+crashtriangles; no native shell run)"
+         (CRASH/crashsection+crashtriangles; separate native plate gate follows)"
     );
     println!("goldens root: {}", root.display());
     let mut total = 0;
@@ -554,6 +557,52 @@ fn main() -> ExitCode {
         total - failed,
         failed
     );
+    let mut integrity = QaResult::passed("fem.crash-shells-integrity.v1")
+        .formulation("external CRASH golden schema and harvested-series self-consistency only")
+        .dimension("two external CRASH fixtures; no native field")
+        .reference("checked-in CRASH golden series and schema")
+        .reference_checksum("checked per-fixture harvested series")
+        .metric("numerical_solve_executed", 0.0)
+        .maximum("numerical_solve_executed", 0.0)
+        .metric("failed_probes", failed as f64)
+        .maximum("failed_probes", 0.0);
+    for path in &cases {
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                let checksum = format!("{:x}", Sha256::digest(bytes));
+                integrity = integrity.artifact_with_provenance(
+                    path.strip_prefix(env!("CARGO_MANIFEST_DIR"))
+                        .map(|relative| relative.display().to_string())
+                        .unwrap_or_else(|_| "goldens/miniqa/CRASH/unknown.json".into()),
+                    "external CRASH miniqa engine golden",
+                    "harvested TH series; no native CRASH evolution",
+                    "opencourant-golden-v1",
+                    checksum,
+                );
+            }
+            Err(e) => {
+                eprintln!("CRASH artifact read failed: {e}");
+                failed += 1;
+            }
+        }
+    }
+    if failed != 0 {
+        integrity.status = sonium_qa::QaStatus::Failed;
+    }
+    match integrity.to_json_line() {
+        Ok(line) => println!("{line}"),
+        Err(e) => {
+            eprintln!("integrity reporting failed: {e}");
+            failed += 1;
+        }
+    }
+    match shell_plate_golden::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
+        Ok(line) => println!("{line}"),
+        Err(e) => {
+            eprintln!("native shell gate failed: {e}");
+            failed += 1;
+        }
+    }
     if failed == 0 {
         println!("SUCCESS: qa-fem-crash-shells");
         ExitCode::SUCCESS

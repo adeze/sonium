@@ -460,12 +460,18 @@ pub struct ThicknessPoint {
     pub z: f64,
     /// Quadrature weight in m (weights sum to the thickness).
     pub weight: f64,
+    /// Weight for the stress moment integral in m².
+    ///
+    /// Equals `weight * z` for Gauss integration. Piecewise-linear
+    /// stress interpolation has a distinct first-moment weight.
+    pub moment_weight: f64,
 }
 
 /// Gauss-Legendre thickness quadrature with `n` points.
 ///
-/// Supports 1 to 5 points; the 5-point default matches the OpenCourant shell
-/// property default. Nodes and weights are the standard Gauss-Legendre
+/// Supports 1 to 5 points. This is a Gauss integration rule; the legacy
+/// surface-sampled shell rule is [`linear_thickness_points`].
+/// Nodes and weights are the standard Gauss-Legendre
 /// tables scaled from `[-1, 1]` to `[-t/2, t/2]`.
 ///
 /// # Examples
@@ -521,6 +527,49 @@ pub fn thickness_points(n: usize, thickness: f64) -> Result<Vec<ThicknessPoint>,
         .map(|(xi, w)| ThicknessPoint {
             z: xi * thickness / 2.0,
             weight: w * thickness / 2.0,
+            moment_weight: w * xi * thickness.powi(2) / 4.0,
+        })
+        .collect())
+}
+
+/// Integrates piecewise-linear stresses sampled through the thickness.
+///
+/// Uniformly spaced samples include both shell surfaces. Membrane weights
+/// integrate the linear nodal hat functions; moment weights integrate those
+/// functions multiplied by z. Separate moment weights reproduce the exact
+/// elastic bending stiffness rather than the trapezoidal z² approximation.
+///
+/// # Errors
+///
+/// Returns [`CrashError`] for counts outside 2-11 or non-positive thickness.
+pub fn linear_thickness_points(
+    n: usize,
+    thickness: f64,
+) -> Result<Vec<ThicknessPoint>, CrashError> {
+    if !(2..=11).contains(&n) || !thickness.is_finite() || thickness <= 0. {
+        return Err(CrashError::new(
+            "linear thickness integration needs 2-11 points and positive finite thickness",
+        ));
+    }
+    let spacing = thickness / (n - 1) as f64;
+    Ok((0..n)
+        .map(|i| {
+            let z = -0.5 * thickness + i as f64 * spacing;
+            let endpoint = i == 0 || i + 1 == n;
+            let weight = if endpoint { 0.5 * spacing } else { spacing };
+            let moment_weight = z * weight
+                + if i == 0 {
+                    spacing.powi(2) / 6.
+                } else if i + 1 == n {
+                    -spacing.powi(2) / 6.
+                } else {
+                    0.
+                };
+            ThicknessPoint {
+                z,
+                weight,
+                moment_weight,
+            }
         })
         .collect())
 }
@@ -534,9 +583,31 @@ pub struct LayerStates<S> {
     pub points: Vec<ThicknessPoint>,
     /// Current thickness scale (1.0 unstrained).
     pub thickness_scale: f64,
+    /// Accumulated local engineering transverse shear `[gamma_xz, gamma_yz]`.
+    /// The elastic shear hook consumes this total, including held increments.
+    pub transverse_shear: [f64; 2],
 }
 
 impl<S: Clone> LayerStates<S> {
+    /// Builds surface-sampled states with piecewise-linear stress integration.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CrashError`] for counts outside 2-11 or non-positive thickness.
+    pub fn new_piecewise_linear(
+        point: S,
+        n_points: usize,
+        thickness: f64,
+    ) -> Result<Self, CrashError> {
+        let points = linear_thickness_points(n_points, thickness)?;
+        Ok(Self {
+            states: vec![point; n_points],
+            points,
+            thickness_scale: 1.,
+            transverse_shear: [0.; 2],
+        })
+    }
+
     /// Builds layer states from one virgin point state.
     ///
     /// # Errors
@@ -549,6 +620,7 @@ impl<S: Clone> LayerStates<S> {
             states: vec![point; n_points],
             points,
             thickness_scale: 1.0,
+            transverse_shear: [0.0; 2],
         })
     }
 }
@@ -635,7 +707,7 @@ impl ThickShellHook for ElasticShearHook {
 /// `gamma . v`; stiffness coefficients resist the hourglass
 /// displacement projection `gamma . u`. All scale with the `1/4`
 /// normalization of `gamma . gamma = 4` on the square.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct HourglassParams {
     /// Membrane viscous coefficient in N s/m.
     pub membrane_viscous: f64,
@@ -645,6 +717,13 @@ pub struct HourglassParams {
     pub bending_viscous: f64,
     /// Bending stiffness coefficient in N m.
     pub bending_stiffness: f64,
+    /// Transverse-displacement viscous coefficient in N s/m.
+    ///
+    /// Controls the checkerboard normal-velocity mode separately from
+    /// the rotational modes governed by `bending_viscous`.
+    pub transverse_viscous: f64,
+    /// Transverse-displacement stiffness coefficient in N/m.
+    pub transverse_stiffness: f64,
     /// Drilling stiffness in N m/rad (0 disables).
     pub drilling: f64,
 }
@@ -736,7 +815,16 @@ impl HourglassParams {
         } else {
             0.0
         };
+        // Transverse stabilization uses the shear wave speed and the
+        // thickness scale; its modal damping has units N s/m.
+        let transverse_viscous =
+            VISCOUS_SCALE * (density * shear_modulus).sqrt() * thickness.powi(2) / 4.0;
+        // A normal-displacement mode has curvature of order w / L^2;
+        // convert the rotational bending coefficient with L^2 ~ area.
+        let transverse_stiffness = bending_stiffness / area;
         Ok(Self {
+            transverse_viscous,
+            transverse_stiffness,
             membrane_viscous,
             membrane_stiffness,
             bending_viscous,
@@ -915,8 +1003,10 @@ impl Q4CrashGeom {
 
     /// Builds crash geometry from four counter-clockwise corners.
     ///
-    /// Frames the element like the triangle seed: local x along edge
-    /// 0-1, z along the diagonal-cross normal, y completing the basis.
+    /// Frames the element with local x along edge 0-1 projected into
+    /// the diagonal-cross plane, z normal to that plane, and y completing
+    /// the orthonormal basis. Warped edges need this projection to preserve
+    /// lengths and force/velocity work under local/global transformations.
     ///
     /// # Errors
     ///
@@ -930,7 +1020,6 @@ impl Q4CrashGeom {
         if len.is_nan() || len <= 0.0 {
             return Err(CrashError::new("quad edge 0-1 is degenerate"));
         }
-        let ex = [e01[0] / len, e01[1] / len, e01[2] / len];
         let d02 = sub3(&corners[2], &corners[0]);
         let d13 = sub3(&corners[3], &corners[1]);
         let normal = cross3(&d02, &d13);
@@ -939,6 +1028,15 @@ impl Q4CrashGeom {
             return Err(CrashError::new("quad normal is degenerate"));
         }
         let ez = [normal[0] / nlen, normal[1] / nlen, normal[2] / nlen];
+        // A warped edge has a normal component. Using it directly as
+        // local x makes the frame nonorthogonal and changes vector work.
+        let normal_component = dot3(&e01, &ez);
+        let projected = std::array::from_fn(|i| e01[i] - normal_component * ez[i]);
+        let projected_length = norm3(&projected);
+        if !projected_length.is_finite() || projected_length <= 0.0 {
+            return Err(CrashError::new("quad projected edge 0-1 is degenerate"));
+        }
+        let ex = projected.map(|component| component / projected_length);
         let ey = cross3(&ez, &ex);
         let mut local = [(0.0, 0.0); 4];
         let mut warp = [0.0; 4];
@@ -1203,9 +1301,10 @@ pub fn q4_crash_forces<M: StressUpdateModel<StrainIncrement = [f64; 6]>, H: Thic
         resultants.membrane[0] += w * update.stress[0];
         resultants.membrane[1] += w * update.stress[1];
         resultants.membrane[2] += w * update.stress[3];
-        resultants.bending[0] += w * z * update.stress[0];
-        resultants.bending[1] += w * z * update.stress[1];
-        resultants.bending[2] += w * z * update.stress[3];
+        let moment_weight = point.moment_weight * layers.thickness_scale.powi(2);
+        resultants.bending[0] += moment_weight * update.stress[0];
+        resultants.bending[1] += moment_weight * update.stress[1];
+        resultants.bending[2] += moment_weight * update.stress[3];
         dezz_sum += dezz;
         // Plastic dissipation density `q dep/dt` integrated through
         // the thickness; exact for the committed J2 increment.
@@ -1213,8 +1312,13 @@ pub fn q4_crash_forces<M: StressUpdateModel<StrainIncrement = [f64; 6]>, H: Thic
         plastic_work_rate += w * q * update.delta_equiv_plastic_strain / dt;
     }
     // Shear resultants from the accumulated shear strain increment.
-    let shear_strain = [shear_rate[0] * dt, shear_rate[1] * dt];
-    let shear_q = hook.shear_forces(&shear_strain, geom.thickness * layers.thickness_scale);
+    for (total, rate) in layers.transverse_shear.iter_mut().zip(shear_rate) {
+        *total += rate * dt;
+    }
+    let shear_q = hook.shear_forces(
+        &layers.transverse_shear,
+        geom.thickness * layers.thickness_scale,
+    );
     resultants.shear = shear_q;
     if def_shell.thickness == ShellThicknessFlag::Update {
         let mean = dezz_sum / layers.points.len() as f64;
@@ -1255,6 +1359,17 @@ pub fn q4_crash_forces<M: StressUpdateModel<StrainIncrement = [f64; 6]>, H: Thic
             forces[node * 6 + component] += f;
             hg_power += f * v[node * 6 + component];
         }
+    }
+    // The normal-displacement checkerboard is also invisible to
+    // center membrane, curvature and shear operators. Stabilizing only
+    // in-plane translations and nodal rotations leaves this mode free.
+    let modal_v: f64 = (0..4).map(|node| gamma[node] * v[node * 6 + 2]).sum();
+    let modal_u: f64 = (0..4).map(|node| gamma[node] * u[node * 6 + 2]).sum();
+    let modal_force = hg.transverse_viscous * modal_v + hg.transverse_stiffness * modal_u;
+    for node in 0..4 {
+        let f = gamma[node] * modal_force;
+        forces[node * 6 + 2] += f;
+        hg_power += f * v[node * 6 + 2];
     }
     for component in 0..2 {
         let mut modal_v = 0.0;
@@ -1489,9 +1604,10 @@ pub fn t3_crash_forces<M: StressUpdateModel<StrainIncrement = [f64; 6]>>(
         resultants.membrane[0] += w * update.stress[0];
         resultants.membrane[1] += w * update.stress[1];
         resultants.membrane[2] += w * update.stress[3];
-        resultants.bending[0] += w * z * update.stress[0];
-        resultants.bending[1] += w * z * update.stress[1];
-        resultants.bending[2] += w * z * update.stress[3];
+        let moment_weight = point.moment_weight * layers.thickness_scale.powi(2);
+        resultants.bending[0] += moment_weight * update.stress[0];
+        resultants.bending[1] += moment_weight * update.stress[1];
+        resultants.bending[2] += moment_weight * update.stress[3];
         dezz_sum += dezz;
         let q = von_mises_plane(&update.stress);
         plastic_work_rate += w * q * update.delta_equiv_plastic_strain / dt;
@@ -1600,6 +1716,56 @@ mod tests {
     }
 
     #[test]
+    fn surface_sampled_layers_reproduce_elastic_membrane_and_bending() {
+        let geom = unit_square();
+        let material = elastic_j2();
+        let def = DefShell::explicit_defaults();
+        let dt = 1e-3;
+        let strain = 1e-5;
+        let curvature = 0.01;
+        let mut velocity = [0.; 24];
+        for n in 0..4 {
+            velocity[6 * n] = strain * geom.local[n].0 / dt;
+            velocity[6 * n + 4] = curvature * geom.local[n].0 / dt;
+        }
+        for count in 2..=11 {
+            for scale in [1., 1.3] {
+                let mut layers = LayerStates::new_piecewise_linear(
+                    PlasticState::new_3d(),
+                    count,
+                    geom.thickness,
+                )
+                .unwrap();
+                layers.thickness_scale = scale;
+                let out = q4_crash_forces(
+                    &geom,
+                    &mut layers,
+                    &material,
+                    &def,
+                    &[0.; 24],
+                    &velocity,
+                    dt,
+                    &HourglassParams::default(),
+                    &NoThickShell,
+                )
+                .unwrap();
+                let t = geom.thickness * scale;
+                let modulus = 200e9 / (1. - 0.3_f64.powi(2));
+                let membrane = modulus * t * strain;
+                let bending = modulus * t.powi(3) * curvature / 12.;
+                assert!((out.resultants.membrane[0] / membrane - 1.).abs() < 1e-10);
+                assert!((out.resultants.bending[0] / bending - 1.).abs() < 1e-10);
+                assert!((out.resultants.membrane[1] / membrane - 0.3).abs() < 1e-10);
+                assert!((out.resultants.bending[1] / bending - 0.3).abs() < 1e-10);
+            }
+        }
+        for count in [0, 1, 12] {
+            assert!(linear_thickness_points(count, 0.002).is_err());
+        }
+        assert!(linear_thickness_points(3, f64::NAN).is_err());
+    }
+
+    #[test]
     fn square_center_operators_are_exact() {
         let geom = unit_square();
         assert!((geom.area - 1.0).abs() < 1e-14);
@@ -1617,6 +1783,54 @@ mod tests {
             geom.hg_vector(ShellFormulation::WarpOrthogonal),
             [1.0, -1.0, 1.0, -1.0]
         );
+    }
+
+    #[test]
+    fn warped_quad_frame_preserves_geometry_and_vector_work() {
+        // Bilinear saddle: its center tangent plane is exactly xy even
+        // though every edge has a nonzero transverse component.
+        let corners = [
+            [-1., -1., 0.4],
+            [1., -1., -0.4],
+            [1., 1., 0.4],
+            [-1., 1., -0.4],
+        ];
+        // Also rotate the saddle about two axes so the test cannot rely
+        // on zero components in a global coordinate plane.
+        for rotated in [false, true] {
+            let transform = |p: [f64; 3]| {
+                if !rotated {
+                    return p;
+                }
+                let (sy, cy) = 0.37_f64.sin_cos();
+                let (sz, cz) = 0.61_f64.sin_cos();
+                let x = cy * p[0] + sy * p[2];
+                let z = -sy * p[0] + cy * p[2];
+                [cz * x - sz * p[1], sz * x + cz * p[1], z]
+            };
+            let geom = Q4CrashGeom::from_corners(corners.map(transform), 0.002).unwrap();
+            let axes = [geom.ex, geom.ey, geom.ez];
+            for i in 0..3 {
+                for j in 0..3 {
+                    let expected = if i == j { 1. } else { 0. };
+                    assert!((dot3(&axes[i], &axes[j]) - expected).abs() < 1e-14);
+                }
+            }
+            assert!((geom.area - 4.).abs() < 1e-14);
+            for (actual, expected) in
+                geom.local
+                    .iter()
+                    .zip([(0., 0.), (2., 0.), (2., 2.), (0., 2.)])
+            {
+                assert!((actual.0 - expected.0).abs() < 1e-14);
+                assert!((actual.1 - expected.1).abs() < 1e-14);
+            }
+            let velocity = [0.6, -1.3, 2.1];
+            let force = [-0.4, 3.2, 0.7];
+            let local_v = axes.map(|axis| dot3(&axis, &velocity));
+            let local_f = axes.map(|axis| dot3(&axis, &force));
+            assert!((dot3(&local_f, &local_v) - dot3(&force, &velocity)).abs() < 1e-14);
+        }
     }
 
     #[test]
@@ -1796,6 +2010,86 @@ mod tests {
     }
 
     #[test]
+    fn q4_transverse_shear_restores_during_hold_and_unloads() {
+        let geom = unit_square();
+        let material = elastic_j2();
+        let def = DefShell::explicit_defaults();
+        let hook = ElasticShearHook::new(200e9 / 2.6);
+        let hg = HourglassParams {
+            membrane_viscous: 0.0,
+            membrane_stiffness: 0.0,
+            bending_viscous: 0.0,
+            bending_stiffness: 0.0,
+            drilling: 0.0,
+            ..HourglassParams::default()
+        };
+        let mut layers = LayerStates::new(PlasticState::new_3d(), 3, geom.thickness).unwrap();
+        let mut velocity = [0.0; 24];
+        for node in 0..4 {
+            velocity[6 * node + 2] = geom.local[node].0;
+        }
+        let loaded = q4_crash_forces(
+            &geom,
+            &mut layers,
+            &material,
+            &def,
+            &[0.0; 24],
+            &velocity,
+            0.001,
+            &hg,
+            &hook,
+        )
+        .unwrap();
+        let expected = (5.0 / 6.0) * (200e9 / 2.6) * geom.thickness * 0.001;
+        assert!((loaded.resultants.shear[0] - expected).abs() / expected < 1e-12);
+        let held = q4_crash_forces(
+            &geom,
+            &mut layers,
+            &material,
+            &def,
+            &[0.0; 24],
+            &[0.0; 24],
+            0.01,
+            &hg,
+            &hook,
+        )
+        .unwrap();
+        assert_eq!(held.resultants.shear, loaded.resultants.shear);
+        assert!(held.forces.iter().any(|f| f.abs() > 1.0));
+        for v in &mut velocity {
+            *v = -*v;
+        }
+        let unloaded = q4_crash_forces(
+            &geom,
+            &mut layers,
+            &material,
+            &def,
+            &[0.0; 24],
+            &velocity,
+            0.001,
+            &hg,
+            &hook,
+        )
+        .unwrap();
+        assert!(unloaded.resultants.shear.iter().all(|q| q.abs() < 1e-8));
+
+        let mut split = LayerStates::new(PlasticState::new_3d(), 3, geom.thickness).unwrap();
+        for v in &mut velocity {
+            *v = -*v;
+        }
+        let mut last = None;
+        for _ in 0..10 {
+            last = Some(
+                q4_crash_forces(
+                    &geom, &mut split, &material, &def, &[0.0; 24], &velocity, 0.0001, &hg, &hook,
+                )
+                .unwrap(),
+            );
+        }
+        assert!((last.unwrap().resultants.shear[0] - expected).abs() / expected < 1e-12);
+    }
+
+    #[test]
     fn q4_hourglass_dissipates_on_spurious_mode() {
         let geom = unit_square();
         let material = elastic_j2();
@@ -1831,6 +2125,92 @@ mod tests {
         assert!(out.hg_power > 0.0);
         // P = c (gamma . v)^2 = c * 16 on the square.
         assert!((out.hg_power - hg.membrane_viscous * 16.0).abs() / out.hg_power < 1e-9);
+    }
+
+    #[test]
+    fn q4_transverse_hourglass_decays_and_preserves_rigid_rotation() {
+        let geom = unit_square();
+        let material = elastic_j2();
+        let def = DefShell::explicit_defaults();
+        let hg = HourglassParams::for_shell(
+            def.formulation,
+            7800.,
+            4500.,
+            200e9 / 2.6,
+            geom.area,
+            geom.thickness,
+            geom.char_length,
+            false,
+        )
+        .unwrap();
+        assert!(hg.transverse_viscous > 0.);
+        let mass = geom.lumped_masses(7800.)[2];
+        // The four-node normal checkerboard has modal mass m/4.
+        // Compare explicit evolution against its independent damped
+        // oscillator solution q(t) = q(0) exp(-4 c t/m).
+        let decay_rate = 4. * hg.transverse_viscous / mass;
+        let steps = 200;
+        let duration = 0.1 / decay_rate;
+        let dt = duration / steps as f64;
+        let mut v = [0.; 24];
+        for n in 0..4 {
+            v[6 * n + 2] = QUAD_HG[n];
+        }
+        let mut layers = LayerStates::new(PlasticState::new_3d(), 3, geom.thickness).unwrap();
+        for _ in 0..steps {
+            let out = q4_crash_forces(
+                &geom,
+                &mut layers,
+                &material,
+                &def,
+                &[0.; 24],
+                &v,
+                dt,
+                &hg,
+                &NoThickShell,
+            )
+            .unwrap();
+            assert!(out.hg_power > 0.);
+            assert!(
+                out.resultants
+                    .membrane
+                    .iter()
+                    .chain(&out.resultants.bending)
+                    .chain(&out.resultants.shear)
+                    .all(|f| f.abs() < 1e-12)
+            );
+            for n in 0..4 {
+                v[6 * n + 2] -= dt * out.forces[6 * n + 2] / mass;
+            }
+        }
+        let expected = (-decay_rate * duration).exp();
+        for n in 0..4 {
+            assert!((v[6 * n + 2] - QUAD_HG[n] * expected).abs() < 5e-5);
+        }
+        // Arbitrary affine normal velocity with its matching angular
+        // velocity is a rigid rotation plus translation, not a mode
+        // that stabilization may resist.
+        for n in 0..4 {
+            let (x, y) = geom.local[n];
+            v[6 * n + 2] = 0.7 + 0.3 * x - 0.2 * y;
+            v[6 * n + 3] = -0.2;
+            v[6 * n + 4] = -0.3;
+        }
+        let mut virgin = LayerStates::new(PlasticState::new_3d(), 3, geom.thickness).unwrap();
+        let out = q4_crash_forces(
+            &geom,
+            &mut virgin,
+            &material,
+            &def,
+            &[0.; 24],
+            &v,
+            dt,
+            &hg,
+            &NoThickShell,
+        )
+        .unwrap();
+        assert!(out.forces.iter().all(|f| f.abs() < 1e-10));
+        assert!(out.hg_power.abs() < 1e-12);
     }
 
     #[test]
@@ -1899,6 +2279,7 @@ mod tests {
             bending_viscous: 1.0,
             bending_stiffness: 0.0,
             drilling: 0.0,
+            ..HourglassParams::default()
         };
         let out = q4_crash_forces(
             &geom,
@@ -2100,6 +2481,7 @@ mod tests {
             bending_viscous: 1.0,
             bending_stiffness: 0.0,
             drilling: 0.0,
+            ..HourglassParams::default()
         };
         let mut def = DefShell::explicit_defaults();
         def.formulation = ShellFormulation::Qeph;

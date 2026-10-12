@@ -15,9 +15,9 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
-    RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case, write_engine,
-    write_starter,
+    OpenCourantCase, RadBoundaryCondition, RadConcentratedLoad, RadElasticMaterial, RadFunction,
+    RadMesh, RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case,
+    write_engine, write_starter,
 };
 use std::path::PathBuf;
 

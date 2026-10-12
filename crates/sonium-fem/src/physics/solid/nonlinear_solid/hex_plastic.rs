@@ -19,7 +19,7 @@
 // Rust guideline compliant 2026-02-21
 
 use super::super::plasticity::J2Material;
-use super::super::plasticity::law_metals::Law2;
+use super::super::plasticity::law_metals::{Law2, Law36};
 use super::super::plasticity::update::{StressUpdate, StressUpdateModel};
 use super::hex_explicit::{
     HexExplicitError, HexExplicitGeom, HexExplicitParams, HexExplicitState, HexForceOut,
@@ -70,11 +70,27 @@ pub trait ExplicitPlasticMaterial: StressUpdateModel<StrainIncrement = [f64; 6]>
     /// plastic strain, the Johnson-Cook damage in `[0, 1]`, and the GTN
     /// porosity (zero for non-porous models), ready for an erosion sweep.
     fn erosion_features(&self, state: &Self::State) -> (f64, f64, f64);
+
+    /// Committed centroid Cauchy stress in C1 Voigt order (Pa).
+    ///
+    /// Probe-channel output (`SX/SY/SZ/SXY/SYZ/SZX` per element) for
+    /// explicit bench drivers; the mechanics never reads it back.
+    fn centroid_stress(state: &Self::State) -> [f64; 6];
 }
 
 impl ExplicitPlasticMaterial for J2Material {
     fn erosion_features(&self, state: &Self::State) -> (f64, f64, f64) {
         (state.equiv_plastic_strain, 0.0, 0.0)
+    }
+
+    fn centroid_stress(state: &Self::State) -> [f64; 6] {
+        // PlasticState stores a variable-length Voigt vector (3 in
+        // plane stress, 6 in 3D); missing shear entries read as zero.
+        let mut full = [0.0; 6];
+        for (slot, value) in state.stress.iter().take(6).enumerate() {
+            full[slot] = *value;
+        }
+        full
     }
 }
 
@@ -103,6 +119,27 @@ impl ExplicitPlasticMaterial for Law2 {
 
     fn erosion_features(&self, state: &Self::State) -> (f64, f64, f64) {
         (state.equiv_plastic_strain, state.damage, 0.0)
+    }
+
+    fn centroid_stress(state: &Self::State) -> [f64; 6] {
+        state.stress
+    }
+}
+
+impl ExplicitPlasticMaterial for Law36 {
+    fn erosion_features(&self, state: &Self::State) -> (f64, f64, f64) {
+        // Law36 carries no damage variable; rupture is a binary flag,
+        // and porosity stays zero (non-porous model). Damage
+        // accumulation keeps the default no-op.
+        (
+            state.equiv_plastic_strain,
+            if state.ruptured { 1.0 } else { 0.0 },
+            0.0,
+        )
+    }
+
+    fn centroid_stress(state: &Self::State) -> [f64; 6] {
+        state.stress
     }
 }
 
@@ -211,7 +248,9 @@ mod tests {
     };
     use crate::physics::solid::plasticity::HardeningLaw;
     use crate::physics::solid::plasticity::PlasticState;
-    use crate::physics::solid::plasticity::law_metals::{Law2Flow, Law2State, MaxRateEffect};
+    use crate::physics::solid::plasticity::law_metals::{
+        Law2Flow, Law2State, Law36State, MaxRateEffect, RateCurve,
+    };
     use crate::physics::solid::plasticity::update::von_mises_c1;
 
     /// Isothermal rate-free Johnson-Cook steel for closed-form checks.
@@ -425,6 +464,54 @@ mod tests {
         assert_eq!(out.base.hg_power, 0.0);
         assert_eq!(out.base.bulk_q, 0.0);
         assert!(!out.base.yielding);
+    }
+
+    #[test]
+    fn law36_caps_at_tabulated_yield() {
+        let geom = unit_cube();
+        let curve = RateCurve::new(0.0, vec![0.0, 0.5], vec![250.0e6, 250.0e6], 1.0).unwrap();
+        let material = Law36::new(200.0e9, 0.3, vec![curve], 0.0, 1.0e20, 1.0e20, 2.0e20, 3.0e20);
+        let mut state = HexExplicitState::new(Law36State::new());
+        let params = steel_params();
+        // One percent uniaxial strain at 1/s: far past yield.
+        let out = hex_plastic_forces(
+            &geom,
+            &mut state,
+            &material,
+            &uniaxial_velocities(1.0),
+            1.0e-2,
+            &params,
+        )
+        .unwrap();
+        assert!(out.base.yielding);
+        assert!(out.base.dep > 0.0);
+        assert_eq!(out.damage_increment, 0.0);
+        let ep = state.centroid.equiv_plastic_strain;
+        assert!((out.features.0 - ep).abs() < 1e-15);
+        assert_eq!((out.features.1, out.features.2), (0.0, 0.0));
+        // Radial return lands on the flat tabulated surface.
+        let got = von_mises_c1(&out.base.stress);
+        assert!(
+            (got - 250.0e6).abs() / 250.0e6 < 0.01,
+            "von Mises {got:.6e} off the 250 MPa surface"
+        );
+        // Uniaxial *strain* (laterally constrained), not uniaxial
+        // stress: the 1% volumetric expansion carries mean stress
+        // K*0.01 on top of the capped deviator (sxx:syy:szz = 2:-1:-1,
+        // so sxx = 250 MPa * 2/3), and each of the four face nodes
+        // carries a quarter of the axial stress times unit area.
+        let bulk = 200.0e9 / (3.0 * (1.0 - 2.0 * 0.3));
+        let mark = (bulk * 0.01 + 250.0e6 * 2.0 / 3.0) / 4.0;
+        let peak = out
+            .base
+            .forces
+            .iter()
+            .map(|f| f.abs())
+            .fold(0.0f64, f64::max);
+        assert!(
+            (peak - mark).abs() / mark < 0.05,
+            "peak nodal force {peak:.6e} off the {mark:.6e} N constrained-strain mark"
+        );
     }
 
     #[test]

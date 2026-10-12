@@ -242,6 +242,74 @@ pub fn kernel_gradient(
     Ok([offset[0] * factor, offset[1] * factor, offset[2] * factor])
 }
 
+/// Softening in the Brookshaw denominator as a fraction of `h^2`.
+///
+/// Standard Monaghan value; keeps the quotient finite when two
+/// particles coincide while leaving well-separated pairs unaffected.
+pub const BROOKSHAW_SOFTENING: f64 = 0.01;
+
+/// Brookshaw Laplacian estimate of a scalar field at particle `index`.
+///
+/// `lap_i = 2 sum_j (m_j / rho_j) (A_i - A_j) F_ij` with
+/// `F_ij = (r_ij . grad_i W_ij) / (r_ij^2 + eta^2)` and
+/// `eta^2 = 0.01 h^2`, built on [`kernel_gradient_factor`] via
+/// `r . grad W = r^2 (dW/dr)/r`. The factor 2 is the Cleary-Monaghan
+/// normalization: the raw sum converges to half the Laplacian (the
+/// symmetric second moment of `(1/r) dW/dr` is `-delta`). Brookshaw,
+/// "A method of calculating radiative heat diffusion in particle
+/// simulations", MNRAS 207 (1985), 191-214; Cleary and Monaghan,
+/// "Conduction modelling using smoothed particle hydrodynamics",
+/// JCP 148 (1999), 227-264.
+///
+/// # Errors
+///
+/// Returns [`SphError::BadSmoothingLength`], [`SphError::BadDimension`],
+/// or [`SphError::BadState`] when the home or a neighbor density is
+/// not positive.
+///
+/// # Panics
+///
+/// Panics when `index` or a neighbor entry is out of range, or when
+/// `field` does not hold one value per particle.
+pub fn brookshaw_laplacian(
+    index: usize,
+    particles: &[Particle],
+    field: &[f64],
+    neighbors: &[usize],
+    smoothing_length: f64,
+    dim: usize,
+) -> Result<f64, SphError> {
+    check_smoothing_length(smoothing_length)?;
+    kernel_normalization(dim)?;
+    assert_eq!(
+        field.len(),
+        particles.len(),
+        "field must hold one value per particle"
+    );
+    let home = &particles[index];
+    if home.density <= 0.0 {
+        return Err(SphError::BadState("density must be positive"));
+    }
+    let softening = BROOKSHAW_SOFTENING * smoothing_length * smoothing_length;
+    let mut laplacian = 0.0;
+    for &j in neighbors {
+        let other = &particles[j];
+        if other.density <= 0.0 {
+            return Err(SphError::BadState("density must be positive"));
+        }
+        let dx = home.position[0] - other.position[0];
+        let dy = home.position[1] - other.position[1];
+        let dz = home.position[2] - other.position[2];
+        let r2 = dx * dx + dy * dy + dz * dz;
+        let radius = r2.sqrt();
+        // Dot product via the radial factor, finite at r = 0.
+        let dot = r2 * kernel_gradient_factor(radius, smoothing_length, dim)?;
+        let weight = other.mass / other.density * (field[index] - field[j]);
+        laplacian += weight * dot / (r2 + softening);
+    }
+    Ok(2.0 * laplacian)
+}
+
 fn check_smoothing_length(h: f64) -> Result<(), SphError> {
     if h.is_finite() && h > 0.0 {
         Ok(())
@@ -1930,6 +1998,49 @@ mod tests {
         let left = 1.0 - 1.5 * 0.9999f64.powi(2) + 0.75 * 0.9999f64.powi(3);
         assert!((cubic_spline_shape(0.9999) - left).abs() < 1e-15);
         assert!((cubic_spline_shape(1.0001) - 0.25 * 0.9999f64.powi(3)).abs() < 1e-15);
+    }
+
+    fn uniform_lattice(n: usize, spacing: f64) -> Vec<Particle> {
+        let mut particles = Vec::with_capacity(n * n * n);
+        for i in 0..n {
+            for j in 0..n {
+                for k in 0..n {
+                    particles.push(
+                        Particle::new(
+                            [i as f64 * spacing, j as f64 * spacing, k as f64 * spacing],
+                            [0.0; 3],
+                            spacing.powi(3),
+                        )
+                        .unwrap(),
+                    );
+                }
+            }
+        }
+        particles
+    }
+
+    #[test]
+    fn brookshaw_laplacian_recovers_quadratic_field() {
+        // 5x5x5 lattice, unit volumes; quadratic bowl has Laplacian 6.
+        let particles = uniform_lattice(5, 1.0);
+        let field: Vec<f64> = particles
+            .iter()
+            .map(|p| {
+                p.position[0] * p.position[0]
+                    + p.position[1] * p.position[1]
+                    + p.position[2] * p.position[2]
+            })
+            .collect();
+        let positions: Vec<[f64; 3]> = particles.iter().map(|p| p.position).collect();
+        let center = 2 * 25 + 2 * 5 + 2;
+        let lists = brute_force_neighbors(&positions, 2.0 * 1.2);
+        let lap = brookshaw_laplacian(center, &particles, &field, &lists[center], 1.2, 3).unwrap();
+        assert!((lap - 6.0).abs() / 6.0 < 0.05, "laplacian = {lap}");
+        // A linear field has zero Laplacian by antisymmetry.
+        let linear: Vec<f64> = particles.iter().map(|p| p.position[0]).collect();
+        let flat =
+            brookshaw_laplacian(center, &particles, &linear, &lists[center], 1.2, 3).unwrap();
+        assert!(flat.abs() < 1.0e-9, "linear laplacian = {flat}");
     }
 
     #[test]

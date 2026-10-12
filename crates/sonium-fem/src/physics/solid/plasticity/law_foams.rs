@@ -3,7 +3,9 @@
 //! Implements `/MAT` laws 50 (`VISC_HONEY`), 51 (`MULTIMAT`), 68
 //! (`COSSER`), 76 (`SAMP`), 28 (`HONEYCOMB`), 19 (`FABRI`), 58
 //! (nonlinear fabric), 24 (`CONC`), and 33 (`FOAM_PLAS`) as frozen C1
-//! [`StressUpdateModel`](super::update::StressUpdateModel) materials.
+//! [`StressUpdateModel`](super::update::StressUpdateModel) materials,
+//! plus the FOAM429 tabulated-foam edges and the LEAK_MAT leak-rate
+//! decay used by the W-tier golden tests.
 //! Honeycomb theory comes from Theory Manual p.304-307 equations
 //! 847-853; concrete from p.345-348 equation 966; foam visco response
 //! from p.365-366 equations 1024-1027; SAMP from Reference Guide
@@ -1879,6 +1881,254 @@ impl StressUpdateModel for FabricLaw {
 
     fn commit(&self, state: &mut Self::State, update: &StressUpdate) {
         state.stresses = update.stress;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tabulated foam edges (FOAM429) and leak-rate decay (LEAK_MAT)
+// ---------------------------------------------------------------------------
+
+/// Tabulated foam with densification lock (`FOAM429` edges).
+///
+/// Decoupled-direction foam after the [`HoneycombLaw`] pattern: each C1
+/// direction advances elastically with its initial modulus, then caps at
+/// the tabulated yield. Below the densification knee the cap reads the
+/// table; past the knee the cap gains the steep lock leg
+/// `H_lock (x - x_lock)`, mirroring the [`CrushableFoamMaterial`]
+/// densification knee. Only the W-tier edges (initial-modulus leg and
+/// densification-lock leg) are modeled; table interiors stay G-tier.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::plasticity::funct::Funct1D;
+/// use sonium_fem::physics::solid::plasticity::law_foams::{Foam429, Foam429State};
+///
+/// let table = Funct1D::new(vec![0.0, 1.0], vec![10.0, 10.0]).unwrap();
+/// let law = Foam429::new([1000.0; 6], table, 0.5, 5000.0).unwrap();
+/// let mut state = Foam429State::new();
+/// let update = law.step(&mut state, &[0.005, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
+/// assert!((update.stress[0] - 5.0).abs() < 1.0e-12);
+/// assert!(!update.yielding);
+/// ```
+///
+/// # Errors
+///
+/// The constructor rejects non-positive moduli, a non-positive lock
+/// strain, and a non-positive lock modulus.
+#[derive(Debug, Clone)]
+pub struct Foam429 {
+    /// Direction elastic moduli (Pa), the initial-modulus leg.
+    pub moduli: [f64; 6],
+    /// Yield stress versus strain magnitude (Pa).
+    pub table: Funct1D,
+    /// Strain magnitude at the densification knee.
+    pub lock_strain: f64,
+    /// Post-knee steepening slope in Pa.
+    pub lock_modulus: f64,
+}
+
+impl Foam429 {
+    /// Builds the law from moduli, table, and lock parameters.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message for non-positive moduli, a non-positive lock
+    /// strain, or a non-positive lock modulus.
+    pub fn new(
+        moduli: [f64; 6],
+        table: Funct1D,
+        lock_strain: f64,
+        lock_modulus: f64,
+    ) -> Result<Self, String> {
+        for (dir, modulus) in moduli.iter().enumerate() {
+            if !modulus.is_finite() || *modulus <= 0.0 {
+                return Err(format!(
+                    "foam429 modulus {dir} must be positive, found {modulus}"
+                ));
+            }
+        }
+        if !lock_strain.is_finite() || lock_strain <= 0.0 {
+            return Err(format!(
+                "foam429 lock strain must be positive, found {lock_strain}"
+            ));
+        }
+        if !lock_modulus.is_finite() || lock_modulus <= 0.0 {
+            return Err(format!(
+                "foam429 lock modulus must be positive, found {lock_modulus}"
+            ));
+        }
+        Ok(Self {
+            moduli,
+            table,
+            lock_strain,
+            lock_modulus,
+        })
+    }
+
+    /// Initial (elastic) modulus of one direction in Pa.
+    pub fn initial_modulus(&self, dir: usize) -> f64 {
+        self.moduli[dir]
+    }
+
+    /// Yield stress at strain magnitude `x` in Pa.
+    ///
+    /// Reads the table at or below the knee; past the knee returns
+    /// `table(x_lock) + H_lock (x - x_lock)`, continuous at the knee.
+    pub fn yield_stress(&self, x: f64) -> f64 {
+        if x <= self.lock_strain {
+            self.table.eval(x)
+        } else {
+            self.table.eval(self.lock_strain) + self.lock_modulus * (x - self.lock_strain)
+        }
+    }
+
+    /// Steps one increment with time step, bundling C1 calls.
+    pub fn step(&self, state: &mut Foam429State, dstrain: &Voigt6, dt: f64) -> StressUpdate {
+        let update = self.update_with_rate(state, dstrain, dt);
+        self.commit(state, &update);
+        self.advance_totals(state, dstrain);
+        update
+    }
+
+    /// Advances totals after `commit`; call once per accepted step.
+    pub fn advance_totals(&self, state: &mut Foam429State, dstrain: &Voigt6) {
+        for (total, increment) in state.strains.iter_mut().zip(dstrain.iter()) {
+            *total += *increment;
+        }
+    }
+
+    /// Pure per-direction trial-plus-cap solve.
+    ///
+    /// Returns capped stress, the yield flag, and the plastic
+    /// increment norm, zero unless some direction capped.
+    fn solve(&self, state: &Foam429State, dstrain: &Voigt6) -> (Voigt6, bool, f64) {
+        let mut stress = [0.0; 6];
+        let mut yielding = false;
+        let mut plastic_norm = 0.0;
+        for dir in 0..6 {
+            let total = state.strains[dir] + dstrain[dir];
+            let trial = state.stresses[dir] + self.moduli[dir] * dstrain[dir];
+            let cap = self.yield_stress(total.abs());
+            let (capped, was_capped) = if trial.abs() <= cap {
+                (trial, false)
+            } else {
+                (trial.signum() * cap, true)
+            };
+            yielding = yielding || was_capped;
+            let plastic = dstrain[dir] - (capped - state.stresses[dir]) / self.moduli[dir];
+            plastic_norm += plastic * plastic;
+            stress[dir] = capped;
+        }
+        (stress, yielding, plastic_norm.sqrt())
+    }
+
+    /// Builds the C1 update from a pure solve.
+    fn build_update(&self, state: &Foam429State, dstrain: &Voigt6) -> StressUpdate {
+        let (stress, yielding, dep) = self.solve(state, dstrain);
+        let tangent = if yielding {
+            numeric_tangent_c1(|trial| self.solve(state, trial).0, dstrain)
+        } else {
+            diag_tangent_c1(&self.moduli)
+        };
+        StressUpdate {
+            stress,
+            tangent,
+            delta_equiv_plastic_strain: dep.max(0.0),
+            yielding,
+        }
+    }
+}
+
+/// State of one FOAM429 integration point.
+#[derive(Debug, Clone, Default)]
+pub struct Foam429State {
+    /// Committed stresses per C1 direction (Pa).
+    pub stresses: Voigt6,
+    /// Total strains per C1 direction.
+    pub strains: Voigt6,
+}
+
+impl Foam429State {
+    /// Builds a virgin state with zero stress and strain.
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl StressUpdateModel for Foam429 {
+    type State = Foam429State;
+    type StrainIncrement = [f64; 6];
+
+    fn update(&self, state: &Self::State, dstrain: &Self::StrainIncrement) -> StressUpdate {
+        self.build_update(state, dstrain)
+    }
+
+    fn commit(&self, state: &mut Self::State, update: &StressUpdate) {
+        state.stresses = update.stress;
+    }
+}
+
+/// Leak-rate decay of a fabric law (`LEAK_MAT`).
+///
+/// Holds the leak time constant `tau` (s) of the airbag-fabric venting
+/// model: at fixed strain the stress relaxes as
+/// `sigma(t) = sigma0 exp(-t / tau)`. Drivers reuse the [`FabricLaw`]
+/// elastic legs for the stress trial, then scale the capped stress by
+/// the decay factor; the tangent keeps the instantaneous elastic
+/// moduli, so only the stress scales.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::plasticity::law_foams::LeakMat;
+///
+/// let leak = LeakMat::new(0.5).unwrap();
+/// assert!((leak.decayed_stress(100.0, 0.0) - 100.0).abs() < 1.0e-12);
+/// assert!((leak.decay_factor(0.5) - (-1.0f64).exp()).abs() < 1.0e-12);
+/// ```
+///
+/// # Errors
+///
+/// The constructor rejects a non-positive time constant.
+#[derive(Debug, Clone, Copy)]
+pub struct LeakMat {
+    /// Leak time constant in s.
+    pub tau: f64,
+}
+
+impl LeakMat {
+    /// Builds the decay from the leak time constant in s.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when `tau` is not positive and finite.
+    pub fn new(tau: f64) -> Result<Self, String> {
+        if !tau.is_finite() || tau <= 0.0 {
+            return Err(format!("leakmat tau must be positive, found {tau}"));
+        }
+        Ok(Self { tau })
+    }
+
+    /// Decay factor `exp(-t / tau)` at time `t` in s.
+    pub fn decay_factor(&self, time: f64) -> f64 {
+        (-time / self.tau).exp()
+    }
+
+    /// Decayed stress `sigma0 exp(-t / tau)` in Pa.
+    pub fn decayed_stress(&self, sigma0: f64, time: f64) -> f64 {
+        sigma0 * self.decay_factor(time)
+    }
+
+    /// Scales a [`FabricLaw`] update stress by the decay factor.
+    ///
+    /// Applies the fixed-strain leak relaxation to a trial update in
+    /// place; the tangent is untouched (instantaneous moduli).
+    pub fn apply_to_update(&self, update: &mut StressUpdate, time: f64) {
+        let factor = self.decay_factor(time);
+        for component in update.stress.iter_mut() {
+            *component *= factor;
+        }
     }
 }
 
@@ -3834,5 +4084,55 @@ mod tests {
         let curve = drive_uniaxial_foam(&law, &mut state, 0.05, 5, 1.0);
         assert_eq!(curve.len(), 6);
         assert!((curve[5].stress_xx - 500.0e3).abs() < 1.0e-6);
+    }
+
+    fn foam429_flat() -> Foam429 {
+        let table = Funct1D::new(vec![0.0, 1.0], vec![10.0, 10.0]).unwrap();
+        Foam429::new([1000.0; 6], table, 0.5, 5000.0).unwrap()
+    }
+
+    #[test]
+    fn foam429_initial_leg_is_linear_elastic() {
+        let law = foam429_flat();
+        assert_eq!(law.initial_modulus(0), 1000.0);
+        let mut state = Foam429State::new();
+        // Small strain stays under the table cap: Hookean, no yield.
+        let update = law.step(&mut state, &[0.005, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
+        assert!((update.stress[0] - 5.0).abs() < 1.0e-12);
+        assert!(!update.yielding);
+        assert_eq!(update.delta_equiv_plastic_strain, 0.0);
+        assert!((update.tangent[0] - 1000.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn foam429_lock_leg_steepens_past_knee() {
+        let law = foam429_flat();
+        // Cap is continuous at the knee, steep above it.
+        assert!((law.yield_stress(0.5) - 10.0).abs() < 1.0e-12);
+        assert!((law.yield_stress(0.6) - (10.0 + 5000.0 * 0.1)).abs() < 1.0e-9);
+        let mut state = Foam429State::new();
+        let update = law.step(&mut state, &[0.6, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
+        assert!(update.yielding);
+        assert!((update.stress[0] - 510.0).abs() < 1.0e-9);
+        assert!(update.delta_equiv_plastic_strain > 0.0);
+    }
+
+    #[test]
+    fn leakmat_decay_follows_exponential() {
+        let leak = LeakMat::new(0.5).unwrap();
+        assert!(LeakMat::new(0.0).is_err());
+        let sigma0 = 100.0;
+        assert!((leak.decayed_stress(sigma0, 0.0) - sigma0).abs() < 1.0e-12);
+        assert!((leak.decayed_stress(sigma0, 0.5) - sigma0 / core::f64::consts::E).abs() < 1.0e-9);
+        assert!((leak.decay_factor(2.5) - (-5.0f64).exp()).abs() < 1.0e-15);
+        assert!(leak.decayed_stress(sigma0, 2.5) < 0.01 * sigma0);
+        // Elastic-leg reuse: a fabric trial scales, tangent untouched.
+        let fabric = fabric19();
+        let fstate = FabricState::new();
+        let mut update = fabric.update(&fstate, &[0.01, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        let tangent = update.tangent;
+        leak.apply_to_update(&mut update, 0.5);
+        assert!((update.stress[0] - 100.0e3 / core::f64::consts::E).abs() < 1.0e-6);
+        assert_eq!(update.tangent, tangent);
     }
 }

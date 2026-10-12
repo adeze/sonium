@@ -15,7 +15,10 @@ fn main() {
         assert!(w > 0.0);
         println!("Biharmonic clamped circular center deflection = {:.6e}", w);
     });
-    reference_result::emit("reference.fem-biharmonic-clamped-circular.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-biharmonic-clamped-circular.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

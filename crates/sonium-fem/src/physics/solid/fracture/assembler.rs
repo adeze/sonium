@@ -23,13 +23,15 @@ pub fn build_fracture_assembler(
     material: PhaseFieldFractureMaterial,
 ) -> FractureAssembler {
     let space = H1Space::new(degree);
-    let quad_stiffness = quadrature::required_order_for_stiffness(degree.degree());
+    // The regularization contains both gradient and value products.
+    let quad_damage = quadrature::required_order_for_stiffness(degree.degree())
+        .max(quadrature::required_order_for_mass(degree.degree()));
     let damage = crate::assembly::assemble_bilinear(
         &PhaseFieldDamageForm { material },
         &space,
         &space,
         mesh,
-        quad_stiffness,
+        quad_damage,
     );
     PrebakedAssembler::from_triplets([damage], &[])
 }
@@ -53,13 +55,14 @@ pub fn assemble_damage_operator_with_history(
         "history must cover every element"
     );
     let space = H1Space::new(degree);
-    let quad_stiffness = quadrature::required_order_for_stiffness(degree.degree());
+    let quad_damage = quadrature::required_order_for_stiffness(degree.degree())
+        .max(quadrature::required_order_for_mass(degree.degree()));
     let mut triplets = crate::assembly::assemble_bilinear(
         &PhaseFieldDamageForm { material },
         &space,
         &space,
         mesh,
-        quad_stiffness,
+        quad_damage,
     );
     let quad_mass = quadrature::required_order_for_mass(degree.degree());
     let tangent_forms: Vec<DamageHistoryTangentForm> = history
@@ -114,7 +117,53 @@ impl FractureAssemblerExt for FractureAssembler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::unit_square_triangles;
+    use crate::mesh::{unit_cube_tetrahedra, unit_square_triangles};
+    use crate::spaces::FunctionSpace;
+
+    #[test]
+    fn damage_operators_match_independent_cube_polynomial_integrals() {
+        let mesh = unit_cube_tetrahedra(1);
+        let material = PhaseFieldFractureMaterial {
+            critical_energy_release_rate: 2.0,
+            length_scale: 0.25,
+            residual_stiffness: 1e-6,
+        };
+        let history = vec![2.0; mesh.num_elements()];
+        // P = x^p + y^p + z^p. Integrate P^2 and |grad(P)|^2
+        // independently over [0,1]^3; no assembled matrix defines the reference.
+        for (degree, p, mass, stiffness) in [
+            (PolynomialDegree::P1, 1, 5.0 / 2.0, 3.0),
+            (PolynomialDegree::P2, 2, 19.0 / 15.0, 4.0),
+            (PolynomialDegree::P3, 3, 45.0 / 56.0, 27.0 / 5.0),
+        ] {
+            let values: Vec<_> = H1Space::new(degree)
+                .dof_coordinates(&mesh)
+                .unwrap()
+                .iter()
+                .map(|point| point.iter().map(|x| x.powi(p)).sum::<f64>())
+                .collect();
+            let base =
+                build_fracture_assembler(&mesh, degree, material).assemble_damage_operator(1.0);
+            let driven =
+                assemble_damage_operator_with_history(&mesh, degree, material, &history).to_csr();
+            for (matrix, mass_coefficient) in [(&base, 8.0), (&driven, 12.0)] {
+                let actual: f64 = values
+                    .iter()
+                    .zip(matrix.matvec(&values))
+                    .map(|(a, b)| a * b)
+                    .sum();
+                let expected = 0.5 * stiffness + mass_coefficient * mass;
+                assert!(
+                    (actual - expected).abs() < 3e-12 * expected,
+                    "{degree:?}: actual={actual:e}, expected={expected:e}"
+                );
+            }
+            let rhs = assemble_damage_history_rhs(&mesh, degree, 2.0);
+            let actual: f64 = values.iter().zip(rhs).map(|(a, b)| a * b).sum();
+            let expected = 12.0 / f64::from(p + 1);
+            assert!((actual - expected).abs() < 3e-12 * expected);
+        }
+    }
 
     #[test]
     fn build_fracture_assembler_smoke() {

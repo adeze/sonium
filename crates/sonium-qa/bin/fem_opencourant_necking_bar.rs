@@ -14,7 +14,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
+    OpenCourantCase, RadBoundaryCondition, RadConcentratedLoad, RadElasticMaterial, RadFunction,
     RadNodeSet, RadProbe, assert_probe_close, cantilever_brick_mesh, engine_exe, probes_json,
     run_case, write_engine, write_starter,
 };

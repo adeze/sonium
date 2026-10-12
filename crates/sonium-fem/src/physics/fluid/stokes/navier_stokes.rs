@@ -3020,6 +3020,10 @@ fn solve_iterative_cpu(
     velocity_block_size: usize,
     pressure_schur: Option<&sonium_solvers::CsrMatrix<f64>>,
 ) -> Option<(Vec<f64>, bool, usize)> {
+    // Validate the CSR structure once per solve: every Krylov iteration
+    // applies the operator, and the shared borrow freezes the storage so
+    // applies skip the O(nnz) re-validation.
+    let operator = sonium_solvers::ValidatedCsr::new(csr);
     match config.linear_solver_cpu_preconditioner {
         LinearSolverCpuPreconditionerKind::Ilu => {
             let solve_config = sonium_solvers::GmresConfig {
@@ -3029,7 +3033,7 @@ fn solve_iterative_cpu(
             };
             let preconditioner = sonium_solvers::IluPreconditioner::from_csr(csr);
             let result = sonium_solvers::gmres_preconditioned_with_guess(
-                csr,
+                &operator,
                 &preconditioner,
                 b,
                 x0,
@@ -3074,8 +3078,13 @@ fn solve_iterative_cpu(
                 exact_residual_check_interval: 0,
                 convergence_check_interval: 1,
             };
-            let result =
-                sonium_solvers::fgmres_preconditioned(csr, &preconditioner, b, x0, &solve_config);
+            let result = sonium_solvers::fgmres_preconditioned(
+                &operator,
+                &preconditioner,
+                b,
+                x0,
+                &solve_config,
+            );
             let iterations = result.iterations;
             finite_converged_solution(result.x, result.converged)
                 .map(|solution| (solution, false, iterations))
@@ -4070,6 +4079,10 @@ fn solve_cached_bdf_linear_system(
 ) -> Option<(Vec<f64>, super::workspace::BdfLinearSolveTelemetry)> {
     use super::workspace::{BdfCachedLinearSolver, BdfLinearSolveTelemetry, BdfLinearSolverKind};
 
+    // Validate the CSR structure once per solve: every Krylov iteration
+    // applies the operator, and the shared borrow freezes the workspace
+    // storage so applies skip the O(nnz) re-validation.
+    let operator = sonium_solvers::ValidatedCsr::new(csr);
     let progress = std::env::var("SONIUM_BDF_SOLVER_PROGRESS").as_deref() == Ok("1");
     if !config.use_direct_solver {
         let resolved_backend = match config.linear_solver_backend {
@@ -4212,7 +4225,7 @@ fn solve_cached_bdf_linear_system(
                     | BdfCachedLinearSolver::JacobiSchur { .. } => unreachable!(),
                 };
                 let result = sonium_solvers::gmres_preconditioned_with_guess(
-                    csr,
+                    &operator,
                     preconditioner,
                     b,
                     Some(x0),
@@ -4325,7 +4338,7 @@ fn solve_cached_bdf_linear_system(
                     convergence_check_interval: 1,
                 };
                 let result = sonium_solvers::fgmres_preconditioned(
-                    csr,
+                    &operator,
                     preconditioner,
                     b,
                     Some(x0),

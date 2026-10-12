@@ -66,7 +66,11 @@ pub fn assemble_mhd_electromagnetic_blocks(
     assert!((1..=3).contains(&velocity_components));
     let velocity_space = VectorH1Space::new(degree, velocity_components);
     let potential_space = H1Space::new(degree);
-    let order = quadrature::required_order_for_stiffness(degree.degree());
+    // Magnetic damping contains value*value (degree 2p), and both
+    // cross-space EMF/Lorentz terms contain value*gradient (degree 2p-1).
+    // A stiffness-only rule (degree 2p-2) underintegrates these blocks.
+    let order = quadrature::required_order_for_stiffness(degree.degree())
+        .max(quadrature::required_order_for_mass(degree.degree()));
     let sigma = material.electrical_conductivity;
     let field = material.imposed_magnetic_flux_density;
 
@@ -121,7 +125,72 @@ pub fn assemble_mhd_electromagnetic_blocks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::unit_square_triangles;
+    use crate::mesh::{unit_cube_tetrahedra, unit_square_triangles};
+
+    #[test]
+    fn polynomial_mhd_blocks_match_independent_cube_integrals() {
+        let mesh = unit_cube_tetrahedra(1);
+        let material = MhdMaterial {
+            density: 1.3,
+            dynamic_viscosity: 0.3,
+            electrical_conductivity: 2.0,
+            imposed_magnetic_flux_density: [0.4, 0.7, 1.1],
+        };
+        // u=(P,0,0), phi=P, P=sum(x_d^p). These constants integrate
+        // P^2, P*d_y(P), and |grad(P)|^2 over the unit cube independently.
+        for (degree, p, mass, mixed, stiffness) in [
+            (PolynomialDegree::P2, 2, 19.0 / 15.0, 7.0 / 6.0, 4.0),
+            (PolynomialDegree::P3, 3, 45.0 / 56.0, 1.0, 27.0 / 5.0),
+        ] {
+            let velocity = VectorH1Space::new(degree, 3);
+            let potential = H1Space::new(degree);
+            let polynomial = |point: [f64; 3]| point.iter().map(|v| v.powi(p)).sum::<f64>();
+            let u: Vec<_> = velocity
+                .dof_coordinates(&mesh)
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(d, point)| if d % 3 == 0 { polynomial(*point) } else { 0.0 })
+                .collect();
+            let phi: Vec<_> = potential
+                .dof_coordinates(&mesh)
+                .unwrap()
+                .iter()
+                .map(|point| polynomial(*point))
+                .collect();
+            let blocks = assemble_mhd_electromagnetic_blocks(&mesh, degree, 3, material);
+            let pair = |left: &[f64], matrix: &TripletMatrix<f64>, right: &[f64]| {
+                left.iter()
+                    .zip(matrix.to_csr().matvec(right))
+                    .map(|(a, b)| a * b)
+                    .sum::<f64>()
+            };
+            let sigma = 2.0;
+            for (actual, expected) in [
+                (
+                    pair(&u, &blocks.velocity_damping, &u),
+                    sigma * (0.7_f64.powi(2) + 1.1_f64.powi(2)) * mass,
+                ),
+                (
+                    pair(&u, &blocks.velocity_from_potential, &phi),
+                    sigma * (1.1 - 0.7) * mixed,
+                ),
+                (
+                    pair(&phi, &blocks.potential_from_velocity, &u),
+                    sigma * (1.1 - 0.7) * mixed,
+                ),
+                (
+                    pair(&phi, &blocks.potential_conduction, &phi),
+                    sigma * stiffness,
+                ),
+            ] {
+                assert!(
+                    (actual - expected).abs() < 2e-12 * expected.abs().max(1.0),
+                    "{degree:?}: actual={actual:e}, expected={expected:e}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn mhd_blocks_have_vector_scalar_dimensions() {

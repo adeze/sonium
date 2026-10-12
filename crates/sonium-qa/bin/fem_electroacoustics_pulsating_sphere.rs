@@ -17,7 +17,10 @@ fn main() {
         assert!((z_high.re / (1.21 * 343.0) - 1.0).abs() < 1e-3);
         println!("Pulsating sphere impedance = {:.6e}+{:.6e}i", z.re, z.im);
     });
-    reference_result::emit("reference.fem-electroacoustics-pulsating-sphere.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-electroacoustics-pulsating-sphere.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

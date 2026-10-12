@@ -14,7 +14,10 @@ fn main() {
         assert!((gain + 4.7).abs() < 1e-12);
         println!("Inverting op-amp gain = {:.6e}", gain);
     });
-    reference_result::emit("reference.fem-lumped-circuit-op-amp-gain.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-lumped-circuit-op-amp-gain.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

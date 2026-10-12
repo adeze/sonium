@@ -24,7 +24,10 @@ fn main() {
             p_near.norm()
         );
     });
-    reference_result::emit("reference.fem-electroacoustics-piston-baffle.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-electroacoustics-piston-baffle.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

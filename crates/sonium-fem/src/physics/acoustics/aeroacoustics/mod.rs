@@ -187,7 +187,9 @@ pub use fwh_2d_axi::{
     stationary_fwh_ring_pressure_fixed, stationary_kirchhoff_pressure_2d_convected,
     stationary_kirchhoff_pressure_convected,
 };
-pub use lighthill::{LighthillQuadrupole, lighthill_far_field_pressure, lighthill_pressure};
+pub use lighthill::{
+    LighthillQuadrupole, lighthill_acoustic_power, lighthill_far_field_pressure, lighthill_pressure,
+};
 pub use lighthill_2d_axi::{
     LighthillQuadrupole2d, LighthillRingSource, lighthill_far_field_pressure_2d,
     lighthill_pressure_2d, lighthill_ring_pressure, lighthill_ring_pressure_fixed,

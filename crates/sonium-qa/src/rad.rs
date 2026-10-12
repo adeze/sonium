@@ -1024,7 +1024,11 @@ pub struct RunOutput {
 ///
 /// Returns [`RadError`] when a stage fails, when conversion is unavailable
 /// for a binary history, or when parsing fails.
-pub fn run_case(decks_dir: &Path, exe: &Path, case: &OpenCourantCase) -> Result<RunOutput, RadError> {
+pub fn run_case(
+    decks_dir: &Path,
+    exe: &Path,
+    case: &OpenCourantCase,
+) -> Result<RunOutput, RadError> {
     let starter_deck = decks_dir.join(format!("{}_0000.rad", case.name));
     let engine_deck = decks_dir.join(format!("{}_0001.rad", case.name));
     let (starter_exe, engine_exe) = resolve_engine_pair(exe)?;
@@ -1083,6 +1087,21 @@ fn is_probably_csv(path: &Path) -> Result<bool, RadError> {
     Ok(!head.contains(&0) && head.contains(&b','))
 }
 
+/// Input argument for a `th_to_csv` conversion run.
+///
+/// Vendor defect workaround: `th_to_csv` SIGFPEs on input paths longer
+/// than its fixed filename buffer (observed: 71 chars fine, 108 chars
+/// fatal with OpenCourant CommitID 33e68517). The tool already runs with
+/// `dir` as its working directory, so the bare file name is passed
+/// whenever the T01 lives there; absolute paths are kept only for
+/// out-of-directory inputs.
+pub(crate) fn th_to_csv_arg(t01: &Path, dir: &Path) -> PathBuf {
+    match (t01.file_name(), t01.parent()) {
+        (Some(name), Some(parent)) if parent == dir => PathBuf::from(name),
+        _ => t01.to_path_buf(),
+    }
+}
+
 pub(crate) fn convert_with_th_to_csv(exe: &Path, t01: &Path, dir: &Path) -> Result<(), RadError> {
     // `exe` may be the exec directory itself or one engine binary; the
     // converter ships as `th_to_csv*` beside the engine binaries.
@@ -1101,10 +1120,11 @@ pub(crate) fn convert_with_th_to_csv(exe: &Path, t01: &Path, dir: &Path) -> Resu
         }
     }
     candidates.push(PathBuf::from("th_to_csv"));
+    let arg = th_to_csv_arg(t01, dir);
     let mut spawn_error = None;
     let mut exec_error = None;
     for tool in candidates {
-        match Command::new(&tool).arg(t01).current_dir(dir).output() {
+        match Command::new(&tool).arg(&arg).current_dir(dir).output() {
             Ok(output) if output.status.success() => return Ok(()),
             Ok(output) => {
                 // The tool ran but failed; this beats path misses
@@ -7630,5 +7650,17 @@ mod tests {
         let deck = write_starter_extra(&extra, 4);
         assert!(deck.starts_with("//SUBMODEL/1\n"));
         assert!(deck.ends_with("//ENDSUB\n"));
+    }
+
+    #[test]
+    fn th_to_csv_arg_prefers_bare_filename_in_dir() {
+        let dir = Path::new("/scratch/sonium_rad_plasticity_thick_cylinder_1");
+        let t01 = dir.join("plasticity_thick_cylinderT01");
+        assert_eq!(
+            th_to_csv_arg(&t01, dir),
+            PathBuf::from("plasticity_thick_cylinderT01")
+        );
+        let elsewhere = Path::new("/other/placeT01");
+        assert_eq!(th_to_csv_arg(elsewhere, dir), elsewhere.to_path_buf());
     }
 }

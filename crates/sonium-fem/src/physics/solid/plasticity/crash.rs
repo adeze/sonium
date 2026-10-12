@@ -778,10 +778,18 @@ pub struct CrushableFoamMaterial {
     pub initial_yield: f64,
     /// Compaction hardening modulus in Pa.
     pub hardening_modulus: f64,
+    /// Compaction at the densification knee (`INFINITY` disables).
+    pub lock_strain: f64,
+    /// Extra hardening slope in Pa past the knee (0 disables).
+    pub lock_modulus: f64,
 }
 
 impl CrushableFoamMaterial {
     /// Creates a crushable foam from moduli, shape, and hardening.
+    ///
+    /// The densification knee starts disabled; use
+    /// [`with_densification`](CrushableFoamMaterial::with_densification)
+    /// to enable it.
     pub fn new(e: f64, nu: f64, alpha: f64, initial_yield: f64, hardening_modulus: f64) -> Self {
         Self {
             youngs_modulus: e,
@@ -789,7 +797,20 @@ impl CrushableFoamMaterial {
             alpha,
             initial_yield,
             hardening_modulus,
+            lock_strain: f64::INFINITY,
+            lock_modulus: 0.0,
         }
+    }
+
+    /// Enables the densification knee at lock strain and modulus.
+    ///
+    /// Takes the knee compaction `c_lock` (dimensionless) and the
+    /// post-knee slope `H_lock` (Pa); the crush strength gains
+    /// `H_lock * max(0, c - c_lock)`.
+    pub fn with_densification(mut self, lock_strain: f64, lock_modulus: f64) -> Self {
+        self.lock_strain = lock_strain;
+        self.lock_modulus = lock_modulus;
+        self
     }
 
     /// Aluminum foam with moderate crush strength.
@@ -803,8 +824,17 @@ impl CrushableFoamMaterial {
     }
 
     /// Crush strength in Pa at compaction `ev`.
+    ///
+    /// `Y(c) = y0 + H c + H_lock max(0, c - c_lock)` with the
+    /// compaction floored at 0 and the strength floored at 1e-9 Pa.
+    /// Below the knee the response is the plain linear law; past the
+    /// knee the lock modulus adds a steep densification leg. With the
+    /// default (`c_lock = INFINITY`, `H_lock = 0`) the lock term is
+    /// exactly 0 and the linear law is unchanged.
     pub fn crush_strength(&self, compaction: f64) -> f64 {
-        (self.initial_yield + self.hardening_modulus * compaction.max(0.0)).max(1e-9)
+        let c = compaction.max(0.0);
+        let lock = self.lock_modulus * (c - self.lock_strain).max(0.0);
+        (self.initial_yield + self.hardening_modulus * c + lock).max(1e-9)
     }
 
     /// Yield function value (negative inside, zero on the surface).
@@ -1361,5 +1391,23 @@ mod tests {
             "stress {}",
             last.stress_xx
         );
+    }
+
+    #[test]
+    fn crush_strength_rises_steeply_past_densification_knee() {
+        let foam = CrushableFoamMaterial::aluminum_foam().with_densification(0.3, 1.0e9);
+        // Below the knee: plain linear law y0 + H c.
+        let below = foam.crush_strength(0.1);
+        assert!((below - (5.0e6 + 50.0e6 * 0.1)).abs() < 1.0);
+        // At the knee the lock leg starts continuously.
+        let knee = foam.crush_strength(0.3);
+        assert!((knee - (5.0e6 + 50.0e6 * 0.3)).abs() < 1.0);
+        // Far above the knee the lock modulus dominates.
+        let above = foam.crush_strength(0.5);
+        assert!((above - (5.0e6 + 50.0e6 * 0.5 + 1.0e9 * 0.2)).abs() < 1.0);
+        assert!(above > 10.0 * below);
+        // Disabled by default: lock term is exactly zero.
+        let plain = CrushableFoamMaterial::aluminum_foam();
+        assert!((plain.crush_strength(0.5) - (5.0e6 + 50.0e6 * 0.5)).abs() < 1.0);
     }
 }

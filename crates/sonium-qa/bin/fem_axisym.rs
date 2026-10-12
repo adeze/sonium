@@ -1,13 +1,11 @@
-//! Phase-3 lane 3E G-leg (lane-owned): axisymmetric solids golden-integrity audit.
+//! SOLIDES integrity audit and native axisymmetric cylinder comparison.
 //!
 //! Golden-integrity and presence audit over the SOLIDES miniqa goldens.
-//! Scope is integrity-only: this leg runs NO native axisymmetric solve
-//! and performs NO native-vs-harvested comparison, because no harvested
-//! SOLIDES golden is an axisymmetric case. A native comparison stays out
-//! of scope until an axisymmetric (`/QUAD`, `N2D3D != 0`) deck is
-//! harvested. Offline: reads only `goldens/miniqa/**/*.json` plus the
-//! schema rules. Exit 0 = PASS, exit 1 = FAIL with per-probe report on
-//! stdout.
+//! The SOLIDES subcase remains integrity-only: those decks are 3D bricks.
+//! A separate generated `/QUAD`, `N2D3D=1` pressure-cylinder fixture in
+//! `decks/axisym_cylinder` provides harvested quasistatic displacement and
+//! energy for the native meridional FEM comparison. Its pressure-hold gate
+//! makes no transient-ramp agreement claim. Both subcases run offline.
 //!
 //! Audit result: all seven harvested goldens carry 3D `/BRICK` decks
 //! (`N2D3D = 0`; no `/QUAD` card anywhere under vendor `miniqa/SOLIDES/`),
@@ -22,13 +20,15 @@
 //!   markers and fails closed on any new unaudited SOLIDES file, so
 //!   a future axisymmetric harvest cannot slip past this leg.
 //!
-//! G-leg independence holds trivially: this bin uses only `std` plus
-//! `serde_json` (no fem runtimes of any lane).
+//! SOLIDES schema checks remain separate from numerical cylinder evidence.
 
 // Rust guideline compliant 2026-02-21
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
+
+#[path = "support/axisymmetric_golden.rs"]
+mod axisymmetric_golden;
 
 /// Golden schema accepted by this leg (see `goldens/SCHEMA.md`).
 const GOLDEN_SCHEMA: &str = "opencourant-golden-v1";
@@ -240,12 +240,33 @@ fn main() {
 
     if failures == 0 {
         println!(
-            "VERDICT: PASS (integrity-only, no native axisymmetric solve: \
+            "SOLIDES_INTEGRITY: PASS (integrity-only, no native solve in this subcase: \
              no axisymmetric SOLIDES golden exists; all {} audited cases \
              are 3D /BRICK)",
             AUDITED_CASES.len()
         );
-        println!("SUCCESS: qa-fem-axisym");
+        let integrity=sonium_qa::QaResult::passed("fem.axisymmetric-solides-integrity.v1")
+            .metric("audited_files",AUDITED_CASES.len() as f64).minimum("audited_files",7.0)
+            .metric("numerical_solve_executed",0.0).maximum("numerical_solve_executed",0.0)
+            .formulation("golden-integrity only: schema/presence of external SOLIDES histories; no native solve")
+            .dimension("seven external 3D BRICK decks; excludes axisymmetric accuracy");
+        match integrity.to_json_line() {
+            Ok(json) => println!("QA_RESULT: {json}"),
+            Err(error) => {
+                eprintln!("FAILED: {error}");
+                std::process::exit(1);
+            }
+        }
+        match axisymmetric_golden::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
+            Ok(json) => {
+                println!("QA_RESULT: {json}");
+                println!("SUCCESS: qa-fem-axisym");
+            }
+            Err(error) => {
+                eprintln!("FAILED: qa-fem-axisym: {error}");
+                std::process::exit(1);
+            }
+        }
     } else {
         println!("VERDICT: FAIL ({failures} probe failures)");
         println!("FAILED: qa-fem-axisym");

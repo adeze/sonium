@@ -401,6 +401,63 @@ fn normalize(direction: [f64; 3]) -> [f64; 3] {
     ]
 }
 
+/// Equivalent stiffness of two springs in series in N/m.
+///
+/// Returns `k1 k2 / (k1 + k2)`; a zero pair returns 0.
+#[must_use]
+pub fn series_stiffness(k1: f64, k2: f64) -> f64 {
+    if k1 + k2 <= 0.0 {
+        0.0
+    } else {
+        k1 * k2 / (k1 + k2)
+    }
+}
+
+/// Equivalent stiffness of two springs in parallel in N/m.
+///
+/// Returns `k1 + k2`.
+#[must_use]
+pub fn parallel_stiffness(k1: f64, k2: f64) -> f64 {
+    k1 + k2
+}
+
+/// Bilinear hardening force of a Type-8 spring in N.
+///
+/// Takes relative displacement (m), initial stiffness (N/m),
+/// hardening stiffness (N/m), and knee displacement magnitude (m).
+/// Returns `k1 d` at or below the knee and
+/// `sign(d) (k1 dk + k2 (|d| - dk))` above it, continuous at the
+/// knee and odd in `d`.
+#[must_use]
+pub fn type8_bilinear_force(
+    displacement: f64,
+    k_initial: f64,
+    k_hardening: f64,
+    knee_displacement: f64,
+) -> f64 {
+    let knee = knee_displacement.abs();
+    let magnitude = displacement.abs();
+    let force = if magnitude <= knee {
+        k_initial * magnitude
+    } else {
+        k_initial * knee + k_hardening * (magnitude - knee)
+    };
+    force * displacement.signum()
+}
+
+/// Directional stiffness of a Type-25/32 spring in N/m.
+///
+/// Returns the tension stiffness for non-negative (elongation)
+/// displacement and the compression stiffness below zero.
+#[must_use]
+pub fn directional_stiffness(displacement: f64, k_tension: f64, k_compression: f64) -> f64 {
+    if displacement >= 0.0 {
+        k_tension
+    } else {
+        k_compression
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,6 +506,32 @@ mod tests {
         assert!((stiffness.matrix[6] + 10.0).abs() < 1.0e-12);
         let damping = bushing.damping_element();
         assert!((damping.matrix[12 * 5 + 5] - 6.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn stiffness_composition_matches_closed_form() {
+        assert!((series_stiffness(100.0, 300.0) - 75.0).abs() < 1.0e-12);
+        assert!((parallel_stiffness(100.0, 300.0) - 400.0).abs() < 1.0e-12);
+        assert_eq!(series_stiffness(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn type8_force_breaks_at_knee() {
+        // Below the knee: initial stiffness.
+        assert!((type8_bilinear_force(0.5, 100.0, 10.0, 1.0) - 50.0).abs() < 1.0e-12);
+        // At the knee: continuous from the initial leg.
+        assert!((type8_bilinear_force(1.0, 100.0, 10.0, 1.0) - 100.0).abs() < 1.0e-12);
+        // Above the knee: hardening leg.
+        assert!((type8_bilinear_force(3.0, 100.0, 10.0, 1.0) - 120.0).abs() < 1.0e-12);
+        // Odd symmetry on the compression side.
+        assert!((type8_bilinear_force(-3.0, 100.0, 10.0, 1.0) + 120.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn directional_stiffness_selects_side() {
+        assert_eq!(directional_stiffness(0.5, 100.0, 10.0), 100.0);
+        assert_eq!(directional_stiffness(0.0, 100.0, 10.0), 100.0);
+        assert_eq!(directional_stiffness(-0.5, 100.0, 10.0), 10.0);
     }
 
     #[test]

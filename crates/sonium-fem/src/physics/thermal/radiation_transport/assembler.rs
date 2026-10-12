@@ -49,7 +49,10 @@ pub fn assemble_discrete_ordinates(
 ) -> DiscreteOrdinatesSystem {
     angular.validate().expect("valid angular quadrature");
     let space = H1Space::new(degree);
-    let order = quadrature::required_order_for_stiffness(degree.degree());
+    // The combined streaming/extinction form includes a mass term of degree
+    // 2*p, which requires a higher order than the gradient-based stiffness.
+    let order = quadrature::required_order_for_stiffness(degree.degree())
+        .max(quadrature::required_order_for_mass(degree.degree()));
     let blocks = angular
         .directions
         .iter()
@@ -117,6 +120,49 @@ pub fn assemble_discrete_ordinates(
 mod tests {
     use super::*;
     use crate::mesh::unit_square_triangles;
+
+    #[test]
+    fn three_dimensional_polynomial_transport_has_exact_streaming_and_extinction_energy() {
+        let mesh = crate::mesh::unit_cube_tetrahedra(1);
+        let material = RadiativeMaterial {
+            absorption_coefficient: 2.0,
+            scattering_coefficient: 0.0,
+            asymmetry_parameter: 0.0,
+            refractive_index: 1.0,
+            density: 1.0,
+            specific_heat: 1.0,
+        };
+        let angular = AngularQuadrature::s2_3d();
+        for degree in [PolynomialDegree::P1, PolynomialDegree::P2] {
+            let space = H1Space::new(degree);
+            let coordinates = space.dof_coordinates(&mesh).expect("H1 coordinates");
+            let values: Vec<f64> = coordinates
+                .iter()
+                .map(|p| match degree {
+                    PolynomialDegree::P1 => p.iter().sum(),
+                    _ => p.iter().map(|x| x * x).sum(),
+                })
+                .collect();
+            // Unit-cube integrals for phi=x+y+z or phi=x^2+y^2+z^2:
+            // integral phi^2 = 5/2 or 19/15, and integral phi*d_x(phi)
+            // = 3/2 or 7/6 (the y/z derivatives give the same integral).
+            let (mass, streaming) = if degree == PolynomialDegree::P1 {
+                (2.5, 1.5)
+            } else {
+                (19.0 / 15.0, 7.0 / 6.0)
+            };
+            let system = assemble_discrete_ordinates(&mesh, degree, material, &angular);
+            for (a, direction) in angular.directions.iter().enumerate() {
+                let action = system.blocks[a][a].to_csr().matvec(&values);
+                let actual: f64 = values.iter().zip(action).map(|(u, au)| u * au).sum();
+                let expected = 2.0 * mass + streaming * direction.iter().sum::<f64>();
+                assert!(
+                    (actual - expected).abs() < 1e-11,
+                    "{degree:?} angle {a}: {actual} != {expected}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn s2_system_has_eight_angular_blocks_and_expected_dimensions() {

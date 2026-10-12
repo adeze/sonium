@@ -61,6 +61,7 @@
 
 use super::axisymmetric::{axisym_of_c1_stress, c1_of_axisym_strain};
 use super::plasticity::update::StressUpdateModel;
+use crate::physics::coupled::thermoelasticity::ThermoelasticMaterial;
 use sonium_compute::explicit_hourglass::{
     BULK_VISCOSITY_LINEAR_DEFAULT, BULK_VISCOSITY_QUADRATIC_DEFAULT, bulk_viscosity_q,
 };
@@ -541,6 +542,36 @@ fn diagonal(p0: [f64; 2], p1: [f64; 2]) -> f64 {
     (dr * dr + dz * dz).sqrt()
 }
 
+/// Fully constrained thermal stress of a QUAD ring in Pa.
+///
+/// Returns axisymmetric `[rr, zz, th, rz]`: heating a clamped ring
+/// loads the three normal components with the constrained thermal
+/// stress (negative in compression) and leaves the shear at zero.
+/// Reuses [`ThermoelasticMaterial::constrained_thermal_stress_3d`];
+/// the free thermal strain is
+/// [`thermal_strain`](ThermoelasticMaterial::thermal_strain).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::coupled::thermoelasticity::ThermoelasticMaterial;
+/// use sonium_fem::physics::solid::axisym_explicit::quad_ring_thermal_stress;
+///
+/// let steel = ThermoelasticMaterial {
+///     young_modulus: 200.0e9,
+///     poisson_ratio: 0.3,
+///     thermal_expansion: 12.0e-6,
+///     reference_temperature: 293.0,
+/// };
+/// let stress = quad_ring_thermal_stress(&steel, 393.0);
+/// assert!(stress[0] < 0.0 && stress[2] < 0.0 && stress[3] == 0.0);
+/// ```
+#[must_use]
+pub fn quad_ring_thermal_stress(material: &ThermoelasticMaterial, temperature: f64) -> [f64; 4] {
+    let constrained = material.constrained_thermal_stress_3d(temperature);
+    [-constrained, -constrained, -constrained, 0.0]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -557,6 +588,15 @@ mod tests {
 
     fn steel_params() -> AxisymExplicitParams {
         AxisymExplicitParams::new(7800.0, 4500.0)
+    }
+
+    fn steel_thermo() -> ThermoelasticMaterial {
+        ThermoelasticMaterial {
+            young_modulus: 200.0e9,
+            poisson_ratio: 0.3,
+            thermal_expansion: 12.0e-6,
+            reference_temperature: 293.0,
+        }
     }
 
     #[test]
@@ -578,6 +618,21 @@ mod tests {
         for mass in masses {
             assert!((mass - 7800.0 * geom.volume / 4.0).abs() < 1e-12);
         }
+    }
+
+    #[test]
+    fn ring_thermal_stress_matches_constrained_closed_form() {
+        let steel = steel_thermo();
+        // Independent closed form: -3 K alpha dT on the normals.
+        let bulk = 200.0e9 / (3.0 * (1.0 - 2.0 * 0.3));
+        let want = -3.0 * bulk * 12.0e-6 * 100.0;
+        let stress = quad_ring_thermal_stress(&steel, 393.0);
+        for component in &stress[0..3] {
+            assert!((component - want).abs() / want.abs() < 1.0e-12);
+        }
+        assert_eq!(stress[3], 0.0);
+        // Reference temperature carries no stress.
+        assert_eq!(quad_ring_thermal_stress(&steel, 293.0), [0.0; 4]);
     }
 
     #[test]

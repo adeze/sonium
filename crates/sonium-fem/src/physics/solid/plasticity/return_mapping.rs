@@ -5,7 +5,7 @@
 //!
 //! Works in 3D (6 Voigt components) and 2D plane stress/strain (3 components).
 
-use super::material::{J2Material, PlasticState};
+use super::material::{HardeningLaw, J2Material, PlasticState};
 
 /// Result of a stress update via return mapping.
 #[derive(Debug, Clone)]
@@ -99,10 +99,25 @@ pub fn return_mapping_3d(
         // Plastic step: radial return
         let h_iso = material.isotropic_hardening_slope(state.equiv_plastic_strain);
         let h_kin = material.kinematic_hardening_modulus();
-        let h_bar = h_iso + h_kin;
+        let mut h_bar = h_iso + h_kin;
 
-        // Plastic multiplier: delta_gamma = f_trial / (3G + H_bar)
-        let delta_gamma = f_trial / (3.0 * g + h_bar);
+        // Linear laws have the closed-form multiplier below. Voce needs the
+        // yield stress at the updated plastic strain, not a frozen old slope.
+        let mut delta_gamma = f_trial / (3.0 * g + h_bar);
+        if matches!(material.hardening, HardeningLaw::VoceSaturation { .. }) {
+            for _ in 0..20 {
+                let ep = state.equiv_plastic_strain + delta_gamma;
+                h_bar = material.isotropic_hardening_slope(ep) + h_kin;
+                let residual =
+                    q_trial - (3.0 * g + h_kin) * delta_gamma - material.current_yield_stress(ep);
+                if residual.abs() <= 1e-13 * q_trial.max(sigma_y) {
+                    break;
+                }
+                delta_gamma += residual / (3.0 * g + h_bar);
+            }
+            h_bar = material.isotropic_hardening_slope(state.equiv_plastic_strain + delta_gamma)
+                + h_kin;
+        }
 
         // Updated deviatoric stress: s = s_trial * (1 - 3G*dg/q_trial)
         // This is the radial return: s_new = sigma_y/q_trial * s_trial
@@ -115,10 +130,8 @@ pub fn return_mapping_3d(
             stress[i] = ratio * s_trial[i] + (1.0 - ratio) * state.back_stress[i];
         }
 
-        // Consistent tangent: theta_bar depends on isotropic hardening only
-        // (kinematic hardening affects the yield surface translation but not
-        //  the isotropic expansion term in the consistent tangent).
-        let tangent = consistent_tangent_3d(k, g, q_trial, delta_gamma, &xi, h_iso);
+        // Differentiate the solved yield consistency equation at updated ep.
+        let tangent = consistent_tangent_3d(k, g, q_trial, delta_gamma, &xi, h_bar);
 
         StressUpdate {
             stress: stress.to_vec(),
@@ -231,40 +244,32 @@ fn elastic_tangent_3d(k: f64, g: f64) -> Vec<f64> {
 ///
 /// Reference: Simo & Hughes (1998), Computational Inelasticity, Eq. 3.7.10.
 ///
-/// For combined isotropic + kinematic hardening, theta_bar depends only on
-/// the isotropic modulus h_iso (not h_bar = h_iso + h_kin). The kinematic
-/// hardening affects the yield surface translation via the back-stress but
-/// does not modify the isotropic expansion term in the consistent tangent.
+/// Differentiates the returned stress at fixed committed history. The
+/// hardening slope is the sum used in the plastic-multiplier denominator.
 fn consistent_tangent_3d(
     k: f64,
     g: f64,
     q_trial: f64,
     delta_gamma: f64,
     xi: &[f64; 6],
-    h_iso: f64,
+    h_bar: f64,
 ) -> Vec<f64> {
     let theta = 1.0 - 3.0 * g * delta_gamma / q_trial;
-    // theta_bar = 1/(1 + h_iso/(3G)) - (1 - theta)
-    // This is the standard formula for J2 plasticity with isotropic hardening.
-    // For kinematic hardening, the back-stress evolution is handled separately
-    // in update_plastic_state().
-    let theta_bar = 1.0 / (1.0 + h_iso / (3.0 * g)) - (1.0 - theta);
+    let theta_bar = 1.0 / (1.0 + h_bar / (3.0 * g)) - (1.0 - theta);
     let g2 = 2.0 * g;
 
-    // Flow direction n = xi / q_trial in Voigt notation.
-    // For the n⊗n term in Voigt, we need Voigt weighting factors:
-    //   w(I) = 1 for I < 3 (normal), sqrt(2) for I >= 3 (shear)
-    // So (n⊗n)_Voigt[I,J] = w(I)*w(J) * n_tensor[I] * n_tensor[J]
-    // where n_tensor = xi / q_trial.
+    // Flow direction n = xi / q_trial in tensor-stress Voigt notation.
+    // Differentiating q_trial with respect to engineering strain gives
+    // 3G*n for both normal and shear columns. Therefore the rank-one
+    // correction is 3G*theta_bar*n⊗n; Mandel sqrt(2) weights do not apply
+    // to this tensor-stress/engineering-strain matrix.
     let n_tensor: Vec<f64> = xi.iter().map(|&x| x / q_trial).collect();
 
-    // C_ep = K*(1⊗1) + 2G*theta*I_dev - 2G*theta_bar*(n⊗n)_Voigt
+    // C_ep = K*(1⊗1) + 2G*theta*I_dev - 3G*theta_bar*(n⊗n).
     let mut c = vec![0.0; 36];
 
     for i in 0..6 {
-        let w_i = if i < 3 { 1.0 } else { 2.0_f64.sqrt() };
         for j in 0..6 {
-            let w_j = if j < 3 { 1.0 } else { 2.0_f64.sqrt() };
             let idx = i * 6 + j;
 
             // Volumetric: K * delta_vol
@@ -282,8 +287,7 @@ fn consistent_tangent_3d(
                 0.0
             };
             c[idx] += g2 * theta * i_dev;
-            // Plastic correction with Voigt weighting
-            c[idx] -= g2 * theta_bar * w_i * w_j * n_tensor[i] * n_tensor[j];
+            c[idx] -= 3.0 * g * theta_bar * n_tensor[i] * n_tensor[j];
         }
     }
 
@@ -424,6 +428,80 @@ fn invert_3x3(m: &[f64; 9]) -> [f64; 9] {
 mod tests {
     use super::super::material::{HardeningLaw, J2Material, PlasticState};
     use super::*;
+
+    #[test]
+    fn voce_return_satisfies_updated_yield_surface_for_large_increments() {
+        let material = J2Material::new(
+            200e9,
+            0.3,
+            250e6,
+            HardeningLaw::VoceSaturation { q: 300e6, b: 5.0 },
+        );
+        let mut state = PlasticState::new_3d();
+        for strain in [
+            [0.1, -0.05, -0.05, 0.0, 0.0, 0.0],
+            [0.03, -0.01, -0.02, 0.02, -0.01, 0.01],
+        ] {
+            let update = return_mapping_3d(&material, &state, &strain);
+            assert!(update.yielding);
+            let yield_stress = material.current_yield_stress(
+                state.equiv_plastic_strain + update.delta_equiv_plastic_strain,
+            );
+            let equivalent = von_mises_stress_from_slice(&update.stress);
+            assert!(
+                (equivalent - yield_stress).abs() / yield_stress < 1e-11,
+                "updated yield mismatch: equivalent={equivalent}, yield={yield_stress}"
+            );
+            update_plastic_state(&mut state, &update, &material);
+        }
+    }
+
+    #[test]
+    fn plastic_tangent_differentiates_stress_in_engineering_voigt_order() {
+        for hardening in [
+            HardeningLaw::Perfect,
+            HardeningLaw::VoceSaturation { q: 300e6, b: 5.0 },
+            HardeningLaw::LinearIsotropic { modulus: 1e9 },
+            HardeningLaw::LinearKinematic { modulus: 2e9 },
+            HardeningLaw::Combined {
+                isotropic_modulus: 1e9,
+                kinematic_modulus: 2e9,
+            },
+        ] {
+            let material = J2Material::new(200e9, 0.3, 250e6, hardening);
+            let mut state = PlasticState::new_3d();
+            let preload =
+                return_mapping_3d(&material, &state, &[0.002, -0.001, 0.0, 0.001, 0.0, 0.0]);
+            update_plastic_state(&mut state, &preload, &material);
+            for strain in [
+                [0.005, -0.002, 0.001, 0.004, 0.003, -0.002],
+                [0.0, 0.0, 0.0, 0.02, 0.0, 0.0],
+            ] {
+                let update = return_mapping_3d(&material, &state, &strain);
+                assert!(update.yielding);
+                // Perturb each engineering strain independently. Mixed and
+                // pure-shear paths expose both coefficient and ordering errors.
+                let h = 1e-7;
+                for column in 0..6 {
+                    let mut plus = strain;
+                    let mut minus = strain;
+                    plus[column] += h;
+                    minus[column] -= h;
+                    let a = return_mapping_3d(&material, &state, &plus);
+                    let b = return_mapping_3d(&material, &state, &minus);
+                    for row in 0..6 {
+                        let derivative = (a.stress[row] - b.stress[row]) / (2.0 * h);
+                        let error = (derivative - update.tangent[row * 6 + column]).abs()
+                            / material.youngs_modulus;
+                        assert!(
+                            error < 1e-7,
+                            "hardening={hardening:?}, row={row}, column={column}, normalized tangent error={error}"
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     #[test]
     fn test_elastic_step_no_yielding() {

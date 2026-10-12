@@ -1,7 +1,10 @@
-//! Analytical reference check.
+//! Analytical reference-only check; no numerical FEM accuracy claim.
 //!
 //! This binary validates a closed-form benchmark or helper without assembling a `sonium_fem` finite-element system.
 //! Keep FEM solver and assembly validations in binaries that import `sonium_fem`.
+
+#[path = "support/reference_result.rs"]
+mod reference_result;
 
 use sonium_qa::analytical::ns_burgers_viscous_shock;
 
@@ -18,6 +21,7 @@ fn main() {
         assert!((u_center - 0.5).abs() < 1e-12);
         println!("Burgers shock center velocity = {:.6e}", u_center);
     });
+    reference_result::emit("reference.fem-ns-1d-burgers.v1", result.is_ok());
     if result.is_ok() {
         println!("SUCCESS");
     } else {

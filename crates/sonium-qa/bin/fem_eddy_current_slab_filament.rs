@@ -18,7 +18,10 @@ fn main() {
             near, far
         );
     });
-    reference_result::emit("reference.fem-eddy-current-slab-filament.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-eddy-current-slab-filament.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

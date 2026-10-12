@@ -123,6 +123,37 @@ pub fn lighthill_far_field_pressure(
     Ok(-k * k * green * directional_contraction_raw(&source.stress_moment, geometry.direction))
 }
 
+/// Acoustic power of a compact jet station via Lighthill's eighth-power law.
+///
+/// Returns `efficiency * rho * U^8 * L^2 / c^5` in W for flow speed
+/// `U` (m/s), density (kg/m^3), nozzle length scale (m), ambient sound
+/// speed (m/s), and radiation efficiency (dimensionless). Doubling the
+/// flow speed multiplies the power by 256. M. J. Lighthill, "On Sound
+/// Generated Aerodynamically. II. Turbulence as a Source of Sound",
+/// *Proceedings of the Royal Society A* 222 (1954), 1--32.
+pub fn lighthill_acoustic_power(
+    flow_velocity: f64,
+    density: f64,
+    length_scale: f64,
+    speed_of_sound: f64,
+    efficiency: f64,
+) -> Result<f64, AeroacousticsError> {
+    require_finite("flow_velocity", flow_velocity)?;
+    require_positive("density", density)?;
+    require_positive("length_scale", length_scale)?;
+    require_positive("speed_of_sound", speed_of_sound)?;
+    if !efficiency.is_finite() || efficiency < 0.0 {
+        return Err(AeroacousticsError::NonPositiveParameter {
+            name: "efficiency",
+            value: efficiency,
+        });
+    }
+    Ok(
+        efficiency * density * flow_velocity.powi(8) * length_scale.powi(2)
+            / speed_of_sound.powi(5),
+    )
+}
+
 struct SourceGeometry {
     distance: f64,
     direction: [f64; 3],
@@ -204,5 +235,17 @@ mod tests {
         let exact = lighthill_pressure(&source, [100.0, 0.0, 0.0], 10.0, 1.0).unwrap();
         let far = lighthill_far_field_pressure(&source, [100.0, 0.0, 0.0], 10.0, 1.0).unwrap();
         assert!((exact - far).norm() / far.norm() < 2.1e-3);
+    }
+
+    #[test]
+    fn acoustic_power_follows_eighth_power_law() {
+        let base = lighthill_acoustic_power(50.0, 1.2, 0.5, 340.0, 3.0e-5).unwrap();
+        // Absolute value matches K rho U^8 L^2 / c^5.
+        let want = 3.0e-5 * 1.2 * 50.0f64.powi(8) * 0.5f64.powi(2) / 340.0f64.powi(5);
+        assert!((base - want).abs() / want < 1e-12);
+        // Doubling the jet speed multiplies the power by 256.
+        let doubled = lighthill_acoustic_power(100.0, 1.2, 0.5, 340.0, 3.0e-5).unwrap();
+        assert!((doubled / base - 256.0).abs() < 1e-9);
+        assert!(lighthill_acoustic_power(50.0, 1.2, 0.5, 340.0, -1.0).is_err());
     }
 }

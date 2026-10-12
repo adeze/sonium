@@ -3165,6 +3165,13 @@ pub enum Law66Rate {
     },
 }
 
+/// Default LAW66 temperature in K.
+///
+/// Room-temperature station shared by the virgin [`Law66State`] and the
+/// default [`Law66`] reference temperature; matches the W19 golden-test
+/// room station (293/600/900 K paths).
+pub const LAW66_DEFAULT_TEMPERATURE: f64 = 293.0;
+
 /// Tension-compression tabulated metal law (`/MAT/LAW66`).
 ///
 /// Blends separate tension and compression hardening curves by pressure:
@@ -3175,7 +3182,10 @@ pub enum Law66Rate {
 /// Rate effects follow [`Law66Rate`]; the Cowper-Symonds form adds the
 /// overstress to `initial_yield` when it is positive and multiplies
 /// otherwise (card p.595). Combined hardening via `chard`; no rupture
-/// inputs on the card (failure models stay in `/FAIL`).
+/// inputs on the card (failure models stay in `/FAIL`). Thermal
+/// softening scales the yield by the Johnson-Cook factor `1 - T*^m`
+/// when enabled via [`with_thermal`](Law66::with_thermal); off by
+/// default, and the [`Law66Shell`] path stays isothermal.
 ///
 /// # Examples
 ///
@@ -3209,10 +3219,19 @@ pub struct Law66 {
     pub plastic_rate: bool,
     /// Initial yield for the additive rate form (0 multiplies).
     pub initial_yield: f64,
+    /// Thermal softening exponent, dimensionless (0 disables).
+    pub thermal_exponent: f64,
+    /// Melt temperature in K (`<= reference` disables).
+    pub melt_temperature: f64,
+    /// Reference temperature in K (factor is 1 there).
+    pub reference_temperature: f64,
 }
 
 impl Law66 {
     /// Creates a LAW66 material from moduli, curves, limits, rate.
+    ///
+    /// Thermal softening starts disabled (`thermal_exponent = 0`); use
+    /// [`with_thermal`](Law66::with_thermal) to enable it.
     ///
     /// # Panics
     ///
@@ -3250,7 +3269,27 @@ impl Law66 {
             rate,
             plastic_rate,
             initial_yield,
+            thermal_exponent: 0.0,
+            melt_temperature: 0.0,
+            reference_temperature: LAW66_DEFAULT_TEMPERATURE,
         }
+    }
+
+    /// Enables Johnson-Cook thermal softening with exponent and range.
+    ///
+    /// Takes the softening exponent `m` (dimensionless), melt
+    /// temperature (K), and reference temperature (K); the yield
+    /// scales by `1 - T*^m` with `T*` the homologous temperature.
+    pub fn with_thermal(
+        mut self,
+        thermal_exponent: f64,
+        melt_temperature: f64,
+        reference_temperature: f64,
+    ) -> Self {
+        self.thermal_exponent = thermal_exponent;
+        self.melt_temperature = melt_temperature;
+        self.reference_temperature = reference_temperature;
+        self
     }
 
     /// Aluminum after the `/MAT/LAW66` card example (p.594).
@@ -3420,6 +3459,39 @@ impl Law66 {
     pub fn bulk_modulus(&self) -> f64 {
         self.youngs_modulus / (3.0 * (1.0 - 2.0 * self.poisson_ratio))
     }
+
+    /// Whether thermal softening applies to this material.
+    pub fn has_thermal(&self) -> bool {
+        self.thermal_exponent > 0.0 && self.melt_temperature > self.reference_temperature
+    }
+
+    /// Homologous temperature in `[0, 1]`.
+    pub fn homologous_temperature(&self, temperature: f64) -> f64 {
+        if !self.has_thermal() {
+            return 0.0;
+        }
+        let span = self.melt_temperature - self.reference_temperature;
+        ((temperature - self.reference_temperature) / span).clamp(0.0, 1.0)
+    }
+
+    /// Thermal factor `1 - T*^m` (1 when thermal effects are off).
+    pub fn thermal_factor(&self, temperature: f64) -> f64 {
+        if !self.has_thermal() {
+            return 1.0;
+        }
+        1.0 - self
+            .homologous_temperature(temperature)
+            .powf(self.thermal_exponent)
+    }
+
+    /// Static blended yield at plastic strain, pressure, temperature.
+    ///
+    /// Takes equivalent plastic strain, OpenCourant pressure (Pa,
+    /// positive in compression), and temperature (K); returns Pa. The
+    /// rate-free blend scales by [`thermal_factor`](Law66::thermal_factor).
+    pub fn static_yield_at_temperature(&self, ep: f64, pressure: f64, temperature: f64) -> f64 {
+        self.static_yield(ep, pressure) * self.thermal_factor(temperature)
+    }
 }
 
 /// History state of one LAW66 material point.
@@ -3431,17 +3503,20 @@ pub struct Law66State {
     pub back_stress: [f64; 6],
     /// Accumulated equivalent plastic strain.
     pub equiv_plastic_strain: f64,
+    /// Temperature in K.
+    pub temperature: f64,
     /// Whether the last committed step was yielding.
     pub yielding: bool,
 }
 
 impl Law66State {
-    /// Creates a virgin state.
-    pub fn new() -> Self {
+    /// Creates a virgin state at the given temperature in K.
+    pub fn new(temperature: f64) -> Self {
         Self {
             stress: [0.0; 6],
             back_stress: [0.0; 6],
             equiv_plastic_strain: 0.0,
+            temperature,
             yielding: false,
         }
     }
@@ -3449,7 +3524,7 @@ impl Law66State {
 
 impl Default for Law66State {
     fn default() -> Self {
-        Self::new()
+        Self::new(LAW66_DEFAULT_TEMPERATURE)
     }
 }
 
@@ -3483,18 +3558,20 @@ impl StressUpdateModel for Law66 {
         // branches lag one step here; the blend has no cap).
         let pressure = -(state.stress[0] + state.stress[1] + state.stress[2]) / 3.0;
         if update.yielding && update.delta_equiv_plastic_strain > 0.0 && self.chard > 0.0 {
+            let thermal = self.thermal_factor(state.temperature);
             let q = von_mises_c1(&update.stress);
             let ep_new = state.equiv_plastic_strain;
             let ep_old = ep_new - update.delta_equiv_plastic_strain;
-            let quasi_new = self.flow_stress(ep_new, 0.0, pressure);
+            let quasi_new = self.flow_stress(ep_new, 0.0, pressure) * thermal;
             let ratio = commit_rate_ratio(q, quasi_new);
             let step = kinematic_step_c1(
                 self.chard,
-                self.flow_stress(ep_old.max(0.0), 0.0, pressure),
+                self.flow_stress(ep_old.max(0.0), 0.0, pressure) * thermal,
                 quasi_new,
                 ratio,
                 f64::INFINITY,
                 self.hardening_slope(ep_new, 0.0, pressure).max(0.0)
+                    * thermal
                     * update.delta_equiv_plastic_strain,
             );
             let dir = if step > 0.0 {
@@ -3544,7 +3621,8 @@ impl Law66 {
         rate: f64,
         pressure: f64,
     ) -> ([f64; 6], [f64; 36], f64, bool, [f64; 6]) {
-        let sig0 = self.flow_stress(0.0, rate, pressure);
+        let thermal = self.thermal_factor(state.temperature);
+        let sig0 = self.flow_stress(0.0, rate, pressure) * thermal;
         if self.chard == 0.0 {
             let (s, t, d, y) = j2_return_c1(
                 self.youngs_modulus,
@@ -3552,8 +3630,8 @@ impl Law66 {
                 &state.stress,
                 state.equiv_plastic_strain,
                 d_eps,
-                |ep| self.flow_stress(ep, rate, pressure),
-                |ep| self.hardening_slope(ep, rate, pressure),
+                |ep| self.flow_stress(ep, rate, pressure) * thermal,
+                |ep| self.hardening_slope(ep, rate, pressure) * thermal,
             );
             (s, t, d, y, state.back_stress)
         } else {
@@ -3566,8 +3644,8 @@ impl Law66 {
                 self.chard,
                 sig0,
                 d_eps,
-                |ep| self.flow_stress(ep, rate, pressure),
-                |ep| self.hardening_slope(ep, rate, pressure),
+                |ep| self.flow_stress(ep, rate, pressure) * thermal,
+                |ep| self.hardening_slope(ep, rate, pressure) * thermal,
             )
         }
     }
@@ -4300,7 +4378,7 @@ mod tests {
         assert!((law.static_yield(0.05, -10.0) - 125.0e6).abs() < 1.0);
         assert!((law.static_yield(0.05, 10.0) - 325.0e6).abs() < 1.0);
         // Uniaxial drivers land on their own sides.
-        let mut tensile = Law66State::new();
+        let mut tensile = Law66State::new(LAW66_DEFAULT_TEMPERATURE);
         let pull = drive_uniaxial_stress(&law, &mut tensile, 0.05, 100);
         let last = pull.last().unwrap();
         assert!(
@@ -4308,7 +4386,7 @@ mod tests {
             "tensile {}",
             last.stress_xx
         );
-        let mut compressive = Law66State::new();
+        let mut compressive = Law66State::new(LAW66_DEFAULT_TEMPERATURE);
         let push = drive_uniaxial_stress(&law, &mut compressive, -0.05, 100);
         let first = push.last().unwrap();
         assert!(
@@ -4316,6 +4394,29 @@ mod tests {
             "compressive {}",
             first.stress_xx
         );
+    }
+
+    #[test]
+    fn law66_thermal_softening_decreases_with_temperature() {
+        // Disabled by default: unit factor at any temperature.
+        let cold = Law66::card_aluminum();
+        assert!(!cold.has_thermal());
+        assert_eq!(cold.thermal_factor(900.0), 1.0);
+        // Enabled: static yield strictly decreases over 293/600/900 K.
+        let hot = Law66::card_aluminum().with_thermal(1.0, 900.0, 293.0);
+        assert!(hot.has_thermal());
+        let y293 = hot.static_yield_at_temperature(0.01, 0.0, 293.0);
+        let y600 = hot.static_yield_at_temperature(0.01, 0.0, 600.0);
+        let y900 = hot.static_yield_at_temperature(0.01, 0.0, 900.0);
+        assert!(y293 > y600 && y600 > y900, "{y293} {y600} {y900}");
+        // Reference station keeps the full isothermal yield.
+        assert!((y293 - hot.static_yield(0.01, 0.0)).abs() < 1e-9);
+        // Melt station carries no strength.
+        assert_eq!(y900, 0.0);
+        // State constructor carries the temperature.
+        let state = Law66State::new(600.0);
+        assert_eq!(state.temperature, 600.0);
+        assert_eq!(Law66State::default().temperature, LAW66_DEFAULT_TEMPERATURE);
     }
 
     fn law66_shell_flat(yield_pa: f64) -> Law66Shell {

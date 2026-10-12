@@ -18,7 +18,10 @@ fn main() {
             w
         );
     });
-    reference_result::emit("reference.fem-biharmonic-ss-circular-point-load.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-biharmonic-ss-circular-point-load.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

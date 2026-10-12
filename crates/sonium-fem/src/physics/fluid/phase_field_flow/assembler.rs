@@ -22,6 +22,11 @@ fn append_scaled(target: &mut TripletMatrix<f64>, source: &TripletMatrix<f64>, s
     }
 }
 
+/// Assemble a mixed phase/chemical-potential linearization.
+///
+/// The advection rule integrates polynomial velocities up to the phase-space
+/// degree. For higher-degree or nonpolynomial velocity coefficients, callers
+/// can assemble [`PhaseAdvectionForm`] with their chosen quadrature rule.
 pub fn assemble_linearized_cahn_hilliard<U>(
     mesh: &Mesh,
     degree: PolynomialDegree,
@@ -37,6 +42,10 @@ where
     let space = H1Space::new(degree);
     let mass_order = quadrature::required_order_for_mass(degree.degree());
     let stiffness_order = quadrature::required_order_for_stiffness(degree.degree());
+    // A same-degree FE velocity gives value * velocity * gradient degree
+    // 3p-1. The chemical tangent also includes a mass term of degree 2p.
+    let advection_order = (3 * degree.degree() - 1).max(mass_order);
+    let tangent_order = stiffness_order.max(mass_order);
     let mass = crate::assembly::assemble_bilinear(
         &PhaseMassForm { coefficient: 1.0 },
         &space,
@@ -51,7 +60,7 @@ where
         &space,
         &space,
         mesh,
-        stiffness_order,
+        advection_order,
     );
     append_scaled(&mut block_00, &advection, 1.0);
 
@@ -73,7 +82,7 @@ where
         &space,
         &space,
         mesh,
-        stiffness_order,
+        tangent_order,
     );
     let mut block_11 = TripletMatrix::new(mass.num_rows, mass.num_cols);
     append_scaled(&mut block_11, &mass, -1.0);
@@ -91,7 +100,58 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mesh::unit_square_triangles;
+    use crate::mesh::{unit_cube_tetrahedra, unit_square_triangles};
+
+    #[test]
+    fn polynomial_phase_blocks_match_independent_cube_integrals() {
+        let mesh = unit_cube_tetrahedra(1);
+        let material = PhaseFieldFluid {
+            density_minus: 1.3,
+            density_plus: 1.3,
+            viscosity_minus: 0.3,
+            viscosity_plus: 0.3,
+            surface_tension: 0.188_561_808_316_412_7,
+            interface_thickness: 0.5,
+            mobility: 0.2,
+        };
+        // P=sum(x_d^p), velocity=(x^p,y^p,z^p). Independent unit-cube
+        // integrals of P^2, |grad(P)|^2 and P*velocity.grad(P).
+        for (degree, p, mass, stiffness, advection) in [
+            (PolynomialDegree::P1, 1, 5.0 / 2.0, 3.0, 5.0 / 2.0),
+            (PolynomialDegree::P2, 2, 19.0 / 15.0, 4.0, 2.0),
+            (PolynomialDegree::P3, 3, 45.0 / 56.0, 27.0 / 5.0, 7.0 / 4.0),
+        ] {
+            let space = H1Space::new(degree);
+            let values: Vec<_> = space
+                .dof_coordinates(&mesh)
+                .unwrap()
+                .iter()
+                .map(|point| point.iter().map(|v| v.powi(p)).sum::<f64>())
+                .collect();
+            let system =
+                assemble_linearized_cahn_hilliard(&mesh, degree, material, 0.2, 0.0, |x, y, z| {
+                    [x.powi(p), y.powi(p), z.powi(p)]
+                });
+            let pair = |matrix: &TripletMatrix<f64>| {
+                values
+                    .iter()
+                    .zip(matrix.to_csr().matvec(&values))
+                    .map(|(a, b)| a * b)
+                    .sum::<f64>()
+            };
+            for (actual, expected) in [
+                (pair(&system.block_00), mass / 0.2 + advection),
+                (pair(&system.block_01), 0.2 * stiffness),
+                (pair(&system.block_10), -0.4 * mass + 0.1 * stiffness),
+                (pair(&system.block_11), -mass),
+            ] {
+                assert!(
+                    (actual - expected).abs() < 3e-12 * expected.abs().max(1.0),
+                    "{degree:?}: actual={actual:e}, expected={expected:e}"
+                );
+            }
+        }
+    }
 
     #[test]
     fn mixed_phase_chemical_system_has_expected_dimensions_and_mass_null_flux() {

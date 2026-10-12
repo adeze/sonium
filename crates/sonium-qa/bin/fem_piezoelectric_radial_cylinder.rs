@@ -14,7 +14,10 @@ fn main() {
         assert!(c > 0.0);
         println!("Piezo radial-cylinder capacitance per length = {:.6e}", c);
     });
-    reference_result::emit("reference.fem-piezoelectric-radial-cylinder.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-piezoelectric-radial-cylinder.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

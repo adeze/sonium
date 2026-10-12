@@ -22,7 +22,10 @@ fn main() {
             u_theta_side
         );
     });
-    reference_result::emit("reference.fem-aeroacoustics-cylinder-potential.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-aeroacoustics-cylinder-potential.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {

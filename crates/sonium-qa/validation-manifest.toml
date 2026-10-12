@@ -12788,10 +12788,10 @@ owner = "fem"
 crate = "sonium-qa"
 bin = "qa-fem-electroacoustics-validation"
 entry_point = "driven coupled electroacoustic solve"
-method = "5 Hz driven coupled solve with residual, decoupled-limit, transpose-reciprocity, and power-balance gates"
+method = "5 Hz driven coupled solve with residual, decoupled-limit, physical scaled reciprocity, and power-balance gates"
 scalar = "Complex64/f64"
 dimension = "75-DOF coupled 2D problem"
-reference = "independent block solve, transpose reciprocity identity, and power balance"
+reference = "independent decoupled block solve, physical scaled reciprocity under swapped forward drives, and power balance"
 reference_checksum = "analytic"
 norm = "algebraic residual, decoupled error, reciprocity, and power imbalance"
 tolerance = "reciprocity and power imbalance <= 1e-9"
@@ -13897,3 +13897,644 @@ timeout_seconds = 600
 required_hardware = "cpu"
 features = ["qa-binaries"]
 artifacts = "QA_RESULT JSONL separate form contract and solved coupled thermoelectric MMS records"
+
+[[case]]
+id = "fem.reacting-flow-3d-mms.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-reacting-flow-3d"
+entry_point = "coupled three-species Arrhenius and reaction-heat 3D manufactured solution"
+method = "production species and thermal transport, solved-concentration/temperature Arrhenius sources, coupled Picard sparse solves, P1 convergence and P2 reproduction"
+scalar = "f64"
+dimension = "3D unit cube, prescribed velocity (0.3,-0.2,0.5), three species and temperature, P1 4/8/16 cells and P2 2 cells"
+reference = "independent polynomial ADR strong equations; A+B-to-AB, rate=20 exp(-5000/(R*T))*cA*cB, sources=(-r,-r,r), reaction heat=5r"
+reference_checksum = "analytic:3d-reacting-species-heat-mms:v1"
+norm = "species/temperature-rise and gradient L2 errors, spatial rates, each original PDE residual, assembled reaction mass conservation and heat-transfer consistency"
+tolerance = "field rates >= 1.8; gradient rates >= 0.8; P2 field/gradient error <= 1e-9; original residual <= 1e-9; mass/heat transfer <= 1e-12; four missing-term controls"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL separate species form contract and solved reacting-species/heat MMS records"
+
+[[case]]
+id = "fem.porous-flow-3d-transient-darcy.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-porous-flow-3d"
+entry_point = "transient anisotropic 3D Darcy pressure and flux manufactured solution"
+method = "production permeability/viscosity pressure form, storage and independent source; CN evolving history; sparse Cholesky; P1 spatial and P2 temporal refinement"
+scalar = "f64"
+dimension = "3D unit cube; mixed xyz pressure polynomial, full tensor mobility, nonunit viscosity, P1 6/12/24 cells and P2 2 cells with 4/8/16 time steps"
+reference = "S*p_t-div(M grad p)=f; p=g(t)*(1+x^2+2y^2+3z^2+xy+2yz+3xz); flux=-M grad p; independent Hessian contraction and storage derivative"
+reference_checksum = "analytic:3d-anisotropic-transient-Darcy:v1"
+norm = "pressure/flux L2 errors, spatial/time rates, original free-DOF residual, evolving boundary trace, weak-boundary flux plus storage/source mass balance"
+tolerance = "pressure spatial/time rates >= 1.8; flux spatial/time rates >= 0.9/1.8; fine pressure <= 1e-3; residual/mass balance <= 1e-9; three omitted-term history controls"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL separate Darcy form contract and solved transient pressure/flux records"
+
+[[case]]
+id = "fem.acoustics-driven-sweep.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-acoustics-integration"
+entry_point = "driven source/impedance pressure and cached frequency sweep"
+method = "native acoustic normal-velocity and Robin assembly, GMRES/direct solves, cached versus fresh Helmholtz triplets and solves"
+scalar = "Complex64"
+dimension = "2D unit square with opposite uniform source/anechoic edges and zero-flux side walls"
+reference = "independent exact one-dimensional Helmholtz pressure; fresh stiffness and mass assembly and direct solve at each sweep frequency"
+reference_checksum = "analytic:driven-duct-and-fresh-triplets:v1"
+norm = "relative nodal pressure, GMRES/direct difference, true residual, cached/fresh solution and matrix difference"
+tolerance = "pressure 100/1Hz <=2%/1%; GMRES/direct <=1e-6; residual <=1e-8; sweep solution/matrix <=1e-9/1e-12; three swept solves"
+tier = "physics-gate"
+timeout_seconds = 300
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL plus qa_results_fem_acoustics.json and VTU fields under SONIUM_OUTPUT_DIR"
+
+[[case]]
+id = "fem.electroacoustics-cavity-bar.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-electroacoustics-validation"
+entry_point = "independent solved damped cavity and clamped axial bar reference"
+method = "native 2D fluid/elastic/interface forms restricted to uniform transverse mode, harmonic solves at n8/16/32 and 10/20/30Hz"
+scalar = "Complex64/f64"
+dimension = "unit cavity and axial bar; uniform transverse mode of native 2D P1 scalar/vector forms, zero Poisson ratio"
+reference = "independent closed-form damped waves and interface impedance sum; weighted physical reciprocity and fluid/solid dissipation"
+reference_checksum = "analytic:unit-cavity-clamped-bar-exp-plus-iwt:v1"
+norm = "quadrature pressure/displacement relative errors and spatial rates, true residual, swapped-drive reciprocity, separate dissipation, omitted coupling control"
+tolerance = "pressure/displacement errors <=0.003 and rates >=1.8; residual/reciprocity/power <=1e-9; omitted coupling error >=0.9"
+tier = "physics-gate"
+timeout_seconds = 180
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL independent coupled pressure/displacement reference and original block-system metrics"
+
+[[case]]
+id = "fem.semiconductor-3d-coupled-mms.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-semiconductor-3d"
+entry_point = "self-consistent steady potential, electron and hole 3D MMS"
+method = "native carrier diffusion, signed drift, linear recombination and doping-charge forms; actual FE electric-field and mobile-charge feedback through scalar Poisson"
+scalar = "f64"
+dimension = "3D P1 tetrahedral cube n4/8/16 and exact quadratic P2 n2; all three fields have xyz curvature and mixed derivatives"
+reference = "independent quadratic potential/electron/hole strong-form sources, Einstein diffusivities and signed drift; steady native E.grad(c) model"
+reference_checksum = "analytic:3d-nonconservative-drift-linear-recombination-Poisson:v1"
+norm = "three field/gradient quadrature errors and convergence rates, exact P2 error, fresh coupled residual, weak charge balance, missing-term errors"
+tolerance = "field/gradient rates >=1.8/0.9; fine errors <=0.005/0.1; P2/residual/charge balance <=1e-9; five omitted-term errors >=1e-3"
+tier = "physics-gate"
+timeout_seconds = 300
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL form contract plus self-consistent native steady three-field numerical evidence"
+
+[[case]]
+id = "fem.radiation-transport-3d-s2-mms.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-radiation-transport-3d"
+entry_point = "solved grey isotropic eight-angle transport with spatial emission"
+method = "native discrete-ordinates blocks, cached sparse-LU angular source iteration, inflow-only Dirichlet data, native thermal emission and material heating"
+scalar = "f64"
+dimension = "3D tetrahedral P1 n3/6/12 and exact P2 n2, eight S2 directions with xyz streaming and mixed intensity fields"
+reference = "independent quadratic anisotropic intensities, G=4piF, flux divergence=0.8pi and spatial blackbody radiance; steady grey isotropic S2 scope"
+reference_checksum = "analytic:3d-grey-isotropic-S2-steady-transport:v1"
+norm = "angular intensity/gradient errors and rates, incident radiation, material heating, total energy and flux error, exact P2, true coupled residual, omitted-term responses"
+tolerance = "intensity/gradient rates >=1.7/0.9; fine value <=0.01; P2 fields/energy <=1e-9; residual <=1e-9; fine energy <=0.01; four omitted-term errors >=1e-3"
+tier = "physics-gate"
+timeout_seconds = 300
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL original form contract and coupled S2 spatial-source/energy accuracy metrics"
+
+[[case]]
+id = "fem.thermoelasticity-3d-history-mms.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-thermoelasticity-3d"
+entry_point = "transient thermal history and quasi-static thermoelastic displacement/stress"
+method = "native coupled thermal/elastic blocks, CN heat history with declared scalar relaxation, actual solved-temperature thermal-strain loads, sparse Cholesky"
+scalar = "f64"
+dimension = "3D tetrahedral cube, P1 n4/8/16 and P2 n2, evolving temperature and three displacement components with mixed xyz curvature"
+reference = "independent quadratic temperature/displacements, constant-Lame strong-form sources and thermoelastic stress; staggered thermal/quasi-static scope"
+reference_checksum = "analytic:3d-transient-thermal-relaxation-quasistatic-thermoelasticity:v1"
+norm = "temperature/displacement/stress quadrature errors, spatial/time rates, exact P2, free residual, weak heat budget, force balance, all-history missing-term errors"
+tolerance = "value spatial/time rates >=1.8; stress spatial/time >=0.9/1.8; P2/residual/heat/force balance <=1e-9; 60 time steps; four all-history control errors >=1e-3"
+tier = "physics-gate"
+timeout_seconds = 300
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL original mass-form contract and transient thermoelastic solve/stress evidence"
+
+[[case]]
+id = "fem.conjugate-heat-transfer-3d-interface-mms.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-conjugate-heat-transfer-3d"
+entry_point = "transient conforming solid/fluid temperature and two-sided interface flux"
+method = "native region-routed conduction/capacity/fluid-advection blocks, CN history and sparse LU; independent two-sided interface gradient integration"
+scalar = "f64"
+dimension = "3D tetrahedral cube, interface x=.5, unequal solid/fluid coefficients, P1 n6/12/24 and P2 n2, prescribed tangential fluid velocity"
+reference = "independent piecewise quadratic temperature in resistive coordinate, continuous temperature and matched normal flux, exact interface heat rates +/-3g(t)"
+reference_checksum = "analytic:3d-transient-conforming-solid-fluid-CHT:v1"
+norm = "temperature and total heat-flux quadrature errors/rates, two-sided interface flux/jump, exact P2, fresh residual, weak energy balance and all-history missing-term errors"
+tolerance = "temperature space/time rates >=1.8; flux space/time >=0.9/1.8; fine interface flux/jump <=0.08; P2/residual/weak energy <=1e-9; 88 steps and four controls >=1e-3"
+tier = "physics-gate"
+timeout_seconds = 300
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL original conduction contract and transient two-region interface/source/advection accuracy metrics"
+
+[[case]]
+id = "fem.electrochemistry-3d-pnp-electrode.v1"
+owner = "sonium-fem"
+crate = "sonium-qa"
+bin = "qa-fem-electrochemistry-3d"
+entry_point = "coupled linearized PNP with nonlinear concentration-activity electrode reaction"
+method = "native diffusion/migration/ionic-charge and Butler-Volmer flux/tangent forms; monolithic concentration-positive Newton solves and independent surface quadrature"
+scalar = "f64"
+dimension = "3D tetrahedral unit cube, P1 n4/8/16 and exact P2 n2, two charged species and potential, nonlinear x=1 cation electrode with blocked anion flux"
+reference = "independent mixed-xyz quadratic fields and strong forms; inverse symmetric BV prescribed metal-voltage field, solved concentration activity, electric/ionic fluxes and electrode current"
+reference_checksum = "analytic:3d-linearized-PNP-nonlinear-BV-activity-electrode:v1"
+norm = "three field/flux quadrature errors/rates, electrode current/error rate, exact P2, per-field free residual, weak charge/species balance and omitted-term errors"
+tolerance = "field/current spatial rates >=1.8; flux rates >=0.9; fine current <=0.01; P2/residual/weak balance <=1e-9; four omitted-term controls >=1e-3"
+tier = "physics-gate"
+timeout_seconds = 300
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL original diffusion contract and coupled steady linearized-PNP/reactive-electrode accuracy metrics"
+
+[[case]]
+id = "fem.battery-3d-electrothermal-history.v1"
+owner = "fem"
+crate = "sonium-qa"
+bin = "qa-fem-battery-3d"
+entry_point = "native battery macro operators and reaction Jacobian with solved-current heat source"
+method = "coupled CN electrolyte concentration and quasi-static two-potential solve; CN thermal feedback; P1 spatial/P2 temporal refinements, exact P2 patch and five omitted-term controls"
+scalar = "f64"
+dimension = "3D tetrahedral cube with four mixed-xyz-curved fields and free interior unknowns"
+reference = "independent quadratic porous-electrode strong sources and ohmic/reaction/entropic heat; declared linearized interfacial law with concentration-dependent equilibrium potential"
+reference_checksum = "analytic:3d-linearized-porous-electrode-cn-electrothermal:v1"
+norm = "four field/flux errors and convergence rates, heat error, exact P2, fresh raw residual and weak inventory/heat budgets; history controls"
+tolerance = "value spatial/time rates>=1.8; flux spatial/time rates>=0.9/1.8; P2/residual/balance<=1e-9; controls>=1e-3"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+artifacts = "QA_RESULT JSONL coupled electrothermal history metrics; scope is linearized macro model, excludes nonlinear DFN and active-particle coupling"
+
+[[case]]
+id = "fem.mhd-3d-stokes-history.v1"
+owner = "fem"
+crate = "sonium-qa"
+bin = "qa-fem-mhd-3d"
+entry_point = "native MHD electromagnetic blocks and Taylor-Hood Stokes forms"
+method = "monolithic incompressible CN velocity/electric potential/pressure solves; spatial and temporal refinement, exact cubic P3/P2 and five omitted-term controls"
+scalar = "f64"
+dimension = "3D tetrahedral cube; three velocity components, electric potential and pressure with one gauge"
+reference = "independent divergence-free cubic velocity, cubic potential and linear pressure strong sources; current, Lorentz force and Joule dissipation"
+reference_checksum = "analytic:3d-transient-incompressible-stokes-inductionless-mhd:v1"
+norm = "velocity/potential/pressure/current/force accuracy and space/time convergence; fresh raw continuity/momentum/charge residual, charge and kinetic/viscous/Lorentz power budgets"
+tolerance = "P2 field/gradient rates>=2.7/1.8; pressure>=1.7; temporal>=1.8; exact P3/residual/charge/power<=1e-9; controls>=1e-3"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+artifacts = "QA_RESULT JSONL incompressible inductionless MHD history metrics; low-Re/low magnetic-Re scope"
+
+[[case]]
+id = "fem.phase-field-flow-3d-quartic-history.v1"
+owner = "fem"
+crate = "sonium-qa"
+bin = "qa-fem-phase-field-flow-3d"
+entry_point = "native mixed CH baseline, quartic bulk/tangent, solved-velocity advection and solved-phase capillary Stokes load"
+method = "coupled quartic Newton/CN phase and chemical-potential histories with quasi-static Taylor-Hood Stokes Picard feedback; P1 spatial/P2 temporal refinements, exact quadratic patch and six controls"
+scalar = "f64"
+dimension = "3D tetrahedral cube; phase, chemical potential, three incompressible velocity components and pressure gauge"
+reference = "independent quadratic phase/chemical/velocity and linear pressure strong sources, capillary load, source-aware inventory and quartic free energy"
+reference_checksum = "analytic:3d-quartic-cahn-hilliard-stokes-cn:v1"
+norm = "phase/chemical/flow/capillary space-time accuracy, flux, mass/free energy, exact P2, fresh coupled residual and source-aware mass/chemical/Stokes power budgets"
+tolerance = "phase/chemical values>=1.8 spatial/time rates, flux>=.9/1.8, velocity>=1.7/1.8; P2/residual/budgets<=1e-9; six history controls>=1e-3"
+tier = "physics-gate"
+timeout_seconds = 900
+required_hardware = "cpu"
+artifacts = "QA_RESULT JSONL quartic CH/Stokes history metrics; quasi-static equal-density/viscosity fluid with prescribed volume sources and phase/chemical Dirichlet data"
+
+[[case]]
+id = "fem.fracture-3d-at2-history.v1"
+owner = "fem"
+crate = "sonium-qa"
+bin = "qa-fem-fracture-3d"
+entry_point = "native AT2 regularization/history forms and solved-damage degraded elasticity"
+method = "staggered damage/displacement SPD solves through loading, unloading and reloading; P1 spatial refinement, exact quadratic P2 patch and four omitted-term controls"
+scalar = "f64"
+dimension = "3D tetrahedral cube; free damage and three displacement components"
+reference = "independent quadratic damage/displacement, maximum-load positive-strain elastic history, degraded stress, body/damage sources and elastic/crack energies"
+reference_checksum = "analytic:3d-forced-at2-degraded-elasticity-load-unload:v1"
+norm = "damage/displacement/gradient/history/stress convergence; fresh coupled residual, elastic power/damage budgets, unloading hold and irreversibility"
+tolerance = "P1 values>=1.8 and gradients/history/stress>=.9 rates; exact P2/residual/budgets/irreversibility<=1e-9; controls>=1e-3"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+artifacts = "QA_RESULT JSONL coupled AT2 history metrics; forced smooth positive-strain problem with prescribed volume sources and boundary damage"
+
+[[case]]
+id = "fem.fsi-mortar-3d-dynamic.v1"
+owner = "fem"
+crate = "sonium-qa"
+bin = "qa-fem-fsi-mortar-3d"
+entry_point = "native full-vector P1 mortar saddle, mass/divergence/viscous/elastic forms and exterior traction assembly"
+method = "monolithic CN fluid velocity/pressure and solid velocity/displacement histories with midpoint mortar traction; exact affine-space linear-time patch, three time refinements, multiple nonmatching meshes and four omission controls"
+scalar = "f64"
+dimension = "two 3D tetrahedral volumes and nonmatching planar interface; all fluid/solid fields and multiplier unknowns free"
+reference = "independent affine 3D fields, pressure and traction, exterior stress and volume sources; exact box-integrated kinetic/compressive/elastic energy"
+reference_checksum = "analytic:3d-linear-compressible-viscous-fluid-elastic-solid-mortar-cn:v1"
+norm = "all-history relative nodal field/traction accuracy, energy accuracy, fresh coupled residual, dynamic power, mortar velocity constraint and action/reaction"
+tolerance = "linear-time patch/residual/power<=1e-9; six temporal rates>=1.8; fine errors<=.005; constraint/action-reaction<=1e-10; four controls>=1e-3"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+artifacts = "QA_RESULT JSONL coupled FSI histories; linear compressible viscous fluid and elastic solid on fixed reference geometry with prescribed volume sources and exterior tractions"
+
+[[case]]
+id = "reference.fem-ns-2d-poiseuille-low-re.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-ns-2d-poiseuille-low-re"
+entry_point = "analytical reference assertions"
+method = "closed-form/helper fixture checks; no production PDE assembly or solve"
+scalar = "f64"
+dimension = "analytical fixture; no discrete field"
+reference = "closed-form identities and limiting/scaling checks in this binary"
+reference_checksum = "analytic-fixture:reference.fem-ns-2d-poiseuille-low-re.v1"
+norm = "reference assertions only; no measured numerical field error"
+tolerance = "case-local analytical assertions; numerical_solve_executed = 0"
+tier = "reference-only"
+timeout_seconds = 30
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL reference-only scope record"
+
+[[case]]
+id = "reference.fem-ns-kovasznay.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-ns-kovasznay"
+entry_point = "analytical reference assertions"
+method = "closed-form/helper fixture checks; no production PDE assembly or solve"
+scalar = "f64"
+dimension = "analytical fixture; no discrete field"
+reference = "closed-form identities and limiting/scaling checks in this binary"
+reference_checksum = "analytic-fixture:reference.fem-ns-kovasznay.v1"
+norm = "reference assertions only; no measured numerical field error"
+tolerance = "case-local analytical assertions; numerical_solve_executed = 0"
+tier = "reference-only"
+timeout_seconds = 30
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL reference-only scope record"
+
+[[case]]
+id = "reference.fem-ns-taylor-green.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-ns-taylor-green"
+entry_point = "analytical reference assertions"
+method = "closed-form/helper fixture checks; no production PDE assembly or solve"
+scalar = "f64"
+dimension = "analytical fixture; no discrete field"
+reference = "closed-form identities and limiting/scaling checks in this binary"
+reference_checksum = "analytic-fixture:reference.fem-ns-taylor-green.v1"
+norm = "reference assertions only; no measured numerical field error"
+tolerance = "case-local analytical assertions; numerical_solve_executed = 0"
+tier = "reference-only"
+timeout_seconds = 30
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL reference-only scope record"
+
+[[case]]
+id = "reference.fem-ns-1d-burgers.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-ns-1d-burgers"
+entry_point = "analytical reference assertions"
+method = "closed-form/helper fixture checks; no production PDE assembly or solve"
+scalar = "f64"
+dimension = "analytical fixture; no discrete field"
+reference = "closed-form identities and limiting/scaling checks in this binary"
+reference_checksum = "analytic-fixture:reference.fem-ns-1d-burgers.v1"
+norm = "reference assertions only; no measured numerical field error"
+tolerance = "case-local analytical assertions; numerical_solve_executed = 0"
+tier = "reference-only"
+timeout_seconds = 30
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL reference-only scope record"
+
+[[case]]
+id = "reference.fem-ns-mms.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-ns-mms"
+entry_point = "analytical reference assertions"
+method = "closed-form/helper fixture checks; no production PDE assembly or solve"
+scalar = "f64"
+dimension = "analytical fixture; no discrete field"
+reference = "closed-form identities and limiting/scaling checks in this binary"
+reference_checksum = "analytic-fixture:reference.fem-ns-mms.v1"
+norm = "reference assertions only; no measured numerical field error"
+tolerance = "case-local analytical assertions; numerical_solve_executed = 0"
+tier = "reference-only"
+timeout_seconds = 30
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL reference-only scope record"
+
+[[case]]
+id = "reference.fem-necking-bar.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-necking-bar"
+entry_point = "analytical reference assertions"
+method = "Considere and Bridgman helper identities; no native bar evolution"
+scalar = "f64"
+dimension = "analytical fixture; no discrete field"
+reference = "closed-form identities and limiting/scaling checks in this binary"
+reference_checksum = "analytic-fixture:reference.fem-necking-bar.v1"
+norm = "reference assertions only; no measured numerical field error"
+tolerance = "case-local analytical assertions; numerical_solve_executed = 0"
+tier = "reference-only"
+timeout_seconds = 30
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL reference-only scope record"
+
+[[case]]
+id = "fem.autofrettage-spatial.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-plasticity-thick-cylinder-autofrettage"
+entry_point = "support/autofrettage.rs::run"
+method = "radial P1 B-bar FEM, native J2 stress updates, Newton pressure-cycle equilibrium"
+scalar = "f64"
+dimension = "axisymmetric long-cylinder plane strain; radial meshes 16/32/64"
+reference = "incompressible elastic-plastic interface solution and Lame elastic unloading"
+reference_checksum = "analytic:plane-strain-perfect-plastic-cylinder:v1"
+norm = "radius-weighted stress L2 normalized by yield stress; physical nodal force residual"
+tolerance = "fine residual stress <= 1%; history stress <= 2%; convergence rate >= 0.7; equilibrium <= 1e-9"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; analytical and single-point assertions precede spatial gate"
+
+[[case]]
+id = "fem.axisymmetric-solides-integrity.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-axisym"
+entry_point = "SOLIDES integrity subcase"
+method = "external golden schema and presence checks"
+scalar = "f64"
+dimension = "seven external 3D BRICK decks"
+reference = "checked-in SOLIDES golden schema"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "schema/presence assertions only; no numerical solve"
+tolerance = "audited_files >= 7; numerical_solve_executed = 0"
+tier = "contract-gate"
+timeout_seconds = 180
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/axisym_cylinder checked decks/history/log/golden"
+
+[[case]]
+id = "fem.axisymmetric-cylinder-harvest.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-axisym"
+entry_point = "support/axisymmetric_golden.rs::run"
+method = "native meridional axisymmetric P1 elasticity; PCG with verified force defect"
+scalar = "f64"
+dimension = "16/32/64 radial and axial subdivisions"
+reference = "generated independent OpenCourant QUAD N2D3D=1 pressure-hold history and Lame fields"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "pressure-hold displacement/energy errors; physical force residual and spatial refinement"
+tolerance = "engine displacement/energy <= 0.5%; Lame displacement <= 0.1%; refinement rate >= 1.5; equilibrium <= 1e-8"
+tier = "physics-gate"
+timeout_seconds = 180
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/axisym_cylinder checked decks/history/log/golden"
+
+[[case]]
+id = "fem.crash-shells-integrity.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-crash-shells"
+entry_point = "CRASH integrity subcase"
+method = "external golden schema and harvested-history self-consistency"
+scalar = "f64"
+dimension = "two external CRASH vendor fixtures"
+reference = "checked-in CRASH golden series and schema"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "schema and self-consistency assertions; no native solve"
+tolerance = "failed_probes = 0; numerical_solve_executed = 0"
+tier = "contract-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL scope record"
+
+[[case]]
+id = "fem.shell-plate-harvest.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-crash-shells"
+entry_point = "support/shell_plate_golden.rs::run"
+method = "native CST/DKT shell explicit dynamics with kinetic damping to equilibrium"
+scalar = "f64"
+dimension = "circular plate; 8x32 and 16x64 polar triangular meshes"
+reference = "independent OpenCourant QEPH pressure hold and Kirchhoff circular plate"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "center displacement and strain-energy relative error; free force residual; refinement"
+tolerance = "engine displacement/energy <= 5%; Kirchhoff displacement <= 2%; spatial rate >= 1; equilibrium <= 1e-6"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/shell_clamped_plate checked decks/history/log/golden"
+
+[[case]]
+id = "fem.necking-bar-spatial.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-necking-bar"
+entry_point = "support/necking_bar.rs::run"
+method = "axial P1 bar, native finite-strain J2 Voce plasticity, transverse plane-stress condensation and evolving cross-section, Newton equilibrium"
+scalar = "f64"
+dimension = "1D slender bar with 3D material points; 16/32/64 elements and two Gauss points"
+reference = "independent Voce uniaxial reaction turning point and fine integration of the nonuniform equilibrium branch"
+reference_checksum = "analytic:voce-logarithmic-j2-slender-bar:v1"
+norm = "displacement/reaction error, physical free-force residual, traction-free transverse stress, spatial refinement and load-increment control"
+tolerance = "peak extension <= 1%; peak force <= 0.1%; displacement/reaction <= 0.1%; refinement rate >= 1.5; free equilibrium <= 1e-9"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; diffuse necking onset only, no post-localization or 3D Bridgman claim"
+
+[[case]]
+id = "fem.foam-laws-integrity.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "original LOIS integrity subcase"
+method = "external golden schema and harvested history yield/symmetry self-consistency"
+scalar = "f64"
+dimension = "five external engine fixtures; no native spatial field"
+reference = "original LOIS engine golden series"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "schema and harvested-data assertions only"
+tolerance = "failed_probes = 0; numerical_solve_executed = 0"
+tier = "contract-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL integrity scope"
+
+[[case]]
+id = "fem.foam-law51-material-replay.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam_material_golden.rs::run_law51"
+method = "native Multimat51/JwlEos adiabatic evolution from independently prescribed cube volume; original PG-degenerated mixture"
+scalar = "f64"
+dimension = "two hydrostatic material-point histories; no native spatial solve"
+reference = "original engine stress/density/energy histories and independent exact PG adiabatic energy"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "all-history stress error normalized by initial pressure, relative density/energy error, original golden energy band, exact energy error"
+tolerance = "stress <= 2e-4; density <= 2e-5; native exact energy <= 2e-4; original golden energy band usage <= 1; frozen-energy control >= 0.05"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; 100 native stamps and >=300000 native substeps; no LAW33/spatial claim"
+
+[[case]]
+id = "fem.foam-law33-material-replay.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam33_golden.rs::run"
+method = "native plain FOAM_PLAS Ka=0 principal cap and trapped-air pressure; independently prescribed strain and volume"
+scalar = "f64"
+dimension = "3D material point, constrained transverse dimensions; compression/hold/unload/hold; no spatial solve"
+reference = "original independently generated and harvested OpenCourant single-brick history"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "all-history stress normalized by 500 kPa, work normalized by peak engine energy, relative density and imposed displacement error"
+tolerance = "stress/work <= 0.5%; density/geometry <= 1e-5; air-disabled stress gap >= 1%; plastic strain >= 1%"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/foam33_cube checked decks/history/log/golden; no spatial foam claim"
+
+[[case]]
+id = "fem.foam-law76-compression-replay.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam76_golden.rs::run"
+method = "native actual quadratic LAW76 isochoric nonassociated return; asymmetric convex strengths and proportional hardening"
+scalar = "f64"
+dimension = "3D material point; compression/hold/unload/hold; all nodal kinematics prescribed; no spatial solve"
+reference = "original independently generated and harvested OpenCourant brick explicitly selecting LAW76"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "all-history six-component stress normalized by 500 kPa, plastic strain by peak, work by peak energy, relative density and geometry"
+tolerance = "stress <= 0.2%; plastic strain/work <= 0.5%; density/geometry <= 1e-5; pressure-blind stress gap >= 1%; plastic strain >= 0.0005"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/foam76_compression checked decks/history/log/golden; no spatial foam claim"
+
+[[case]]
+id = "fem.foam-law76-tension-replay.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam76_golden.rs::run"
+method = "native actual quadratic LAW76 isochoric nonassociated return; asymmetric convex strengths and proportional hardening"
+scalar = "f64"
+dimension = "3D material point; tension/hold/unload/hold; all nodal kinematics prescribed; no spatial solve"
+reference = "original independently generated and harvested OpenCourant brick explicitly selecting LAW76"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "all-history six-component stress normalized by 500 kPa, plastic strain by peak, work by peak energy, relative density and geometry"
+tolerance = "stress <= 0.2%; plastic strain/work <= 0.5%; density/geometry <= 1e-5; pressure-blind stress gap >= 1%; plastic strain >= 0.0005"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/foam76_tension checked decks/history/log/golden; no spatial foam claim"
+
+[[case]]
+id = "fem.foam-law33-mixed-spatial.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam_spatial.rs::run"
+method = "production H8 internal forces and native foam states, global quasistatic Newton solve; mixed elastic/plastic LAW33 guided H8 rod"
+scalar = "f64"
+dimension = "guided 3D rod with tied axial cross-sections and fixed transverse coordinates; 16/32/64 elements; all axial planes except x=0 free"
+reference = "independent continuum stress/reaction, closed-form compressive inverse, integrated displacement and external work"
+reference_checksum = "checked reference.json SHA-256 and compiled analytical equations"
+norm = "displacement relative L2; full-range displacement convergence; all-load absolute J error; normalized free force/stress/reaction/work; elastic counterfactual"
+tolerance = "fine displacement/work <=0.5%; spatial rate >=1.5; mixed finest-pair rate reported without bound; separate smooth case gates finest-pair >=1.5; J error <=1e-7; load refinement <=2e-4; free force <=1e-9; reaction <=1e-8; stress <=1e-3; elastic gap >=5%"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/foam_guided_rods/reference.json; 768 native load steps; no unconstrained 3D dynamics claim"
+
+[[case]]
+id = "fem.foam-law33-spatial.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam_spatial.rs::run"
+method = "production H8 internal forces and native foam states, global quasistatic Newton solve; fully plastic LAW33 guided H8 rod"
+scalar = "f64"
+dimension = "guided 3D rod with tied axial cross-sections and fixed transverse coordinates; 16/32/64 elements; all axial planes except x=0 free"
+reference = "independent continuum stress/reaction, closed-form compressive inverse, integrated displacement and external work"
+reference_checksum = "checked reference.json SHA-256 and compiled analytical equations"
+norm = "displacement relative L2; full-range displacement convergence; all-load absolute J error; normalized free force/stress/reaction/work; elastic counterfactual"
+tolerance = "fine displacement/work <=0.5%; spatial rate >=1.5; finest-pair rate >=1.5; J error <=1e-7; load refinement <=2e-4; free force <=1e-9; reaction <=1e-8; stress <=1e-3; elastic gap >=5%"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/foam_guided_rods/reference.json; 768 native load steps; no unconstrained 3D dynamics claim"
+
+[[case]]
+id = "fem.foam-law76-spatial.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-foam-laws"
+entry_point = "support/foam_spatial.rs::run"
+method = "production H8 internal forces and native foam states, global quasistatic Newton solve; mixed elastic/plastic LAW76 guided H8 rod"
+scalar = "f64"
+dimension = "guided 3D rod with tied axial cross-sections and fixed transverse coordinates; 16/32/64 elements; all axial planes except x=0 free"
+reference = "independent continuum stress/reaction, closed-form compressive inverse, integrated displacement and external work"
+reference_checksum = "checked reference.json SHA-256 and compiled analytical equations"
+norm = "displacement relative L2; full-range displacement convergence; all-load absolute J error; normalized free force/stress/reaction/work; elastic counterfactual"
+tolerance = "fine displacement/work <=0.5%; spatial rate >=1.5; finest-pair rate >=1.5; J error <=1e-7; load refinement <=2e-4; free force <=1e-9; reaction <=1e-8; stress <=1e-3; elastic gap >=5%"
+tier = "physics-gate"
+timeout_seconds = 120
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/foam_guided_rods/reference.json; 768 native load steps; no unconstrained 3D dynamics claim"

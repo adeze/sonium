@@ -16,7 +16,10 @@ fn main() {
         assert!(ka > 1.0 && ka < 2.0);
         println!("Maxwell PEC cylinder scattering setup: ka = {:.6}", ka);
     });
-    reference_result::emit("reference.fem-maxwell-pec-cylinder-scattering.v1", result.is_ok());
+    reference_result::emit(
+        "reference.fem-maxwell-pec-cylinder-scattering.v1",
+        result.is_ok(),
+    );
     if result.is_ok() {
         println!("SUCCESS");
     } else {
