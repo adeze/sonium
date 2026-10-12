@@ -3,7 +3,9 @@
 //! The CRASH fixtures retain integrity-only checks, reported with zero
 //! numerical solves. A separate native CST/DKT shell dynamics case compares
 //! a clamped circular plate with an independently harvested engine response.
-//! That physics gate covers elastic pressure-hold equilibrium, not impact
+//! The original 140-Q4 CRASH box additionally evolves native shell, material,
+//! wall and rigid-body states and compares the full harvested impact history.
+//! The circular-plate gate covers elastic pressure-hold equilibrium, not impact
 //! plasticity or reproduction of the CRASH vendor models. All fixtures are
 //! checked in; no engine or network is required at QA runtime.
 //!
@@ -42,6 +44,10 @@
 
 // Rust guideline compliant 2026-02-21
 
+#[path = "support/crash_box.rs"]
+mod crash_box;
+#[path = "support/crash_box_golden.rs"]
+mod crash_box_golden;
 #[path = "support/shell_plate_golden.rs"]
 mod shell_plate_golden;
 
@@ -600,6 +606,13 @@ fn main() -> ExitCode {
         Ok(line) => println!("{line}"),
         Err(e) => {
             eprintln!("native shell gate failed: {e}");
+            failed += 1;
+        }
+    }
+    match crash_box_golden::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
+        Ok(line) => println!("{line}"),
+        Err(e) => {
+            eprintln!("native original impact gate failed: {e}");
             failed += 1;
         }
     }

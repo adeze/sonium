@@ -14538,3 +14538,22 @@ timeout_seconds = 120
 required_hardware = "cpu"
 features = ["qa-binaries"]
 artifacts = "QA_RESULT JSONL; decks/foam_guided_rods/reference.json; 768 native load steps; no unconstrained 3D dynamics claim"
+
+[[case]]
+id = "fem.crash-box-impact-harvest.v1"
+owner = "sonium-qa"
+crate = "sonium-qa"
+bin = "qa-fem-crash-shells"
+entry_point = "support/crash_box_golden.rs::run"
+method = "native original Q4 shell explicit dynamics, LAW2 layer evolution, tied contact, rigid-body constraints and original point mass"
+scalar = "f64"
+dimension = "original 140 Q4 shells, 154 shell nodes plus master 155; 2500/5000 steps and elastic/free-wall counterfactuals"
+reference = "independently harvested original CRASH box1_42 energy, impulse and displacement histories"
+reference_checksum = "case-local checked artifact SHA-256 provenance"
+norm = "maximum waveform error normalized by reference peak at every archived stamp; timestep refinement; physical controls"
+tolerance = "nine history errors <= 1%; timestep changes <= 0.3%; energy residual <= 1e-6; elastic response change >= 50%; wall response change >= 10%"
+tier = "physics-gate"
+timeout_seconds = 600
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL; decks/crash_box_original/model.json; original CRASH golden"

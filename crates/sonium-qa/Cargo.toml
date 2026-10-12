@@ -5975,6 +5975,12 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-oc-ns-bench"
+path = "bin/oc_ns_bench.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-fem-explicit-taylor-plastic"
 path = "bin/fem_explicit_taylor_plastic.rs"
 test = false

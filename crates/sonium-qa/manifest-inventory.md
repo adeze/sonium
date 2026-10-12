@@ -8,13 +8,13 @@ validated cases, not every runnable QA binary.
 ## Summary
 
 - Registered Cargo QA binaries: 982
-- Manifest-backed validation cases: 778
+- Manifest-backed validation cases: 779
 
 | Tier | Cases |
 | --- | ---: |
 | accelerator-gate | 8 |
 | contract-gate | 41 |
-| physics-gate | 369 |
+| physics-gate | 370 |
 | reference-only | 100 |
 | smoke | 155 |
 | solver-gate | 105 |
@@ -231,6 +231,7 @@ validated cases, not every runnable QA binary.
 | fem.compressible-navier-stokes-3d.v1 | fem | `qa-fem-compressible-ns-3d` | physics-gate | P1 DG free-stream, SSPRK3 positivity, and Sutherland transport gate |
 | fem.conjugate-heat-transfer-3d-interface-mms.v1 | sonium-fem | `qa-fem-conjugate-heat-transfer-3d` | physics-gate | native region-routed conduction/capacity/fluid-advection blocks, CN history and sparse LU; independent two-sided interface gradient integration |
 | fem.conjugate-heat-transfer-3d.v1 | fem | `qa-fem-conjugate-heat-transfer-3d` | contract-gate | assembly-contract: prescribed x+y energy identities and row sums; no numerical field solve |
+| fem.crash-box-impact-harvest.v1 | sonium-qa | `qa-fem-crash-shells` | physics-gate | native original Q4 shell explicit dynamics, LAW2 layer evolution, tied contact, rigid-body constraints and original point mass |
 | fem.crash-shells-integrity.v1 | sonium-qa | `qa-fem-crash-shells` | contract-gate | external golden schema and harvested-history self-consistency |
 | fem.cross-source-vector-transfer.v1 | sonium-fem | `qa-fem-cross-source-vector-transfer` | physics-gate | production H(curl) and contravariant-Piola H(div) transfer across a conforming source partition |
 | fem.cross-space-assembly.v1 | sonium-fem | `qa-fem-cross-space-assembly` | physics-gate | validated rectangular cross-space mass assembly with analytic element-local reference |

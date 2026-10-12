@@ -22,6 +22,36 @@ pub trait HyperelasticMaterial: Send + Sync {
     /// Returns P as a flat array in row-major order: `[P_00, P_01, ..., P_{d-1,d-1}]`.
     fn stress(&self, f: &[f64]) -> Vec<f64>;
 
+    /// First Piola-Kirchhoff stress into caller storage.
+    ///
+    /// Writes the same row-major `P = dW/dF` that [`stress`](Self::stress)
+    /// returns into the first `dim*dim` entries of `out`, so hot paths
+    /// (explicit element loops) avoid one heap allocation per quadrature
+    /// point. The default implementation allocates through
+    /// [`stress`](Self::stress) and copies; models on hot paths override
+    /// it with stack arithmetic. Overrides must produce bit-identical
+    /// values to [`stress`](Self::stress).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::nonlinear_solid::{HyperelasticMaterial, NeoHookean};
+    ///
+    /// let mat = NeoHookean::from_young(200.0e9, 0.3, 3);
+    /// let f = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    /// let mut p = [0.0; 9];
+    /// mat.stress_into(&f, &mut p);
+    /// assert_eq!(p, [0.0; 9]);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics when `out` holds fewer than `dim*dim` entries.
+    fn stress_into(&self, f: &[f64], out: &mut [f64]) {
+        let p = self.stress(f);
+        out[..p.len()].copy_from_slice(&p);
+    }
+
     /// Material tangent `A_{iJkL} = d²W / dF_{iJ} dF_{kL}`.
     /// Returns as flat array of size `(dim*dim)^2` in row-major order,
     /// indexed as `A[(i*dim+J) * dim*dim + (k*dim+L)]`.
@@ -75,18 +105,23 @@ impl HyperelasticMaterial for NeoHookean {
     }
 
     fn stress(&self, f: &[f64]) -> Vec<f64> {
+        let mut p = vec![0.0; self.dim * self.dim];
+        self.stress_into(f, &mut p);
+        p
+    }
+
+    fn stress_into(&self, f: &[f64], out: &mut [f64]) {
         let d = self.dim;
         let j = det(f, d);
-        let f_inv_t = inv_transpose(f, d);
+        let mut f_inv_t = [0.0; 9];
+        inv_transpose_into(f, d, &mut f_inv_t[..d * d]);
         let ln_j = j.ln();
 
         // P = mu * F + (lambda * ln(J) - mu) * F^{-T}
         let coeff = self.lambda * ln_j - self.mu;
-        let mut p = vec![0.0; d * d];
         for i in 0..d * d {
-            p[i] = self.mu * f[i] + coeff * f_inv_t[i];
+            out[i] = self.mu * f[i] + coeff * f_inv_t[i];
         }
-        p
     }
 
     fn tangent(&self, f: &[f64]) -> Vec<f64> {
@@ -488,13 +523,28 @@ fn second_invariant_ftf(f: &[f64], dim: usize) -> f64 {
 
 /// Inverse transpose of a dim x dim matrix.
 fn inv_transpose(f: &[f64], dim: usize) -> Vec<f64> {
+    let mut out = vec![0.0; dim * dim];
+    inv_transpose_into(f, dim, &mut out);
+    out
+}
+
+/// Inverse transpose of a dim x dim matrix into caller storage.
+///
+/// Writes the same entries [`inv_transpose`] returns into the first
+/// `dim*dim` slots of `out`, so hot paths avoid the per-call heap
+/// allocation. Operation order matches [`inv_transpose`] exactly, keeping
+/// results bit-identical between the two spellings.
+fn inv_transpose_into(f: &[f64], dim: usize, out: &mut [f64]) {
     let d = det(f, dim);
     let inv_d = 1.0 / d;
     match dim {
         2 => {
             // inv(F) = (1/det) * [[f[3], -f[1]], [-f[2], f[0]]]
             // inv(F)^T = (1/det) * [[f[3], -f[2]], [-f[1], f[0]]]
-            vec![f[3] * inv_d, -f[2] * inv_d, -f[1] * inv_d, f[0] * inv_d]
+            out[0] = f[3] * inv_d;
+            out[1] = -f[2] * inv_d;
+            out[2] = -f[1] * inv_d;
+            out[3] = f[0] * inv_d;
         }
         3 => {
             // Cofactor matrix (transposed) divided by det
@@ -509,17 +559,15 @@ fn inv_transpose(f: &[f64], dim: usize) -> Vec<f64> {
             let c22 = f[0] * f[4] - f[1] * f[3];
 
             // F^{-T} = cofactor(F) / det(F)
-            vec![
-                c00 * inv_d,
-                c01 * inv_d,
-                c02 * inv_d,
-                c10 * inv_d,
-                c11 * inv_d,
-                c12 * inv_d,
-                c20 * inv_d,
-                c21 * inv_d,
-                c22 * inv_d,
-            ]
+            out[0] = c00 * inv_d;
+            out[1] = c01 * inv_d;
+            out[2] = c02 * inv_d;
+            out[3] = c10 * inv_d;
+            out[4] = c11 * inv_d;
+            out[5] = c12 * inv_d;
+            out[6] = c20 * inv_d;
+            out[7] = c21 * inv_d;
+            out[8] = c22 * inv_d;
         }
         _ => unreachable!(),
     }
@@ -727,5 +775,53 @@ mod tests {
             "A0000 = {}, want {expected_0000}",
             a[0]
         );
+    }
+
+    #[test]
+    fn stress_into_matches_stress_bit_exact() {
+        // Sheared stretch with all entries exercised, plus identity.
+        let cases = [
+            [1.05, 0.02, -0.01, 0.03, 0.97, 0.04, -0.02, 0.01, 1.08],
+            [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        ];
+        let neo = NeoHookean::from_young(200.0e9, 0.3, 3);
+        // Mooney-Rivlin keeps the default provided method (heap + copy).
+        let mooney = MooneyRivlin::new(0.3e6, 0.1e6, 100.0e6);
+        for f in cases {
+            for mat in [&neo as &dyn HyperelasticMaterial, &mooney as &dyn HyperelasticMaterial] {
+                let heap = mat.stress(&f);
+                let mut stack = [0.0; 9];
+                mat.stress_into(&f, &mut stack);
+                for i in 0..9 {
+                    assert_eq!(
+                        stack[i].to_bits(),
+                        heap[i].to_bits(),
+                        "entry {i} differs: stack {}, heap {}",
+                        stack[i],
+                        heap[i]
+                    );
+                }
+            }
+        }
+        // 2D override path writes exactly four entries.
+        let neo2 = NeoHookean::from_young(70.0e9, 0.33, 2);
+        let f2 = [1.04, 0.03, -0.02, 0.96];
+        let heap2 = neo2.stress(&f2);
+        let mut stack2 = [f64::NAN; 4];
+        neo2.stress_into(&f2, &mut stack2);
+        for i in 0..4 {
+            assert_eq!(stack2[i].to_bits(), heap2[i].to_bits());
+        }
+    }
+
+    #[test]
+    fn inv_transpose_into_matches_heap_spelling() {
+        let f = [1.05, 0.02, -0.01, 0.03, 0.97, 0.04, -0.02, 0.01, 1.08];
+        let heap = inv_transpose(&f, 3);
+        let mut stack = [0.0; 9];
+        inv_transpose_into(&f, 3, &mut stack);
+        for i in 0..9 {
+            assert_eq!(stack[i].to_bits(), heap[i].to_bits());
+        }
     }
 }

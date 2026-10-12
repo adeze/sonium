@@ -4,8 +4,8 @@
 shell nodes plus the explicit rigid-body master 155. It includes the original
 Johnson–Cook card, thickness/quad flags, initial velocity, wall node set,
 rigid-body card and slave set, and the 100 kg point mass at node 14. This
-artifact is reconstruction input; a native original-response comparison
-remains pending and no numerical solve is claimed here.
+artifact is reconstruction input for the native original-response gate
+`fem.crash-box-impact-harvest.v1` in `qa-fem-crash-shells`.
 
 The source model is Copyright (C) 2026 SISW Siemens Industry Software Inc.,
 licensed under [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/legalcode).
@@ -41,23 +41,26 @@ python3 scripts/extract_crash_box.py STARTER_DECK ENGINE_DECK \
   crates/sonium-qa/goldens/miniqa/CRASH/crashsection/box1_42.json OUTPUT_DIRECTORY
 ```
 
-The development example `examples/crash_box_probe.rs` now evolves the full
+The shared implementation `bin/support/crash_box.rs` evolves the full
 140-element mesh with current Q4 frames, native LAW2 layer history, wall
 velocity projection and accumulated impulse, rigid-body translation/rotation,
-and the point mass. Its CSV output is a diagnostic and is not registered as
-a passing QA comparison. The default uses the production 3D LAW2 return
-with plane-stress closure and the production hourglass convenience defaults.
+and the point mass. The QA gate selects original card options directly;
+the development example exports the same evolution as CSV. Its defaults
+now select the original surface layers, convected frame, common section
+rate, explicit in-plane material projection, numerical rotary inertia
+and card hourglass control. Set an individual boolean option to `0` to
+isolate the alternative production convenience formulation.
 
 Optional diagnostic switches isolate reference formulation differences:
 `CRASH_BOX_PROJECTION=1` uses an experimental in-plane explicit projection
-with the unfiltered maximum in-plane strain-rate measure;
+with the section-wide rate when `CRASH_BOX_RATE=1`;
 `CRASH_BOX_ROTARY=1` adds the reference numerical rotary inertia
 `m_node * area / 9`; `CRASH_BOX_HG=1` reduces the convenience damping scale
 to the original blank-card Hm/Hf defaults, while `CRASH_BOX_HG=2` replaces
 it with an experimental modal viscoelastic control. The latter also includes
 transverse-displacement stabilization, which now also has configurable
-viscous and stiffness coefficients in the production kernel. These exploratory adapters have not established full shell equivalence
-and must not be treated as validated production material or hourglass APIs.
+viscous and stiffness coefficients in the production kernel. Card-specific
+adapters are scoped to this QA model; they are not general production APIs.
 
 ```sh
 CRASH_BOX_STEPS=20000 CRASH_BOX_PROJECTION=1 CRASH_BOX_ROTARY=1 \
@@ -65,7 +68,10 @@ CRASH_BOX_STEPS=20000 CRASH_BOX_PROJECTION=1 CRASH_BOX_ROTARY=1 \
   --example crash_box_probe > crash_box_probe.csv
 ```
 
-Current diagnostic 5000/10000/20000-step comparisons cover the entire
+The comparisons below predate the tied-wall correction described at the
+end of this file; their large discrepancies are historical diagnostic evidence.
+
+Earlier diagnostic 5000/10000/20000-step comparisons cover the entire
 original harvested interval. At 20000 steps, peak-normalized history errors
 are about 2.0% for internal energy, 2.2% for wall impulse, and 43% for node
 17's y displacement. The last quantity changes by less than 0.01% between
@@ -142,3 +148,55 @@ and all samples of eight compared channels exactly: internal, kinetic,
 hourglass and plastic energies, wall impulse, and node-17 x/y/z displacement.
 The original reference remains unchanged. Neither this reproduction nor
 the elastic counterfactual closes the native original-impact requirement.
+
+`CRASH_BOX_HG=3` disables every native hourglass term for a second matched
+elastic counterfactual. In the separate reference copy, set TYPE1's `hm`,
+`hf` and `hr` to `1e-30`: literal zero selects the default coefficients
+instead of disabling them. The starter output confirms all three tiny
+coefficients; reference hourglass energy remains below `6e-28 J`.
+With yielding and stabilization absent, the node-17 y history error is
+about 100%. At the final reference stamp, native y displacement is
+`+0.00130 mm` versus `-0.13512 mm`; internal-energy and wall-impulse errors
+are both about 8%. Hourglass coefficient tuning therefore cannot by
+itself close the original comparison. Next isolate elastic kinematics,
+constraint inertia and physical-force assembly.
+
+The original wall's `Slide=1` selects tied contact, not frictionless sliding.
+The reference starter resolves `TYPE SLIDE/TIED/FRICTION = 1`, and
+`rgwall.F`'s `ITIED == 1` branch stops all translational velocity components
+on contact. `fric=0` does not override this mode; friction is used by
+`Slide=2`. The native probe now stops tangential translation too, while
+preserving normal impulse accounting and unilateral release.
+
+With this correction and the same original-material diagnostic options,
+the 5000-step full-history errors fall to 0.016% for internal energy,
+0.049% for plastic work, 0.044% for wall impulse, 0.028% for node-17 x,
+0.295% for node-17 y, 0.200% for node-17 z, and 0.081% for node-83 x.
+Hourglass-energy history error remains 2.82%. These measurements have
+not yet been promoted to a native QA gate. The development example's
+regression checks tangential stopping, unchanged angular velocity,
+normal impulse and release away from the wall.
+
+The final card hourglass control also follows the reference's zero linear
+damping, raw alternating rotational pattern and flexural denominator
+`(|diagonal02|² + |diagonal13|²)/4`. The original-response gate compares
+all 100 archived stamps for internal, plastic, hourglass and kinetic energies,
+wall impulse, node-17 x/y/z displacement and node-83 x displacement.
+Native histories are sampled every integration step and interpolated at
+the archived physical times. Its 1% peak-normalized waveform bounds concern
+response accuracy; all existing golden-integrity rounding bounds remain
+unchanged in their separate result.
+
+The 2500/5000-step comparison limits timestep changes to 0.3% of reference
+peak. Worst observed history error is 0.193% (hourglass energy); the other
+eight histories are below 0.05%. Maximum timestep change is 0.0521%.
+The native energy residual is `2.12e-8` relative to initial kinetic energy.
+An elastic material control changes the internal-energy response by 411%
+and has zero plastic work; a frictionless-wall control changes node-17 y
+displacement by 42.6%. Those controls must differ by at least 50% and 10%,
+respectively, demonstrating sensitivity to evolving plasticity and tied contact.
+
+```sh
+cargo run -p sonium-qa --features qa-binaries --bin qa-fem-crash-shells
+cargo run -p sonium-qa --features qa-binaries --example crash_box_probe
+```

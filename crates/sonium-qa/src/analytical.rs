@@ -730,6 +730,54 @@ pub fn ns_kovasznay_solution(x: f64, y: f64, re: f64) -> (f64, f64, f64) {
     (u, v, p)
 }
 
+/// Ghia centerline u at x=0.5, Re=100.
+///
+/// Reference data from Ghia, Ghia & Shin (1982), J. Comp. Phys. 48,
+/// pp. 387-411: `(y, u)` pairs along the vertical cavity centerline.
+/// Single source of truth shared by the lid-cavity QA binary and the
+/// Navier-Stokes OpenCourant benchmark so the two gates cannot drift.
+pub fn ghia_lid_cavity_re100_u() -> [(f64, f64); 17] {
+    [
+        (1.0000, 1.0000),
+        (0.9766, 0.8412),
+        (0.9688, 0.7887),
+        (0.9609, 0.7372),
+        (0.9531, 0.6872),
+        (0.8516, 0.2315),
+        (0.7344, 0.0033),
+        (0.6172, -0.1364),
+        (0.5000, -0.2058),
+        (0.4531, -0.2109),
+        (0.2813, -0.1566),
+        (0.1719, -0.1015),
+        (0.1016, -0.0643),
+        (0.0703, -0.0478),
+        (0.0625, -0.0419),
+        (0.0547, -0.0372),
+        (0.0000, 0.0000),
+    ]
+}
+
+/// Linear interpolation over ascending `(x, y)` samples.
+///
+/// Returns `None` for fewer than two samples, non-finite `x`, or `x`
+/// outside the sampled span. Shared by the lid-cavity QA binary and the
+/// Navier-Stokes benchmark centerline probes.
+pub fn interp_sorted_samples(samples: &[(f64, f64)], x: f64) -> Option<f64> {
+    if samples.len() < 2 || !x.is_finite() {
+        return None;
+    }
+    for window in samples.windows(2) {
+        let (x0, y0) = window[0];
+        let (x1, y1) = window[1];
+        if x >= x0 && x <= x1 && x1 > x0 {
+            let fraction = (x - x0) / (x1 - x0);
+            return Some(y0 + fraction * (y1 - y0));
+        }
+    }
+    None
+}
+
 /// Decaying 2D Taylor-Green vortex.
 pub fn ns_taylor_green_vortex(x: f64, y: f64, time: f64, nu: f64) -> (f64, f64, f64) {
     let velocity_decay = (-2.0 * nu * time).exp();

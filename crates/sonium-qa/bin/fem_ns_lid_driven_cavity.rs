@@ -18,43 +18,11 @@ use sonium_fem::physics::fluid::stokes::navier_stokes::{
     NavierStokesConfig, compute_vorticity_2d, solve_picard,
 };
 use sonium_fem::spaces::{FunctionSpace, H1Space, VectorH1Space};
+use sonium_qa::analytical::{ghia_lid_cavity_re100_u, interp_sorted_samples};
 use sonium_xem::io::binary_output_dir;
 
-/// Ghia et al. (1982) reference data for u-velocity at x=0.5 (Re=100).
-/// Format: (y, u)
-const GHIA_RE100_U: [(f64, f64); 17] = [
-    (1.0000, 1.0000),
-    (0.9766, 0.8412),
-    (0.9688, 0.7887),
-    (0.9609, 0.7372),
-    (0.9531, 0.6872),
-    (0.8516, 0.2315),
-    (0.7344, 0.0033),
-    (0.6172, -0.1364),
-    (0.5000, -0.2058),
-    (0.4531, -0.2109),
-    (0.2813, -0.1566),
-    (0.1719, -0.1015),
-    (0.1016, -0.0643),
-    (0.0703, -0.0478),
-    (0.0625, -0.0419),
-    (0.0547, -0.0372),
-    (0.0000, 0.0000),
-];
-
 fn interpolate_centerline(samples: &[(f64, f64)], y: f64) -> Option<f64> {
-    if samples.len() < 2 || !y.is_finite() {
-        return None;
-    }
-    for window in samples.windows(2) {
-        let (y0, u0) = window[0];
-        let (y1, u1) = window[1];
-        if y >= y0 && y <= y1 && y1 > y0 {
-            let fraction = (y - y0) / (y1 - y0);
-            return Some(u0 + fraction * (u1 - u0));
-        }
-    }
-    None
+    interp_sorted_samples(samples, y)
 }
 
 fn run_cavity(re: f64, n: usize) -> f64 {
@@ -136,7 +104,7 @@ fn run_cavity(re: f64, n: usize) -> f64 {
             "y", "u_num", "u_ref", "error"
         );
         let mut max_err = 0.0_f64;
-        for &(y_ref, u_ref) in &GHIA_RE100_U {
+        for &(y_ref, u_ref) in &ghia_lid_cavity_re100_u() {
             let u_num = interpolate_centerline(&centerline, y_ref)
                 .unwrap_or_else(|| panic!("centerline does not bracket y={y_ref}"));
             let err = (u_num - u_ref).abs();

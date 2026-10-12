@@ -181,6 +181,14 @@ pub fn q1_element_residual(
     elem_idx: usize,
     u: &[f64],
 ) -> [f64; 24] {
+    // The 3x3 deformation gradient below indexes nine stress entries; a
+    // 2D material would previously panic on the short heap vector, so
+    // fail closed with the same strictness on the stack spelling.
+    assert_eq!(
+        material.dim(),
+        3,
+        "q1_element_residual needs a 3D material"
+    );
     let coords = mesh.element_coords(elem_idx);
     let mut residual = [0.0; 24];
     for (natural, weight) in hex_quadrature() {
@@ -200,7 +208,10 @@ pub fn q1_element_residual(
                 }
             }
         }
-        let p = material.stress(&f);
+        // Stack stress: bit-identical to `stress` (same trait contract),
+        // minus one heap allocation per quadrature point on this hot path.
+        let mut p = [0.0; 9];
+        material.stress_into(&f, &mut p);
         let w = weight * det;
         for a in 0..8 {
             for i in 0..3 {

@@ -29,7 +29,7 @@ use sonium_bench::oc_compare::{
 use sonium_compute::explicit_dt::critical_dt;
 use sonium_compute::explicit_state::ExplicitState;
 use sonium_fem::physics::solid::contact::explicit::{
-    RigidWall, rigid_wall_contact, suggested_penalty,
+    RigidWall, rigid_wall_contact, rigid_wall_project, suggested_penalty,
 };
 use sonium_fem::physics::solid::fracture::ductile::{ErosionCriterion, ErosionSet};
 use sonium_fem::physics::solid::nonlinear_solid::{
@@ -54,8 +54,6 @@ use std::process::Command;
 
 /// Default deck: the smallest C3 explicit case, suited for CI.
 const DEFAULT_DECK: &str = "taylor_bar";
-/// Penalty factor for native contact, validated by the Taylor driver.
-const PENALTY_FACTOR: f64 = 50.0;
 /// Penalty factor for the plastic arm (Taylor-plastic leg value: the
 /// stiff LAW1 factor rings undamped on mushrooming/eroding impact).
 const PLASTIC_PENALTY_FACTOR: f64 = 0.5;
@@ -1204,10 +1202,14 @@ struct NativeCload {
 /// same stop time. What differs: the engine integrates LAW1 bricks
 /// with its QEPH formulation while sonium integrates Neo-Hookean Q1
 /// bricks (identical at small strain; validated by the shared probes),
-/// and contact is a penalty wall with factor [`PENALTY_FACTOR`].
+/// and contact is a kinematic rigid wall (lagged constraint force
+/// in the dynamics plus post-step velocity adoption; engine RWALL
+/// semantics, frictionless).
 /// Plastic decks (LAW2/LAW36) run the same mesh/BCs through the
 /// [`hex_plastic_forces`] path with deck-parsed hardening and
 /// deck-driven erosion; damage tracking stays off (no damage card).
+/// The plastic arm keeps penalty walls (kinematic migration pending),
+/// so its contact CFL cap stays.
 #[derive(Debug, Clone)]
 struct NativeModel {
     coords: Vec<[f64; 3]>,
@@ -2248,20 +2250,15 @@ fn sonium_repeat(
     if !min_mass.is_finite() || min_mass <= 0.0 {
         return Err(format!("non-positive lumped mass {min_mass:.6e}"));
     }
-    let min_char = char_lengths.iter().cloned().fold(f64::INFINITY, f64::min);
     let material = NeoHookean::from_young(model.youngs, model.poisson, 3);
     let dilatational = ((material.lambda + 2.0 * material.mu) / model.density).sqrt();
     let sound_speeds = vec![dilatational; num_elems];
-    let dt_crit = critical_dt(&char_lengths, &sound_speeds);
-    // Penalty contact is an undamped oscillator on the lumped mass,
-    // so the contact CFL caps the adaptive step with a 0.5 margin
-    // (Taylor-driver precedent); wall-free decks ride the bulk CFL.
-    let dt_max = if model.walls.is_empty() {
-        dt_crit
-    } else {
-        let penalty = suggested_penalty(model.youngs, min_char, PENALTY_FACTOR);
-        0.5 * 2.0 * (min_mass / penalty).sqrt()
-    };
+    // Kinematic walls apply a lagged contact force (a prescribed
+    // load, not a spring), so no contact stiffness enters the
+    // dynamics and every deck rides the bulk CFL cap: the old
+    // `sqrt(m/k)` cap cost wall decks ~12x in step count for zero
+    // accuracy gain (engine RWALLs are force-based too).
+    let dt_max = critical_dt(&char_lengths, &sound_speeds);
     if !dt_max.is_finite() || dt_max <= 0.0 {
         return Err("native dt bound is not positive".to_string());
     }
@@ -2290,17 +2287,23 @@ fn sonium_repeat(
     }
     state.masses.copy_from_slice(&masses);
     let reference: Vec<f64> = state.positions.clone();
-    let penalty = suggested_penalty(model.youngs, min_char, PENALTY_FACTOR);
     // Wall-force history per wall: (time, force on wall). Stride keeps
     // sampling bounded on long runs without biasing the tail mean.
     let stride = ((estimated / MAX_FORCE_SAMPLES as u64).max(1)) as usize;
 
+    // Reused scratch: the driver calls force closures sequentially (never
+    // re-entrantly), so one displacement buffer serves every evaluation and
+    // the per-step allocation drops to the returned force vector alone (the
+    // driver takes ownership of it, hence it cannot be recycled here).
+    let displacement_buf = RefCell::new(vec![0.0; 3 * num_nodes]);
     let internal_force = |positions: &[f64], _: &[f64], _: f64| {
-        let displacement: Vec<f64> = positions
-            .iter()
-            .zip(reference.iter())
-            .map(|(x, x0)| x - x0)
-            .collect();
+        let mut displacement = displacement_buf.borrow_mut();
+        for (slot, (pos, pos0)) in displacement
+            .iter_mut()
+            .zip(positions.iter().zip(reference.iter()))
+        {
+            *slot = pos - pos0;
+        }
         let mut forces = vec![0.0; positions.len()];
         for elem in 0..num_elems {
             let residual = q1_element_residual(&material, &mesh, elem, &displacement);
@@ -2322,17 +2325,18 @@ fn sonium_repeat(
         }
         forces
     };
-    let external_force = |positions: &[f64], velocities: &[f64], time: f64| {
+    // Lagged kinematic contact force: the previous step's recovered
+    // constraint force, applied as a prescribed external load. A
+    // prescribed force adds no stiffness (unlike a penalty spring),
+    // so the step stays CFL-limited while the force itself cancels
+    // the bulk load; the post-step adoption kills residual drift.
+    let contact_applied = RefCell::new(vec![0.0; 3 * num_nodes]);
+    let mut contact_staging = vec![0.0; 3 * num_nodes];
+    let external_force = |positions: &[f64], _: &[f64], time: f64| {
         let mut forces = vec![0.0; positions.len()];
-        for wall in &model.walls {
-            let point = [
-                wall.point[0] + wall.velocity[0] * time,
-                wall.point[1] + wall.velocity[1] * time,
-                wall.point[2] + wall.velocity[2] * time,
-            ];
-            let mut rigid = RigidWall::new(point, wall.normal, penalty);
-            rigid.velocity = wall.velocity;
-            let _ = rigid_wall_contact(&rigid, &wall.slaves, positions, velocities, &mut forces);
+        let applied = contact_applied.borrow();
+        for (slot, lagged) in forces.iter_mut().zip(applied.iter()) {
+            *slot += *lagged;
         }
         for cload in &model.cloads {
             let shape = model
@@ -2359,39 +2363,19 @@ fn sonium_repeat(
     // Wall histories sampled inline per step with stride (kept outside
     // the force closures so the driver sees pure evaluations).
     let mut sampled: Vec<Vec<(f64, [f64; 3])>> = vec![Vec::new(); model.walls.len()];
+    // Accumulated velocity-adoption kinetic jumps; the driver's
+    // ledger sees the applied contact force work (it flows through
+    // the external channel) but not these jumps, so the drift gate
+    // below adds them back.
+    let mut wall_ke = 0.0;
+    // Deck walls move at constant velocity (no acceleration card).
+    let wall_acceleration = [0.0; 3];
     while state.time < model.stop {
         if steps >= MAX_NATIVE_STEPS {
             return Err(format!(
                 "stalled: {MAX_NATIVE_STEPS} steps reached at t = {:.6e}s, short of stop {:.6e}s",
                 state.time, model.stop
             ));
-        }
-        // Sampled BEFORE the step: records the contact state driving it.
-        if (steps as usize).is_multiple_of(stride) {
-            let mut scratch = vec![0.0; state.positions.len()];
-            for (index, wall) in model.walls.iter().enumerate() {
-                let point = [
-                    wall.point[0] + wall.velocity[0] * state.time,
-                    wall.point[1] + wall.velocity[1] * state.time,
-                    wall.point[2] + wall.velocity[2] * state.time,
-                ];
-                let mut rigid = RigidWall::new(point, wall.normal, penalty);
-                rigid.velocity = wall.velocity;
-                let pairs = rigid_wall_contact(
-                    &rigid,
-                    &wall.slaves,
-                    &state.positions,
-                    &state.velocities,
-                    &mut scratch,
-                );
-                let mut on_wall = [0.0; 3];
-                for pair in &pairs {
-                    on_wall[0] -= pair.force[0];
-                    on_wall[1] -= pair.force[1];
-                    on_wall[2] -= pair.force[2];
-                }
-                sampled[index].push((state.time, on_wall));
-            }
         }
         if let Err(error) = driver.step(
             &mut state,
@@ -2405,6 +2389,73 @@ fn sonium_repeat(
                 state.time
             ));
         }
+        // Kinematic walls AFTER the free step: adopt wall velocities
+        // and recover constraint forces from the driver's freshly
+        // evaluated channels (no re-evaluation); the recovery stages
+        // the next step's applied contact force.
+        let (free_internal, free_external) = driver.last_forces().ok_or_else(|| {
+            format!("step {steps} completed without evaluated forces for the wall projection")
+        })?;
+        let sample = ((steps + 1) as usize).is_multiple_of(stride);
+        contact_staging.fill(0.0);
+        let applied = contact_applied.borrow();
+        for (index, wall) in model.walls.iter().enumerate() {
+            let point = [
+                wall.point[0] + wall.velocity[0] * state.time,
+                wall.point[1] + wall.velocity[1] * state.time,
+                wall.point[2] + wall.velocity[2] * state.time,
+            ];
+            let mut rigid = RigidWall::new(point, wall.normal, 0.0);
+            rigid.velocity = wall.velocity;
+            let contact = rigid_wall_project(
+                &rigid,
+                wall_acceleration,
+                &wall.slaves,
+                &state.masses,
+                &state.positions,
+                &mut state.velocities,
+                free_internal,
+                free_external,
+                &applied,
+                state.dt,
+            );
+            wall_ke += contact.kinetic_jump;
+            for pair in &contact.pairs {
+                contact_staging[3 * pair.slave] += pair.force[0];
+                contact_staging[3 * pair.slave + 1] += pair.force[1];
+                contact_staging[3 * pair.slave + 2] += pair.force[2];
+            }
+            // TEMP-DIAG: remove before finishing.
+            if steps % 200 == 0 && std::env::var("SONIUM_OC_DIAG").is_ok() {
+                let inst: f64 = contact.pairs.iter().map(|p| p.force[0]).sum();
+                // Native indices of deck nodes 95 (crusher face) and 5 (anvil face).
+                let i95 = model.index_of.get(&95).copied().unwrap_or(0);
+                let i5 = model.index_of.get(&5).copied().unwrap_or(0);
+                eprintln!(
+                    "diag step {steps} t={:.6e} w{} pairs={} instFx={inst:.3e} x95={:.6e} v95={:.3e} x5={:.6e} v5={:.3e}",
+                    state.time,
+                    wall.number,
+                    contact.pairs.len(),
+                    state.positions[3 * i95],
+                    state.velocities[3 * i95],
+                    state.positions[3 * i5],
+                    state.velocities[3 * i5],
+                );
+            }
+            if sample {
+                let mut on_wall = [0.0; 3];
+                for pair in &contact.pairs {
+                    on_wall[0] -= pair.force[0];
+                    on_wall[1] -= pair.force[1];
+                    on_wall[2] -= pair.force[2];
+                }
+                sampled[index].push((state.time, on_wall));
+            }
+        }
+        drop(applied);
+        contact_applied
+            .borrow_mut()
+            .copy_from_slice(&contact_staging);
         steps += 1;
     }
     let wall_s = start.elapsed().as_secs_f64();
@@ -2432,10 +2483,10 @@ fn sonium_repeat(
                     failures.push(format!("probe {} has no wall-force samples", probe.label));
                     continue;
                 }
-                // Impact walls (initial gap) ring on penalty contact,
-                // so the probe reads the second-half plateau mean
-                // (Taylor-driver precedent); touching walls load
-                // quasi-statically, so the probe reads the final load.
+                // Impact walls (initial gap) settle past the initial
+                // transient, so the probe reads the second-half plateau
+                // mean; touching walls load quasi-statically, so the
+                // probe reads the final load.
                 let wall = &model.walls[wall];
                 let mut gap = f64::INFINITY;
                 for slave in &wall.slaves {
@@ -2480,14 +2531,22 @@ fn sonium_repeat(
     }
     let balance = driver.balance().clone();
     let energy_scale = balance.kinetic + balance.internal.abs();
+    // True drift adds the adoption kinetic jumps the driver's ledger
+    // cannot see (the applied contact force work flows through Wext
+    // already): drift = (KE - KE0) + IE - Wext - Wadopt.
+    let drift = balance.drift - wall_ke;
     let drift_frac = if energy_scale > 0.0 {
-        balance.drift.abs() / energy_scale
+        drift.abs() / energy_scale
     } else {
         f64::INFINITY
     };
     println!(
-        "energy: KE {:.6e}J, IE {:.6e}J, Wext {:.6e}J, drift {:.3e} rel",
-        balance.kinetic, balance.internal, balance.external_work, drift_frac
+        "energy: KE {:.6e}J, IE {:.6e}J, Wext {:.6e}J, Wadopt {:.6e}J, drift {:.3e} rel",
+        balance.kinetic,
+        balance.internal,
+        balance.external_work,
+        wall_ke,
+        drift_frac
     );
     if !drift_frac.is_finite() || drift_frac > DRIFT_TOL {
         failures.push(format!(

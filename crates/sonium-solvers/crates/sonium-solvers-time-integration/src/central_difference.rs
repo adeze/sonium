@@ -351,6 +351,41 @@ impl ExplicitStepDriver {
         &self.balance
     }
 
+    /// Latest evaluated force channels, if any step completed.
+    ///
+    /// Returns the `(internal, external)` vectors from the most recent
+    /// evaluation at the current state, so post-step projections (for
+    /// example kinematic contact) can recover constraint forces
+    /// without re-evaluating the closures. Returns [`None`] before
+    /// the first step.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_compute::explicit_state::ExplicitState;
+    /// use sonium_solvers_time_integration::{AdaptiveDtConfig, ExplicitStepDriver};
+    ///
+    /// let config = AdaptiveDtConfig::new(0.9, 1e-9, 1e-3, 1.1).unwrap();
+    /// let mut driver = ExplicitStepDriver::new(config).unwrap();
+    /// assert!(driver.last_forces().is_none());
+    /// let mut state = ExplicitState::new(1);
+    /// state.masses[0] = 1.0;
+    /// let zero = |_: &[f64], _: &[f64], _: f64| vec![0.0; 3];
+    /// driver.step(&mut state, zero, zero, &[0.1], &[1000.0]).unwrap();
+    /// let (internal, external) = driver.last_forces().unwrap();
+    /// assert_eq!(internal.len(), 3);
+    /// assert_eq!(external.len(), 3);
+    /// ```
+    #[must_use]
+    pub fn last_forces(&self) -> Option<(&[f64], &[f64])> {
+        self.initialized.then(|| {
+            (
+                self.prev_internal.as_slice(),
+                self.prev_external.as_slice(),
+            )
+        })
+    }
+
     /// Advance one adaptive step with split force closures.
     ///
     /// Selects `dt` from `char_lengths`/`sound_speeds` via

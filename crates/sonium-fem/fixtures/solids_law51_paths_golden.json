@@ -1,0 +1,359 @@
+{
+	"meta":{
+		"engine":"Wolfram Language 15.0.0 for Linux x86 (64-bit) (May 26, 2026)",
+		"protocol":"solids-golden-v1",
+		"case":"law51_paths",
+		"units":"SI"
+	},
+	"inputs":{
+		"a_unreacted_pa":2.0e9,
+		"a_reacted_pa":1.0e9,
+		"b_pa":5.0e8,
+		"r1":4.5,
+		"r2":1.2,
+		"omega":0.25,
+		"rho0":1.5e3,
+		"e0":1.0e5,
+		"p_ext_pa":0.0,
+		"burn_steps":200,
+		"dt_s":1.0e-6,
+		"de_tension":2.0e-4,
+		"dg_shear":2.0e-3,
+		"dv_vol":1.0e-3,
+		"steps_per_leg":100,
+		"stations_100":[
+			20,
+			40,
+			60,
+			80,
+			100
+		],
+		"stations_cycle":[
+			80,
+			160,
+			240,
+			320,
+			400
+		]
+	},
+	"values":{
+		"uni_sigma":{
+			"values":[
+				"-1.6728144578353704072912325134883547782375566420839e8",
+				"-1.6728144578353704072912325134883547782375566420839e8",
+				"-1.6728144578353704072912325134883547782375566420839e8",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"hydrostatic -(P-Pext) I at mu = -0.02, half burn"
+		},
+		"uni_pressure":{
+			"values":[
+				"1.6728144578353704072912325134883547782375566420839e8"
+			],
+			"exact":"mixture pressure at the tension end"
+		},
+		"uni_mu":{
+			"values":[
+				"-0.02"
+			],
+			"exact":"volumetric strain -0.02 at the tension end"
+		},
+		"uni_burn":{
+			"values":[
+				"0.5"
+			],
+			"exact":"burn fraction 1\/2 at the tension end"
+		},
+		"uni_eu":{
+			"values":[
+				"97621.201536185068930001453479020694825606286391369"
+			],
+			"exact":"unreacted adiabatic energy at the tension end"
+		},
+		"uni_er":{
+			"values":[
+				"97757.289645120292086673131977985193067874704374404"
+			],
+			"exact":"reacted adiabatic energy at the tension end"
+		},
+		"uni_yielding":{
+			"values":[
+				"0",
+				"0",
+				"0",
+				"0",
+				"0"
+			],
+			"exact":"all False, the mixture never yields"
+		},
+		"uni_epbar_st":{
+			"values":[
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"all zero, no plastic flow"
+		},
+		"shear_sigma":{
+			"values":[
+				"-1.7251291312807607501662708562217097668498917954719e8",
+				"-1.7251291312807607501662708562217097668498917954719e8",
+				"-1.7251291312807607501662708562217097668498917954719e8",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"hydrostatic only, shear slots exactly zero"
+		},
+		"shear_pressure":{
+			"values":[
+				"1.7251291312807607501662708562217097668498917954719e8"
+			],
+			"exact":"burn-mixed pressure at mu = 0"
+		},
+		"shear_mu":{
+			"values":[
+				"0.0"
+			],
+			"exact":"zero, shear carries no volume"
+		},
+		"shear_burn":{
+			"values":[
+				"0.5"
+			],
+			"exact":"burn fraction 1\/2 at the shear end"
+		},
+		"shear_eu":{
+			"values":[
+				"100000."
+			],
+			"exact":"e0, no volumetric work under shear"
+		},
+		"shear_er":{
+			"values":[
+				"100000."
+			],
+			"exact":"e0, no volumetric work under shear"
+		},
+		"shear_yielding":{
+			"values":[
+				"0",
+				"0",
+				"0",
+				"0",
+				"0"
+			],
+			"exact":"all False, the mixture never yields"
+		},
+		"shear_epbar_st":{
+			"values":[
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"all zero, no plastic flow"
+		},
+		"vol_sigma":{
+			"values":[
+				"-2.5292218677601181807536573107018339968422617560641e8",
+				"-2.5292218677601181807536573107018339968422617560641e8",
+				"-2.5292218677601181807536573107018339968422617560641e8",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"hydrostatic -(P-Pext) I at mu = +0.3, half burn"
+		},
+		"vol_pressure":{
+			"values":[
+				"2.5292218677601181807536573107018339968422617560641e8"
+			],
+			"exact":"mixture pressure at the crush end"
+		},
+		"vol_mu":{
+			"values":[
+				"0.3"
+			],
+			"exact":"volumetric strain +0.3 at the crush end"
+		},
+		"vol_burn":{
+			"values":[
+				"0.5"
+			],
+			"exact":"burn fraction 1\/2 at the crush end"
+		},
+		"vol_eu":{
+			"values":[
+				"133543.0241614712186398104063336490047178857952114"
+			],
+			"exact":"unreacted adiabatic energy at the crush end"
+		},
+		"vol_er":{
+			"values":[
+				"130645.37608272295032784400653538620857948508295519"
+			],
+			"exact":"reacted adiabatic energy at the crush end"
+		},
+		"vol_yielding":{
+			"values":[
+				"0",
+				"0",
+				"0",
+				"0",
+				"0"
+			],
+			"exact":"all False, the mixture never yields"
+		},
+		"vol_epbar_st":{
+			"values":[
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"all zero, no plastic flow"
+		},
+		"cycle_sigma":{
+			"values":[
+				"-1.670086968494076636496364792986341941124450923363e8",
+				"-1.670086968494076636496364792986341941124450923363e8",
+				"-1.670086968494076636496364792986341941124450923363e8",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"hydrostatic at mu = 0, full burn, cycled energies"
+		},
+		"cycle_pressure":{
+			"values":[
+				"1.670086968494076636496364792986341941124450923363e8"
+			],
+			"exact":"mixture pressure at the cycle end"
+		},
+		"cycle_mu":{
+			"values":[
+				"0.0"
+			],
+			"exact":"zero, the volume cycle closes"
+		},
+		"cycle_burn":{
+			"values":[
+				"1."
+			],
+			"exact":"burn fraction 1 at the cycle end"
+		},
+		"cycle_eu":{
+			"values":[
+				"99810.550536368284757395380979737951434638808601536"
+			],
+			"exact":"unreacted adiabatic energy at the cycle end"
+		},
+		"cycle_er":{
+			"values":[
+				"99785.105136629007425604146148173045367909488961118"
+			],
+			"exact":"reacted adiabatic energy at the cycle end"
+		},
+		"cycle_yielding":{
+			"values":[
+				"0",
+				"0",
+				"0",
+				"0",
+				"0"
+			],
+			"exact":"all False, the mixture never yields"
+		},
+		"cycle_epbar_st":{
+			"values":[
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0",
+				"0.0"
+			],
+			"exact":"all zero, no plastic flow"
+		},
+		"cycle_closure":{
+			"values":[
+				"-205842.0964011779631356725539090836326182754588331"
+			],
+			"exact":"P_end - Pr(0, e0), adiabatic hysteresis"
+		}
+	},
+	"tolerances":{
+		"uni_sigma_abs":1.0e-6,
+		"uni_sigma_rel":1.0e-12,
+		"uni_pressure_abs":1.0e-6,
+		"uni_pressure_rel":1.0e-12,
+		"uni_mu_abs":1.0e-12,
+		"uni_mu_rel":1.0e-12,
+		"uni_burn_abs":1.0e-12,
+		"uni_burn_rel":1.0e-12,
+		"uni_eu_abs":1.0e-6,
+		"uni_eu_rel":1.0e-9,
+		"uni_er_abs":1.0e-6,
+		"uni_er_rel":1.0e-9,
+		"uni_yielding_abs":0.0,
+		"uni_yielding_rel":0.0,
+		"uni_epbar_st_abs":0.0,
+		"uni_epbar_st_rel":0.0,
+		"shear_sigma_abs":1.0e-6,
+		"shear_sigma_rel":1.0e-12,
+		"shear_pressure_abs":1.0e-6,
+		"shear_pressure_rel":1.0e-12,
+		"shear_mu_abs":0.0,
+		"shear_mu_rel":0.0,
+		"shear_burn_abs":1.0e-12,
+		"shear_burn_rel":1.0e-12,
+		"shear_eu_abs":1.0e-9,
+		"shear_eu_rel":1.0e-12,
+		"shear_er_abs":1.0e-9,
+		"shear_er_rel":1.0e-12,
+		"shear_yielding_abs":0.0,
+		"shear_yielding_rel":0.0,
+		"shear_epbar_st_abs":0.0,
+		"shear_epbar_st_rel":0.0,
+		"vol_sigma_abs":1.0e-6,
+		"vol_sigma_rel":1.0e-12,
+		"vol_pressure_abs":1.0e-6,
+		"vol_pressure_rel":1.0e-12,
+		"vol_mu_abs":1.0e-12,
+		"vol_mu_rel":1.0e-12,
+		"vol_burn_abs":1.0e-12,
+		"vol_burn_rel":1.0e-12,
+		"vol_eu_abs":1.0e-6,
+		"vol_eu_rel":1.0e-9,
+		"vol_er_abs":1.0e-6,
+		"vol_er_rel":1.0e-9,
+		"vol_yielding_abs":0.0,
+		"vol_yielding_rel":0.0,
+		"vol_epbar_st_abs":0.0,
+		"vol_epbar_st_rel":0.0,
+		"cycle_sigma_abs":1.0e-6,
+		"cycle_sigma_rel":1.0e-12,
+		"cycle_pressure_abs":1.0e-6,
+		"cycle_pressure_rel":1.0e-12,
+		"cycle_mu_abs":1.0e-12,
+		"cycle_mu_rel":1.0e-12,
+		"cycle_burn_abs":0.0,
+		"cycle_burn_rel":0.0,
+		"cycle_eu_abs":1.0e-6,
+		"cycle_eu_rel":1.0e-9,
+		"cycle_er_abs":1.0e-6,
+		"cycle_er_rel":1.0e-9,
+		"cycle_yielding_abs":0.0,
+		"cycle_yielding_rel":0.0,
+		"cycle_epbar_st_abs":0.0,
+		"cycle_epbar_st_rel":0.0,
+		"cycle_closure_abs":1.0e-6,
+		"cycle_closure_rel":1.0e-12
+	}
+}
