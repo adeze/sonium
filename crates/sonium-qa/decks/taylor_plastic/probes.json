@@ -1,0 +1,28 @@
+{
+  "case": "taylor_plastic",
+  "engine": "OpenCourant linux64_gf 2026-10-12 CommitID 33e68517",
+  "units": "SI",
+  "probes": [
+    {
+      "label": "anvil FNZ plateau",
+      "channel": "FNZ/RWALL/1",
+      "expected": -3.816457000000e4,
+      "abs_tol": 1.000e3,
+      "rel_tol": 1.000e-1
+    },
+    {
+      "label": "impact face DZ",
+      "channel": "DZ/26",
+      "expected": 6.594232000000e-4,
+      "abs_tol": 1.000e-9,
+      "rel_tol": 2.000e-2
+    },
+    {
+      "label": "impact brick PLAS",
+      "channel": "PLAS/BRIC/15",
+      "expected": 2.114712000000e-1,
+      "abs_tol": 2.000e-2,
+      "rel_tol": 1.000e-1
+    }
+  ]
+}

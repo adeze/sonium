@@ -1,0 +1,10 @@
+#RADIOSS ENGINE
+# engine controls for taylor_plastic
+/RUN/taylor_plastic/1
+   4.000000000000E-6
+/TFILE
+   1.000000000000E-7
+/TH/TITLE
+/ANIM/DT
+    0.000000000000E0   1.000000000000E-6
+/PRINT/-1000
