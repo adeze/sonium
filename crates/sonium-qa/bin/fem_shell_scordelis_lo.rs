@@ -10,9 +10,9 @@
 //! MacNeal, R. H. and Harder, R. L. (1985), "A proposed standard set of
 //! problems to test finite element accuracy", FEAD 1.
 //!
-//! The C3 Radioss case uses the shared `sonium_qa::rad` extended API
+//! The C3 OpenCourant case uses the shared `sonium_qa::rad` extended API
 //! (`shell_scordelis_lo_case`); engine-gated runs live in
-//! `qa-fem-radioss-shell-scordelis-lo`.
+//! `qa-fem-opencourant-shell-scordelis-lo`.
 
 // Rust guideline compliant 2026-02-21
 
@@ -146,7 +146,7 @@ fn main() {
             "mesh refinement must reduce the error"
         );
         // C3: static deck verification through the real API (no file writes;
-        // engine-gated runs live in qa-fem-radioss-shell-scordelis-lo).
+        // engine-gated runs live in qa-fem-opencourant-shell-scordelis-lo).
         let case = shell_scordelis_lo_case();
         case.validate().expect("shell case must validate");
         let starter = write_extended_starter(&case);

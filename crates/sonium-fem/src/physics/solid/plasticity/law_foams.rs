@@ -2712,6 +2712,487 @@ pub fn drive_uniaxial_foam<M: PointStepper>(
     curve
 }
 
+/// Honeycomb-mode LAW68 (COSSER) with asymmetric shear tracking.
+///
+/// Models the orthotropic crushable honeycomb card (`/MAT/LAW68`)
+/// following `sigeps68.F`: per-direction elastic predictor, nine
+/// independent yield caps (three normals plus six signed shears) from
+/// initial curves, a switch to residual curves past the transition
+/// strains (`FR_WAV`), tensile rupture latches, and the abscissa rule
+/// (volumetric `AMU` or signed component strain). The two shear
+/// senses advance separately (`SXY` with the forward increment,
+/// `SYX` with the reverse), so asymmetric curve pairs produce the
+/// Cosserat skew (couple-stress) parts the C1 update averages out.
+///
+/// The C1 [`update`](Honeycomb68::update) drives both shear senses
+/// with the symmetric increment (exact for irrotational flow);
+/// [`update_nonsymmetric`](Honeycomb68::update_nonsymmetric) takes
+/// the extra spin increments and reproduces the engine split exactly.
+/// [`couple_stress`](Honeycomb68::couple_stress) exposes the skew
+/// halves for dedicated probes.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::plasticity::funct::Funct1D;
+/// use sonium_fem::physics::solid::plasticity::law_foams::{
+///     Honeycomb68, Honeycomb68State, StrainBasis,
+/// };
+///
+/// let flat = Funct1D::new(vec![-1.0, 1.0], vec![1.0, 1.0]).unwrap();
+/// let curves = core::array::from_fn(|_| flat.clone());
+/// let law = Honeycomb68::new(
+///     [2.0; 6],
+///     curves.clone(),
+///     curves,
+///     [1.0; 18],
+///     StrainBasis::Negated,
+///     StrainBasis::Negated,
+///     [0.0; 6],
+///     [0.0; 6],
+/// )
+/// .unwrap();
+/// let state = Honeycomb68State::new();
+/// let update = law.update(&state, &[0.1, 0.0, 0.0, 0.0, 0.0, 0.0]);
+/// assert!((update.stress[0] - 0.2).abs() < 1e-12);
+/// ```
+#[derive(Debug, Clone)]
+pub struct Honeycomb68 {
+    /// Orthotropic moduli `[E11, E22, E33, G12, G23, G31]` (Pa).
+    pub moduli: Voigt6,
+    /// Initial yield tables, J = 1..9 (11 22 33 12 23 31 21 32 13).
+    pub initial: [Funct1D; 9],
+    /// Residual yield tables past the transition, J = 10..18.
+    pub residual: [Funct1D; 9],
+    /// Curve scales `FAC`, initial 9 then residual 9.
+    pub scales: [f64; 18],
+    /// Abscissa rule for the normal directions (`Iflag1`).
+    pub normal_basis: StrainBasis,
+    /// Abscissa rule for the shear directions (`Iflag2`).
+    pub shear_basis: StrainBasis,
+    /// Tensile rupture strains, 11 22 33 12 23 31 (0 disables).
+    pub rupture: [f64; 6],
+    /// Residual transition strains, same order (see caveat).
+    ///
+    /// Zero does NOT disable: the engine trips the residual branch
+    /// on any compressive normal strain or nonzero shear strain when
+    /// the entry is 0, and recomputes the flag every step (it can
+    /// flip back). Mirror the deck values exactly.
+    pub transition: [f64; 6],
+}
+
+/// History state of one honeycomb LAW68 material point.
+#[derive(Debug, Clone)]
+pub struct Honeycomb68State {
+    /// Normal stresses `[S11, S22, S33]` (Pa).
+    pub normal: [f64; 3],
+    /// Forward shears `[SXY, SYZ, SZX]` (Pa).
+    pub shear_forward: [f64; 3],
+    /// Reverse shears `[SYX, SZY, SXZ]` (Pa).
+    pub shear_reverse: [f64; 3],
+    /// Total strains in C1 Voigt order.
+    pub strains: Voigt6,
+    /// Volumetric compaction (positive in compression).
+    pub amu: f64,
+    /// Residual branch flag (`FR_WAV`, recomputed each step).
+    pub residual: bool,
+    /// Tensile rupture latch (`OFF = 0`, irreversible).
+    pub failed: bool,
+    /// Accumulated equivalent plastic strain.
+    pub equiv_plastic_strain: f64,
+}
+
+impl Honeycomb68State {
+    /// Builds a virgin honeycomb LAW68 state.
+    pub fn new() -> Self {
+        Self {
+            normal: [0.0; 3],
+            shear_forward: [0.0; 3],
+            shear_reverse: [0.0; 3],
+            strains: [0.0; 6],
+            amu: 0.0,
+            residual: false,
+            failed: false,
+            equiv_plastic_strain: 0.0,
+        }
+    }
+
+    /// Symmetric C1 stress from the nine stored components (Pa).
+    pub fn symmetric_stress(&self) -> Voigt6 {
+        [
+            self.normal[0],
+            self.normal[1],
+            self.normal[2],
+            0.5 * (self.shear_forward[0] + self.shear_reverse[0]),
+            0.5 * (self.shear_forward[1] + self.shear_reverse[1]),
+            0.5 * (self.shear_forward[2] + self.shear_reverse[2]),
+        ]
+    }
+}
+
+impl Default for Honeycomb68State {
+    /// Builds a virgin honeycomb LAW68 state.
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Honeycomb68 {
+    /// Shear sense order: forward (12 23 31) then reverse (21 32 13).
+    const SHEAR_TABLE: [(usize, usize); 6] = [(3, 0), (4, 1), (5, 2), (6, 0), (7, 1), (8, 2)];
+
+    /// Builds a honeycomb LAW68 law from card data.
+    ///
+    /// Tables run J = 1..9 in the engine order (11 22 33 12 23 31
+    /// 21 32 13); scales run initial 9 then residual 9.
+    ///
+    /// # Errors
+    ///
+    /// Returns a message when any modulus is non-finite.
+    pub fn new(
+        moduli: Voigt6,
+        initial: [Funct1D; 9],
+        residual: [Funct1D; 9],
+        scales: [f64; 18],
+        normal_basis: StrainBasis,
+        shear_basis: StrainBasis,
+        rupture: [f64; 6],
+        transition: [f64; 6],
+    ) -> Result<Self, String> {
+        if moduli.iter().any(|m| !m.is_finite()) {
+            return Err("Honeycomb68 needs finite moduli".to_string());
+        }
+        Ok(Self {
+            moduli,
+            initial,
+            residual,
+            scales,
+            normal_basis,
+            shear_basis,
+            rupture,
+            transition,
+        })
+    }
+
+    /// Reports the tensile rupture latch on trial strains.
+    ///
+    /// Normals trip past the limit in tension; shears trip past
+    /// half the engineering strain magnitude (engine `/TWO`).
+    /// Zero limits disable their direction.
+    pub fn failed(&self, strains: &Voigt6) -> bool {
+        strains.iter().enumerate().any(|(dir, strain)| {
+            let limit = self.rupture[dir];
+            if limit <= 0.0 || limit.is_nan() {
+                return false;
+            }
+            if dir < 3 {
+                *strain > limit
+            } else {
+                0.5 * strain.abs() > limit
+            }
+        })
+    }
+
+    /// Evaluates the residual flag on trial strains and compaction.
+    ///
+    /// Normals trip on compression past the transition; shears trip
+    /// on half the engineering magnitude. Zero entries trip on any
+    /// nonzero measure, matching the engine comparison.
+    pub fn residual_flag(&self, strains: &Voigt6) -> bool {
+        strains.iter().enumerate().any(|(dir, strain)| {
+            let limit = self.transition[dir];
+            if dir < 3 {
+                -*strain > limit
+            } else {
+                0.5 * strain.abs() > limit
+            }
+        })
+    }
+
+    /// Yield cap of one table direction at an abscissa.
+    ///
+    /// Returns the scaled table value with its sign-insensitive cap;
+    /// `table` selects initial (`false`) or residual (`true`).
+    fn cap(&self, dir: usize, x: f64, table: bool) -> f64 {
+        let offset = if table { 9 } else { 0 };
+        let tables = if table { &self.residual } else { &self.initial };
+        (self.scales[offset + dir] * tables[dir].eval(x)).abs()
+    }
+
+    /// Pure nine-direction solve with explicit spin increments.
+    ///
+    /// Advances normals with the strain increment and each shear
+    /// sense with its full increment (symmetric plus/minus spin),
+    /// caps all nine against the active tables, and returns the
+    /// symmetric C1 stress, the yield flag, and the plastic norm
+    /// (zero unless some direction capped).
+    fn solve_nonsymmetric(
+        &self,
+        state: &Honeycomb68State,
+        dstrain: &Voigt6,
+        spin: &[f64; 3],
+    ) -> (Voigt6, bool, f64, Honeycomb68State) {
+        let trial_strains: Voigt6 = core::array::from_fn(|dir| state.strains[dir] + dstrain[dir]);
+        let failed = state.failed || self.failed(&trial_strains);
+        let residual = self.residual_flag(&trial_strains);
+        let mu = -(trial_strains[0] + trial_strains[1] + trial_strains[2]);
+        let mut next = Honeycomb68State {
+            normal: state.normal,
+            shear_forward: state.shear_forward,
+            shear_reverse: state.shear_reverse,
+            strains: trial_strains,
+            amu: mu,
+            residual,
+            failed,
+            equiv_plastic_strain: state.equiv_plastic_strain,
+        };
+        if failed {
+            next.normal = [0.0; 3];
+            next.shear_forward = [0.0; 3];
+            next.shear_reverse = [0.0; 3];
+            return ([0.0; 6], true, 0.0, next);
+        }
+        let mut yielding = false;
+        let mut plastic_norm = 0.0;
+        for dir in 0..3 {
+            let x = self.normal_basis.abscissa(trial_strains[dir], mu);
+            let trial = state.normal[dir] + self.moduli[dir] * dstrain[dir];
+            let cap = self.cap(dir, x, residual);
+            let capped = trial.signum() * trial.abs().min(cap);
+            yielding = yielding || capped.abs() < trial.abs();
+            let plastic = dstrain[dir] - (capped - state.normal[dir]) / self.moduli[dir];
+            plastic_norm += plastic * plastic;
+            next.normal[dir] = capped;
+        }
+        for (sense, &(table, plane)) in Self::SHEAR_TABLE.iter().enumerate() {
+            let g = self.moduli[3 + plane];
+            let sym = dstrain[3 + plane];
+            let full = if sense < 3 {
+                sym + spin[plane]
+            } else {
+                sym - spin[plane]
+            };
+            let old = if sense < 3 {
+                state.shear_forward[plane]
+            } else {
+                state.shear_reverse[plane]
+            };
+            let x = self.shear_basis.abscissa(trial_strains[3 + plane], mu);
+            let trial = old + g * full;
+            let cap = self.cap(table, x, residual);
+            let capped = trial.signum() * trial.abs().min(cap);
+            yielding = yielding || capped.abs() < trial.abs();
+            let plastic = full - (capped - old) / g;
+            plastic_norm += plastic * plastic;
+            if sense < 3 {
+                next.shear_forward[plane] = capped;
+            } else {
+                next.shear_reverse[plane] = capped;
+            }
+        }
+        let stress = next.symmetric_stress();
+        (stress, yielding, plastic_norm.sqrt(), next)
+    }
+
+    /// Pure update with explicit spin increments in C1 shape.
+    ///
+    /// `spin` carries the skew increments `[xy, yz, zx]`
+    /// (`DEPSXY(I,2)` equivalents): the forward sense advances with
+    /// symmetric plus spin, the reverse with symmetric minus spin.
+    /// Pure: history advances only through `commit`
+    /// plus `advance_totals`, or the
+    /// bundled [`step_point`](PointStepper::step_point).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::plasticity::funct::Funct1D;
+    /// use sonium_fem::physics::solid::plasticity::law_foams::{
+    ///     Honeycomb68, Honeycomb68State, StrainBasis,
+    /// };
+    ///
+    /// let flat = Funct1D::new(vec![-1.0, 1.0], vec![10.0, 10.0]).unwrap();
+    /// let curves = core::array::from_fn(|_| flat.clone());
+    /// let law = Honeycomb68::new(
+    ///     [10.0; 6], curves.clone(), curves, [1.0; 18],
+    ///     StrainBasis::Negated, StrainBasis::Negated,
+    ///     [0.0; 6], [1.0; 6],
+    /// )
+    /// .unwrap();
+    /// let state = Honeycomb68State::new();
+    /// // Pure spin: symmetric response stays zero, skew carries G x spin.
+    /// let update = law.update_nonsymmetric(&state, &[0.0; 6], &[0.1, 0.0, 0.0]);
+    /// assert!(update.stress[3].abs() < 1e-12);
+    /// ```
+    pub fn update_nonsymmetric(
+        &self,
+        state: &Honeycomb68State,
+        dstrain: &Voigt6,
+        spin: &[f64; 3],
+    ) -> StressUpdate {
+        let (stress, yielding, dep, _) = self.solve_nonsymmetric(state, dstrain, spin);
+        let tangent = if yielding {
+            numeric_tangent_c1(
+                |trial| self.solve_nonsymmetric(state, trial, spin).0,
+                dstrain,
+            )
+        } else {
+            diag_tangent_c1(&self.moduli)
+        };
+        StressUpdate {
+            stress,
+            tangent,
+            delta_equiv_plastic_strain: dep,
+            yielding,
+        }
+    }
+
+    /// Skew (couple-stress) halves from a state (Pa).
+    ///
+    /// Returns `(SXY - SYX)/2` and cyclic: the Cosserat skew parts
+    /// the symmetric C1 output averages out. Dedicated probes read
+    /// these after [`step_point`](PointStepper::step_point).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::plasticity::law_foams::Honeycomb68State;
+    ///
+    /// let mut state = Honeycomb68State::new();
+    /// state.shear_forward[0] = 3.0;
+    /// state.shear_reverse[0] = 1.0;
+    /// let skew =
+    ///     sonium_fem::physics::solid::plasticity::law_foams::Honeycomb68::couple_stress(&state);
+    /// assert!((skew[0] - 1.0).abs() < 1e-15);
+    /// ```
+    pub fn couple_stress(state: &Honeycomb68State) -> [f64; 3] {
+        core::array::from_fn(|plane| {
+            0.5 * (state.shear_forward[plane] - state.shear_reverse[plane])
+        })
+    }
+}
+
+impl Honeycomb68 {
+    /// Bundled nonsymmetric step with spin increments.
+    ///
+    /// Solves, commits all nine components plus flags and plastic
+    /// flow, and advances totals, mirroring
+    /// [`step_point`](PointStepper::step_point) with the extra skew
+    /// input. Replays with rotation-driven skew call this; C1
+    /// callers use `step_point` (zero spin).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::plasticity::funct::Funct1D;
+    /// use sonium_fem::physics::solid::plasticity::law_foams::{
+    ///     Honeycomb68, Honeycomb68State, StrainBasis,
+    /// };
+    ///
+    /// let flat = Funct1D::new(vec![-1.0, 1.0], vec![10.0, 10.0]).unwrap();
+    /// let curves = core::array::from_fn(|_| flat.clone());
+    /// let law = Honeycomb68::new(
+    ///     [10.0; 6], curves.clone(), curves, [1.0; 18],
+    ///     StrainBasis::Negated, StrainBasis::Negated,
+    ///     [0.0; 6], [1.0; 6],
+    /// )
+    /// .unwrap();
+    /// let mut state = Honeycomb68State::new();
+    /// let update = law.step_nonsymmetric(&mut state, &[0.0; 6], &[0.1, 0.0, 0.0], 1.0);
+    /// assert!(update.stress[3].abs() < 1e-12);
+    /// let skew = Honeycomb68::couple_stress(&state);
+    /// assert!((skew[0] - 1.0).abs() < 1e-12);
+    /// ```
+    pub fn step_nonsymmetric(
+        &self,
+        state: &mut Honeycomb68State,
+        dstrain: &Voigt6,
+        spin: &[f64; 3],
+        dt: f64,
+    ) -> StressUpdate {
+        let _ = dt;
+        let (stress, yielding, dep, mut next) = self.solve_nonsymmetric(state, dstrain, spin);
+        let tangent = if yielding {
+            numeric_tangent_c1(
+                |trial| self.solve_nonsymmetric(state, trial, spin).0,
+                dstrain,
+            )
+        } else {
+            diag_tangent_c1(&self.moduli)
+        };
+        next.equiv_plastic_strain += dep;
+        *state = next;
+        StressUpdate {
+            stress,
+            tangent,
+            delta_equiv_plastic_strain: dep,
+            yielding,
+        }
+    }
+}
+
+impl StressUpdateModel for Honeycomb68 {
+    type State = Honeycomb68State;
+    type StrainIncrement = Voigt6;
+
+    /// Pure symmetric update (zero spin projection).
+    fn update(&self, state: &Self::State, d_eps: &Self::StrainIncrement) -> StressUpdate {
+        self.update_nonsymmetric(state, d_eps, &[0.0; 3])
+    }
+
+    /// Commits the symmetric response, preserving skew.
+    ///
+    /// Books normals, the symmetric shear average split around the
+    /// stored skew halves (C1 drivers never touch the skew), and the
+    /// plastic flow. Totals plus flags advance through
+    /// `advance_totals`; use
+    /// [`step_point`](PointStepper::step_point) for full history.
+    fn commit(&self, state: &mut Self::State, update: &StressUpdate) {
+        state.normal = [update.stress[0], update.stress[1], update.stress[2]];
+        for plane in 0..3 {
+            let skew = 0.5 * (state.shear_forward[plane] - state.shear_reverse[plane]);
+            let sym = update.stress[3 + plane];
+            state.shear_forward[plane] = sym + skew;
+            state.shear_reverse[plane] = sym - skew;
+        }
+        state.equiv_plastic_strain += update.delta_equiv_plastic_strain;
+    }
+
+    /// Reports the law as rate-independent.
+    fn is_rate_dependent(&self) -> bool {
+        false
+    }
+}
+
+impl Honeycomb68 {
+    /// Advances totals, flags, and the rupture latch (engine order).
+    ///
+    /// Split-path companion to `commit` for callers
+    /// driving update plus commit directly; bundled stepping runs
+    /// through [`step_point`](PointStepper::step_point) instead.
+    pub fn advance_totals(&self, state: &mut Honeycomb68State, dstrain: &Voigt6, dt: f64) {
+        let _ = dt;
+        for (total, step) in state.strains.iter_mut().zip(dstrain.iter()) {
+            *total += *step;
+        }
+        state.amu = -(state.strains[0] + state.strains[1] + state.strains[2]);
+        state.failed = state.failed || self.failed(&state.strains);
+        state.residual = self.residual_flag(&state.strains);
+    }
+}
+
+impl PointStepper for Honeycomb68 {
+    /// Bundled symmetric step (zero spin projection).
+    fn step_point(
+        &self,
+        state: &mut Self::State,
+        dstrain: &Self::StrainIncrement,
+        dt: f64,
+    ) -> StressUpdate {
+        self.step_nonsymmetric(state, dstrain, &[0.0; 3], dt)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2856,6 +3337,122 @@ mod tests {
         law.step(&mut state, &[0.1, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
         assert!(state.rates[0] > 0.0);
         assert!(state.rates[0] < 0.1);
+    }
+
+    fn honeycomb68_flat(cap_initial: f64, cap_residual: f64) -> Honeycomb68 {
+        let flat_i = flat_funct(cap_initial);
+        let flat_r = flat_funct(cap_residual);
+        Honeycomb68::new(
+            [2.0; 6],
+            core::array::from_fn(|_| flat_i.clone()),
+            core::array::from_fn(|_| flat_r.clone()),
+            [1.0; 18],
+            StrainBasis::Negated,
+            StrainBasis::Negated,
+            [0.0; 6],
+            [1.0; 6],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn honeycomb68_symmetric_shear_caps_both_senses() {
+        let law = honeycomb68_flat(0.5, 5.0);
+        let mut state = Honeycomb68State::new();
+        let update = law.step_point(&mut state, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0], 1.0);
+        // Both senses advance G x gamma = 2 and cap at 0.5.
+        assert!((state.shear_forward[0] - 0.5).abs() < 1e-12);
+        assert!((state.shear_reverse[0] - 0.5).abs() < 1e-12);
+        assert!((update.stress[3] - 0.5).abs() < 1e-12);
+        assert!(Honeycomb68::couple_stress(&state)[0].abs() < 1e-15);
+        assert!(update.yielding);
+    }
+
+    #[test]
+    fn honeycomb68_asymmetric_pair_produces_skew() {
+        let flat = flat_funct(0.5);
+        let stiff = flat_funct(5.0);
+        let mut initial = core::array::from_fn(|_| flat.clone());
+        initial[6] = stiff.clone();
+        let residual = core::array::from_fn(|_| flat.clone());
+        let law = Honeycomb68::new(
+            [2.0; 6],
+            initial,
+            residual,
+            [1.0; 18],
+            StrainBasis::Negated,
+            StrainBasis::Negated,
+            [0.0; 6],
+            [1.0; 6],
+        )
+        .unwrap();
+        let mut state = Honeycomb68State::new();
+        let update = law.step_point(&mut state, &[0.0, 0.0, 0.0, 1.0, 0.0, 0.0], 1.0);
+        // Forward caps at 0.5, reverse rides elastic to 2.0.
+        assert!((state.shear_forward[0] - 0.5).abs() < 1e-12);
+        assert!((state.shear_reverse[0] - 2.0).abs() < 1e-12);
+        assert!((update.stress[3] - 1.25).abs() < 1e-12);
+        assert!((Honeycomb68::couple_stress(&state)[0] + 0.75).abs() < 1e-12);
+    }
+
+    #[test]
+    fn honeycomb68_spin_splits_senses() {
+        let law = honeycomb68_flat(50.0, 50.0);
+        let mut state = Honeycomb68State::new();
+        let update = law.step_nonsymmetric(&mut state, &[0.0; 6], &[0.1, 0.0, 0.0], 1.0);
+        // Forward takes +G x spin, reverse takes -G x spin.
+        assert!((state.shear_forward[0] - 0.2).abs() < 1e-12);
+        assert!((state.shear_reverse[0] + 0.2).abs() < 1e-12);
+        assert!(update.stress[3].abs() < 1e-15);
+        assert!((Honeycomb68::couple_stress(&state)[0] - 0.2).abs() < 1e-12);
+    }
+
+    #[test]
+    fn honeycomb68_residual_flag_flips_with_strain() {
+        let law = honeycomb68_flat(0.5, 0.1);
+        let mut state = Honeycomb68State::new();
+        // Compression past the transition trips the residual branch.
+        let update = law.step_point(&mut state, &[-1.5, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
+        assert!(state.residual);
+        assert!((update.stress[0] + 0.1).abs() < 1e-12);
+        // Retreat flips back to the initial branch (engine order).
+        let back = law.step_point(&mut state, &[1.4, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
+        assert!(!state.residual);
+        assert!((back.stress[0] - 0.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn honeycomb68_rupture_zeroes_and_latches() {
+        let mut law = honeycomb68_flat(50.0, 50.0);
+        law.rupture[0] = 0.05;
+        law.rupture[3] = 0.05;
+        let mut state = Honeycomb68State::new();
+        let update = law.step_point(&mut state, &[0.1, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0);
+        assert!(state.failed);
+        assert!(update.stress.iter().all(|s| s.abs() < 1.0e-15));
+        // Latch persists; shear half-strain trips too.
+        let mut shear = Honeycomb68State::new();
+        let cut = law.step_point(&mut shear, &[0.0, 0.0, 0.0, 0.2, 0.0, 0.0], 1.0);
+        assert!(shear.failed);
+        assert!(cut.stress.iter().all(|s| s.abs() < 1.0e-15));
+    }
+
+    #[test]
+    fn honeycomb68_commit_preserves_skew() {
+        let law = honeycomb68_flat(50.0, 50.0);
+        let mut state = Honeycomb68State::new();
+        state.shear_forward[0] = 3.0;
+        state.shear_reverse[0] = 1.0;
+        let update = StressUpdate {
+            stress: [0.0, 0.0, 0.0, 2.0, 0.0, 0.0],
+            tangent: [0.0; 36],
+            delta_equiv_plastic_strain: 0.0,
+            yielding: false,
+        };
+        law.commit(&mut state, &update);
+        // Symmetric average 2.0 splits around the stored skew 1.0.
+        assert!((state.shear_forward[0] - 3.0).abs() < 1e-15);
+        assert!((state.shear_reverse[0] - 1.0).abs() < 1e-15);
     }
 
     #[test]

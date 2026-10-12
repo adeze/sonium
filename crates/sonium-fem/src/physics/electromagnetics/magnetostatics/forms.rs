@@ -196,8 +196,11 @@ impl<F: Fn(f64, f64) -> f64 + Send + Sync> LinearForm<f64> for AzimuthalCurrentD
 /// Distributional point magnetic dipole for scalar magnetic potential.
 ///
 /// For a dipole at `x0` with moment `m`, the weak RHS contribution is
-/// `-m · grad(v)(x0)`. This avoids replacing the dipole with a finite magnet
-/// volume and gives the correct singular source in the finite-element sense.
+/// `m · grad(v)(x0)`, consistent with `B = -mu * grad(phi) + B_r` and
+/// `B_r = m * delta(x - x0)`. Here `moment` is the integrated remanent flux
+/// density (T m³ in 3D). For a physical magnetic moment in A m² in a homogeneous
+/// medium, pass permeability times that moment. The exterior 3D potential is
+/// `phi = m · (x-x0) / (4*pi*mu*|x-x0|³)`.
 #[derive(Debug, Clone, Copy)]
 pub struct PointDipoleSource {
     pub position: [f64; 3],
@@ -212,9 +215,12 @@ impl PointDipoleSource {
 
 /// Assemble a point-dipole RHS over the element containing the source.
 ///
-/// Currently supports affine P1 triangle meshes, which covers the 2D scalar
-/// potential QA cases. Returns a zero vector when the point lies outside the
-/// mesh.
+/// Supports affine triangle and tetrahedron meshes with scalar nodal spaces.
+/// Evaluates the test gradient at the source, including higher-order bases.
+/// At shared facets, the piecewise test gradient is not unique. This function
+/// averages the gradients of all containing elements, making the load independent
+/// of element ordering and avoiding a displaced dipole from one-sided sampling.
+/// Returns a zero vector when the source lies outside the supported elements.
 pub fn assemble_point_dipole_source<S>(
     source: &PointDipoleSource,
     mesh: &Mesh,
@@ -224,28 +230,73 @@ where
     S: FunctionSpace,
 {
     let mut rhs = vec![0.0; space.num_global_dofs(mesh)];
+    let mut containing_elements = 0;
 
     for elem_idx in 0..mesh.elements.len() {
         let elem = &mesh.elements[elem_idx];
-        if elem.element_type != crate::mesh::ElementType::Triangle {
-            continue;
-        }
-
         let nodes = elem.vertices();
-        let p0 = mesh.nodes[nodes[0]];
-        let p1 = mesh.nodes[nodes[1]];
-        let p2 = mesh.nodes[nodes[2]];
-        if let Some((l1, l2)) = reference_coords_in_triangle(source.position, p0, p1, p2) {
-            let tab = space.tabulate(mesh, elem_idx, l1, l2, 0.0);
+        let reference = match elem.element_type {
+            crate::mesh::ElementType::Triangle => reference_coords_in_triangle(
+                source.position,
+                mesh.nodes[nodes[0]],
+                mesh.nodes[nodes[1]],
+                mesh.nodes[nodes[2]],
+            )
+            .map(|(xi, eta)| [xi, eta, 0.0]),
+            crate::mesh::ElementType::Tetrahedron => {
+                let coordinates: Vec<[f64; 3]> = nodes
+                    .iter()
+                    .map(|&node| {
+                        let p = mesh.nodes[node];
+                        [p.x, p.y, p.z]
+                    })
+                    .collect();
+                let shape = crate::basis::evaluate_shape(
+                    crate::mesh::ElementType::Tetrahedron,
+                    crate::basis::PolynomialDegree::P1,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                let jacobian = crate::basis::Jacobian::from_3d(&shape.gradients, 3, &coordinates);
+                let offset: [f64; 3] =
+                    std::array::from_fn(|d| source.position[d] - coordinates[0][d]);
+                let reference: [f64; 3] = std::array::from_fn(|d| {
+                    (0..3)
+                        .map(|j| jacobian.inverse[3 * d + j] * offset[j])
+                        .sum()
+                });
+                // Barycentric roundoff allowance at shared faces and edges.
+                const CONTAINMENT_TOLERANCE: f64 = 1e-12;
+                if reference
+                    .iter()
+                    .all(|x| x.is_finite() && *x >= -CONTAINMENT_TOLERANCE)
+                    && reference.iter().sum::<f64>() <= 1.0 + CONTAINMENT_TOLERANCE
+                {
+                    Some(reference)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some([xi, eta, zeta]) = reference {
+            containing_elements += 1;
+            let tab = space.tabulate(mesh, elem_idx, xi, eta, zeta);
             let dofs = space.local_to_global(mesh, elem_idx);
             for (local, &dof) in dofs.iter().enumerate() {
                 let mut contribution = 0.0;
                 for d in 0..tab.spatial_dim {
-                    contribution -= source.moment[d] * tab.grad(local, d);
+                    contribution += source.moment[d] * tab.grad(local, d);
                 }
                 rhs[dof] += contribution;
             }
-            break;
+        }
+    }
+
+    if containing_elements > 1 {
+        for value in &mut rhs {
+            *value /= containing_elements as f64;
         }
     }
 
@@ -552,5 +603,54 @@ mod tests {
             sum.abs() < 1e-12,
             "dipole source should have zero net charge"
         );
+    }
+    #[test]
+    fn point_dipole_reproduces_signed_affine_moments_in_2d_and_3d() {
+        let meshes = [
+            unit_square_triangles(2),
+            crate::mesh::unit_cube_tetrahedra(2),
+        ];
+        for (dim, mesh) in [2, 3].into_iter().zip(meshes) {
+            for degree in [PolynomialDegree::P1, PolynomialDegree::P2] {
+                let space = H1Space::new(degree);
+                for position in [[0.23, 0.31, 0.27], [0.5, 0.5, 0.5]] {
+                    let source = PointDipoleSource::new(position, [0.4, -0.7, 1.1]);
+                    let rhs = assemble_point_dipole_source(&source, &mesh, &space);
+                    assert!(rhs.iter().sum::<f64>().abs() < 1e-12);
+                    for axis in 0..dim {
+                        // Nodal interpolation of x_d has exactly unit gradient.
+                        let coordinates =
+                            space.dof_coordinates(&mesh).expect("nodal H1 coordinates");
+                        let moment: f64 = rhs
+                            .iter()
+                            .zip(&coordinates)
+                            .map(|(load, p)| load * p[axis])
+                            .sum();
+                        assert!(
+                            (moment - source.moment[axis]).abs() < 1e-12,
+                            "signed dipole moment axis {axis}: {moment}"
+                        );
+                    }
+                }
+                let outside = assemble_point_dipole_source(
+                    &PointDipoleSource::new([2.0, 2.0, 2.0], [1.0; 3]),
+                    &mesh,
+                    &space,
+                );
+                assert!(outside.iter().all(|v| *v == 0.0));
+            }
+        }
+    }
+    #[test]
+    fn facet_dipole_is_independent_of_element_order() {
+        let mut mesh = crate::mesh::unit_cube_tetrahedra(2);
+        let space = H1Space::new(PolynomialDegree::P1);
+        let source = PointDipoleSource::new([0.5; 3], [0.4, -0.7, 1.1]);
+        let forward = assemble_point_dipole_source(&source, &mesh, &space);
+        mesh.elements.reverse();
+        let reversed = assemble_point_dipole_source(&source, &mesh, &space);
+        for (a, b) in forward.iter().zip(reversed) {
+            assert!((a - b).abs() < 1e-12);
+        }
     }
 }

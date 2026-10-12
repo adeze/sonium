@@ -3,17 +3,27 @@
 //! Documents the benchmark status: the full necking bar has NO closed form.
 //! Validation rests on three legs: (1) the Consider diffuse-necking strain
 //! and Bridgman correction checked here, (2) the Wolfram incremental
-//! reference behind the necking C2 golden, and (3) the Radioss necking-bar
-//! deck (`qa-fem-radioss-necking-bar`). Prints PASS; exits 1 on mismatch.
+//! reference behind the necking C2 golden, and (3) the OpenCourant necking-bar
+//! deck (`qa-fem-opencourant-necking-bar`). Prints PASS; exits 1 on mismatch.
 
 // Rust guideline compliant 2026-02-21
 
 use sonium_fem::physics::solid::fracture::ductile::{bridgman_correction, hollomon_necking_strain};
 
 fn main() {
+    match run() {
+        Ok(()) => println!("SUCCESS: qa-fem-necking-bar"),
+        Err(error) => {
+            eprintln!("FAILED: qa-fem-necking-bar: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     println!("necking-bar: no closed form exists for the full post-necking response;");
     println!(
-        "necking-bar: legs are (1) considere/bridgman, (2) wolfram incremental reference, (3) radioss deck."
+        "necking-bar: legs are (1) considere/bridgman, (2) wolfram incremental reference, (3) OpenCourant deck."
     );
     // Leg 1a: Consider uniform strain equals the Hollomon exponent.
     for n in [0.1, 0.2, 0.3] {
@@ -31,4 +41,5 @@ fn main() {
     }
     assert!(bridgman_correction(2.0) < 0.8);
     println!("PASS: qa-fem-necking-bar");
+    Ok(())
 }

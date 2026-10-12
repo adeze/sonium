@@ -26,7 +26,7 @@
 //!
 //! # Solid-shell verdict (lane 3E, DEFER)
 //!
-//! Do not build an axisymmetric solid-shell on the current seeds. Radioss
+//! Do not build an axisymmetric solid-shell on the current seeds. OpenCourant
 //! solid-shells are a 3D-only family (HA8/HSEPH/PA6/SHELL16: solid
 //! elements plus a penalty-enforced constant through-thickness normal
 //! stress; Theory Manual pp. 164-165) with no axisymmetric member to be

@@ -9,6 +9,7 @@ pub mod crash;
 pub mod dkt;
 pub mod elastoplastic;
 mod element;
+pub mod explicit;
 pub mod layered;
 pub mod mitc4;
 pub mod nonlinear;

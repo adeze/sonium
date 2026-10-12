@@ -46,6 +46,14 @@
 //! The split remap moves donor-cell means between two grids of one
 //! topology through the same swept volumes.
 //!
+//! Phase 7 lane 7D adds the native [`ImpactSlab`] driver emitting
+//! [`super::sph::Series`] output in TH-CSV shape: `qa-fem-ale --series`
+//! emits a native impact run, while `qa-fem-ale --replay` compares
+//! a provided engine series against the harvested golden at vendor
+//! tolerance. The native series comes from an independent integrator
+//! with its own documented invariant bands; it is not claimed at
+//! vendor tolerance.
+//!
 //! # Examples
 //!
 //! ```rust
@@ -1044,6 +1052,466 @@ impl BarImpact {
     }
 }
 
+/// Deck-mirror constants for the bar impact slab (Phase 7 lane 7D).
+///
+/// Values transcribed from `BAR2V41B_0000.rad` / `BAR2V41B_0001.rad`
+/// (`ALE2D/bar2_v41`): a 2D copper bar (`/MAT/LAW3`, elastoplastic)
+/// striking a wall at 227 m/s on a 5-by-50 quad mesh with `/ALE/GRID/DONEA`
+/// smoothing and `/ALE/BCS` slip walls. The native [`ImpactSlab`] runs
+/// the SI acoustic analog (ideal gas at matched density and wave
+/// speed through [`BarImpact`]); grid axes map deck transverse `y` to
+/// grid `x` and deck axial `z` to grid `y`.
+///
+/// The deck declares kg-m-s units but scales its values like g-cm-mus
+/// (bar 0..3.24, `Vz` -0.0227, `/RUN` 80); the analog below reads the
+/// SI values (0.0324 m, 227 m/s, 80 us), matching [`BarImpact`].
+pub const BAR2_NX: usize = 5;
+
+/// Bar2 mesh cells along the axial direction.
+pub const BAR2_NY: usize = 50;
+
+/// Bar2 transverse extent in m (deck `y` 0..0.32).
+pub const BAR2_WIDTH: f64 = 0.0032;
+
+/// Bar2 axial extent in m (deck `z` 0..3.24).
+pub const BAR2_LENGTH: f64 = 0.0324;
+
+/// Bar2 impact speed in m/s (deck `/INIVEL` `Vz` -0.0227).
+pub const BAR2_SPEED: f64 = 227.0;
+
+/// Bar2 copper density in kg/m^3 (deck `/MAT/LAW3` `RHO_0` 8.93).
+pub const BAR2_DENSITY: f64 = 8930.0;
+
+/// Bar2 run length in s (deck `/RUN/BAR2V41B/1` 80).
+pub const BAR2_END_TIME: f64 = 80.0e-6;
+
+/// Steps between smoothing-plus-remap passes in the slab run.
+///
+/// The donor-cell remap is first-order diffusive, so the run rides
+/// Lagrangian most steps (exact material motion, no remap diffusion)
+/// and re-regularizes on this cadence. Shortening it past ~10
+/// diffuses the rebound away; lengthening it past ~100 lets the wall
+/// cells over-compress between passes.
+pub const BAR2_REMAP_INTERVAL: usize = 25;
+
+/// Transverse mesh-motion blend at the lateral walls.
+///
+/// Cell-centered ALE leaks momentum through fast wall-normal motion
+/// (prescribed wall motion absorbs without recoil, unlike nodal
+/// Lagrangian schemes), so the side walls slide along themselves at
+/// the full axial material velocity but crawl transversely at this
+/// fraction. The walls stay leak-free (wall-normal motion near zero)
+/// without shearing against the Lagrangian interior. Raising the
+/// blend toward 1.0 reopens the leak; 0.0 pins the sides transversely
+/// Eulerian.
+pub const BAR2_MESH_BLEND: f64 = 0.1;
+
+/// Native ALE impact slab mirroring bar2_v41.
+///
+/// A split-ALE ideal-gas slab on the deck 5-by-50 footprint: each
+/// step moves the mesh with a zoned predictor (pinned top and wall
+/// rows, Lagrangian interior, side walls sliding along themselves)
+/// and advances the unsplit ALE update with relative-velocity fluxes
+/// through slip walls; every
+/// [`BAR2_REMAP_INTERVAL`] steps the interior relaxes with
+/// [`laplacian_smooth`] and the state remaps conservatively with
+/// [`remap_donor`]. The gas is the acoustic analog of the deck copper
+/// (matched density and elastic wave speed, ratio of specific heats
+/// 1.4): it carries the impact compression, wall rebound, and slosh
+/// dynamics, not the deck `/MAT/LAW3` elastoplastic response.
+///
+/// Deck axis mapping: grid `x` is deck transverse `y`, grid `y` is
+/// deck axial `z`; emitted `X-MOMENTUM` stays zero (the 2D model has
+/// no `x` extent, matching the engine's all-zero channel),
+/// `Y-MOMENTUM` is transverse, and `Z-MOMENTUM` is axial.
+#[derive(Debug, Clone)]
+pub struct ImpactSlab {
+    grid: QuadGrid,
+    state: Vec<ConservativeState>,
+    gas: IdealGas,
+    time: f64,
+    steps: u64,
+}
+
+impl ImpactSlab {
+    /// Builds the bar2 acoustic analog at `t = 0`.
+    ///
+    /// Uniform slab at deck density rushing axially into the wall
+    /// row; background pressure matches the deck impedance (`rho c^2
+    /// / gamma` at the [`BarImpact`] wave speed).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::ale::ImpactSlab;
+    ///
+    /// let run = ImpactSlab::bar2_analog();
+    /// assert_eq!(run.grid().num_nodes(), 306);
+    /// assert_eq!(run.time(), 0.0);
+    /// ```
+    pub fn bar2_analog() -> Self {
+        let bar = BarImpact::copper_bar2();
+        let gas = IdealGas {
+            gamma: 1.4,
+            gas_constant: 287.05,
+        };
+        let grid = QuadGrid::rectangle(BAR2_NX, BAR2_NY, 0.0, BAR2_WIDTH, 0.0, BAR2_LENGTH)
+            .expect("deck-mirror grid dimensions are valid");
+        let pressure = BAR2_DENSITY * bar.wave_speed() * bar.wave_speed() / gas.gamma;
+        let state = vec![
+            ConservativeState::from_primitive(
+                BAR2_DENSITY,
+                [0.0, -BAR2_SPEED, 0.0],
+                pressure,
+                gas
+            );
+            grid.num_cells()
+        ];
+        Self {
+            grid,
+            state,
+            gas,
+            time: 0.0,
+            steps: 0,
+        }
+    }
+
+    /// Returns the current mesh.
+    pub fn grid(&self) -> &QuadGrid {
+        &self.grid
+    }
+
+    /// Returns the current cell states.
+    pub fn states(&self) -> &[ConservativeState] {
+        &self.state
+    }
+
+    /// Returns the current time in s.
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+
+    /// Returns the step count (remaps run on its cadence).
+    pub fn steps(&self) -> u64 {
+        self.steps
+    }
+
+    /// Returns the total mass `sum rho V`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::ale::{ImpactSlab, BAR2_DENSITY};
+    ///
+    /// let run = ImpactSlab::bar2_analog();
+    /// assert!(run.total_mass() > 0.0);
+    /// assert!((run.total_mass() - BAR2_DENSITY * 0.0032 * 0.0324).abs() < 1.0e-12);
+    /// ```
+    pub fn total_mass(&self) -> f64 {
+        self.grid
+            .volumes()
+            .iter()
+            .zip(self.state.iter())
+            .map(|(volume, state)| state.density * volume)
+            .sum()
+    }
+
+    /// Returns the total internal energy `sum (E - KE) V`.
+    pub fn internal_energy(&self) -> f64 {
+        self.grid
+            .volumes()
+            .iter()
+            .zip(self.state.iter())
+            .map(|(volume, state)| {
+                (state.total_energy - state.kinetic_energy_per_volume()) * volume
+            })
+            .sum()
+    }
+
+    /// Returns the total kinetic energy `sum KE V`.
+    pub fn kinetic_energy(&self) -> f64 {
+        self.grid
+            .volumes()
+            .iter()
+            .zip(self.state.iter())
+            .map(|(volume, state)| state.kinetic_energy_per_volume() * volume)
+            .sum()
+    }
+
+    /// Returns transverse, axial, and out-of-plane momenta.
+    ///
+    /// Grid `x` momentum is deck transverse `Y`, grid `y` momentum is
+    /// deck axial `Z`, and the third component stays zero (the 2D
+    /// model has no `x` extent, matching the engine's all-zero
+    /// `X-MOMENTUM` channel).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::ale::{ImpactSlab, BAR2_SPEED};
+    ///
+    /// let run = ImpactSlab::bar2_analog();
+    /// let momentum = run.momentum();
+    /// assert_eq!(momentum[0], 0.0);
+    /// assert_eq!(momentum[2], 0.0);
+    /// assert!((momentum[1] + run.total_mass() * BAR2_SPEED).abs() < 1.0e-9);
+    /// ```
+    pub fn momentum(&self) -> [f64; 3] {
+        let volumes = self.grid.volumes();
+        let mut transverse = 0.0;
+        let mut axial = 0.0;
+        for (state, volume) in self.state.iter().zip(volumes.iter()) {
+            transverse += state.momentum[0] * volume;
+            axial += state.momentum[1] * volume;
+        }
+        [transverse, axial, 0.0]
+    }
+
+    /// Returns the impact-cell pressure and density.
+    ///
+    /// The impact cell is the bottom-row center cell, first to feel
+    /// the wall.
+    pub fn impact_probe(&self) -> (f64, f64) {
+        let cell = BAR2_NX / 2;
+        let state = &self.state[cell];
+        (state.pressure(self.gas), state.density)
+    }
+
+    /// Returns the mean bottom-row pressure (wall load).
+    pub fn wall_pressure(&self) -> f64 {
+        let sum: f64 = self.state[..BAR2_NX]
+            .iter()
+            .map(|state| state.pressure(self.gas))
+            .sum();
+        sum / BAR2_NX as f64
+    }
+
+    /// Returns the mean top-row pressure (reflected pulse).
+    pub fn top_pressure(&self) -> f64 {
+        let row = (BAR2_NY - 1) * BAR2_NX;
+        let sum: f64 = self.state[row..row + BAR2_NX]
+            .iter()
+            .map(|state| state.pressure(self.gas))
+            .sum();
+        sum / BAR2_NX as f64
+    }
+
+    /// Advances one split-ALE step at the given CFL number.
+    ///
+    /// Returns the step taken: the CFL fraction of the minimum cell
+    /// transit time over the fastest wave plus bulk motion.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::ale::ImpactSlab;
+    ///
+    /// let mut run = ImpactSlab::bar2_analog();
+    /// let dt = run.step(0.5).unwrap();
+    /// assert!(dt > 0.0 && run.time() == dt);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `AleError::InvalidParameter` for CFL outside `(0, 1)`
+    /// and propagates [`ale_step`], [`laplacian_smooth`], or
+    /// [`remap_donor`] failures (tangled mesh or non-physical state).
+    pub fn step(&mut self, cfl: f64) -> Result<f64, AleError> {
+        if !cfl.is_finite() || cfl <= 0.0 || cfl >= 1.0 {
+            return Err(AleError::InvalidParameter);
+        }
+        let volumes = self.grid.volumes();
+        let mut width = f64::INFINITY;
+        for volume in &volumes {
+            width = width.min(volume.sqrt());
+        }
+        let mut signal = 0.0f64;
+        for state in &self.state {
+            let velocity = state.velocity();
+            let speed =
+                (velocity[0] * velocity[0] + velocity[1] * velocity[1] + velocity[2] * velocity[2])
+                    .sqrt();
+            signal = signal.max(
+                self.gas
+                    .speed_of_sound(state.pressure(self.gas), state.density)
+                    + speed,
+            );
+        }
+        if !signal.is_finite() || signal <= 0.0 {
+            return Err(AleError::NonPhysicalState);
+        }
+        let dt = cfl * width / signal;
+        // Zoned mesh predictor: the classic ALE split with a fixed
+        // domain and a moving interior. Top and bottom rows stay
+        // pinned (closed box: walls reflect instead of absorbing, so
+        // the impact rebounds rather than leaking out), the interior
+        // rides Lagrangian, and the lateral walls slide along
+        // themselves (full axial motion, blended transverse crawl) so
+        // no shear accumulates while wall-normal motion stays small.
+        let (nx, ny) = (self.grid.nx(), self.grid.ny());
+        let mut moved = self.grid.clone();
+        for j in 0..=ny {
+            for i in 0..=nx {
+                if j == 0 || j == ny {
+                    continue;
+                }
+                let side = i == 0 || i == nx;
+                let transverse = if side { BAR2_MESH_BLEND } else { 1.0 };
+                let velocity = self.node_velocity(i, j);
+                let node = self.grid.node(i, j);
+                moved.set_node(
+                    i,
+                    j,
+                    [
+                        node[0] + dt * transverse * velocity[0],
+                        node[1] + dt * velocity[1],
+                    ],
+                );
+            }
+        }
+        // Closed box: slip walls on every side reflect the impact
+        // into a rebound slosh instead of absorbing it.
+        let lagrangian = ale_step(&self.grid, &moved, &self.state, self.gas, dt)?;
+        self.steps += 1;
+        if self.steps.is_multiple_of(BAR2_REMAP_INTERVAL as u64) {
+            // DONEA-style mild relaxation: two half-weight sweeps keep
+            // the mesh smooth without fighting the Lagrangian motion.
+            let relaxed = laplacian_smooth(&moved, None, 0.5, 2)?;
+            let remapped = remap_donor(&moved, &relaxed, &lagrangian)?;
+            self.grid = relaxed;
+            self.state = remapped;
+        } else {
+            self.grid = moved;
+            self.state = lagrangian;
+        }
+        self.time += dt;
+        Ok(dt)
+    }
+
+    /// Runs to `end_time`, stamping `stamps` rows into a series.
+    ///
+    /// Stamps land on an approximately uniform grid (steps may
+    /// overshoot a target; the final stamp sits at or just past
+    /// `end_time`). Channels are `MASS`, `INTERNAL ENERGY`, `KINETIC
+    /// ENERGY`, `TOTAL ENERGY`, `X-MOMENTUM`, `Y-MOMENTUM`,
+    /// `Z-MOMENTUM`, `TIME STEP`, `IMPACT CELL PRESSURE`, `IMPACT
+    /// CELL DENSITY`, `TOP PRESSURE`, and `WALL PRESSURE`; the
+    /// first stamp carries a zero step (no step taken yet). `TOTAL
+    /// ENERGY` maps to the vendor `NO NAME` channel and the cell and
+    /// wall probes are native analogs of the deck `/TH/QUAD` and
+    /// `/TH/NODE` probes, not vendor samples. The closed box sloshes
+    /// instead of separating: free flight past the deck separation
+    /// time is outside the gas analog.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::ale::ImpactSlab;
+    ///
+    /// let mut run = ImpactSlab::bar2_analog();
+    /// let series = run.run(1.0e-6, 3, 0.5).unwrap();
+    /// assert_eq!(series.len(), 3);
+    /// assert_eq!(series.times[0], 0.0);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns `AleError::InvalidParameter` when `end_time` does not
+    /// exceed the current time, fewer than two stamps are requested,
+    /// or CFL leaves `(0, 1)`, plus any [`ImpactSlab::step`]
+    /// failure.
+    pub fn run(
+        &mut self,
+        end_time: f64,
+        stamps: usize,
+        cfl: f64,
+    ) -> Result<super::sph::Series, AleError> {
+        if !end_time.is_finite() || end_time <= self.time {
+            return Err(AleError::InvalidParameter);
+        }
+        if stamps < 2 {
+            return Err(AleError::InvalidParameter);
+        }
+        if !cfl.is_finite() || cfl <= 0.0 || cfl >= 1.0 {
+            return Err(AleError::InvalidParameter);
+        }
+        let mut series = super::sph::Series::with_channels(&[
+            "MASS",
+            "INTERNAL ENERGY",
+            "KINETIC ENERGY",
+            "TOTAL ENERGY",
+            "X-MOMENTUM",
+            "Y-MOMENTUM",
+            "Z-MOMENTUM",
+            "TIME STEP",
+            "IMPACT CELL PRESSURE",
+            "IMPACT CELL DENSITY",
+            "TOP PRESSURE",
+            "WALL PRESSURE",
+        ]);
+        let start = self.time;
+        series.push(start, &self.stamp(0.0));
+        let mut next = 1;
+        while self.time < end_time {
+            let dt = self.step(cfl)?;
+            while next < stamps
+                && self.time >= start + (end_time - start) * next as f64 / (stamps - 1) as f64
+            {
+                series.push(self.time, &self.stamp(dt));
+                next += 1;
+            }
+        }
+        Ok(series)
+    }
+
+    /// Samples the current probe row with the given last step.
+    fn stamp(&self, dt: f64) -> [f64; 12] {
+        let internal = self.internal_energy();
+        let kinetic = self.kinetic_energy();
+        let momentum = self.momentum();
+        let (pressure, density) = self.impact_probe();
+        [
+            self.total_mass(),
+            internal,
+            kinetic,
+            internal + kinetic,
+            0.0,
+            momentum[0],
+            momentum[1],
+            dt,
+            pressure,
+            density,
+            self.top_pressure(),
+            self.wall_pressure(),
+        ]
+    }
+
+    /// Averages adjacent cell velocities onto node `(i, j)`.
+    fn node_velocity(&self, i: usize, j: usize) -> [f64; 2] {
+        let nx = self.grid.nx();
+        let ny = self.grid.ny();
+        let adjacent = [
+            (i.wrapping_sub(1), j.wrapping_sub(1)),
+            (i, j.wrapping_sub(1)),
+            (i.wrapping_sub(1), j),
+            (i, j),
+        ];
+        let mut velocity = [0.0; 2];
+        let mut count = 0;
+        for (ci, cj) in adjacent {
+            if ci < nx && cj < ny {
+                let cell = self.state[cj * nx + ci].velocity();
+                velocity[0] += cell[0];
+                velocity[1] += cell[1];
+                count += 1;
+            }
+        }
+        // Interior and boundary nodes always touch a cell.
+        assert!(count > 0, "stray ALE node has no adjacent cell");
+        [velocity[0] / count as f64, velocity[1] / count as f64]
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::compressible_flow::rusanov_flux;
@@ -1468,5 +1936,153 @@ mod tests {
         assert!((bar.wave_speed() - 3619.0).abs() < 1.0);
         assert!((bar.contact_stress() - 7.34e9).abs() < 0.02e9);
         assert!((bar.separation_time() - 17.9e-6).abs() < 0.1e-6);
+    }
+
+    #[test]
+    fn slab_matches_deck_mesh_and_drop() {
+        let run = ImpactSlab::bar2_analog();
+        assert_eq!(run.grid().nx(), BAR2_NX);
+        assert_eq!(run.grid().ny(), BAR2_NY);
+        assert_eq!(run.grid().num_nodes(), 306);
+        assert_eq!(run.states().len(), BAR2_NX * BAR2_NY);
+        assert_eq!(run.time(), 0.0);
+        // Extensive totals from the uniform initial state.
+        let expected_mass = BAR2_DENSITY * BAR2_WIDTH * BAR2_LENGTH;
+        assert!((run.total_mass() - expected_mass).abs() < 1.0e-12);
+        let momentum = run.momentum();
+        assert_eq!(momentum[0], 0.0);
+        assert_eq!(momentum[2], 0.0);
+        assert!((momentum[1] + expected_mass * BAR2_SPEED).abs() < 1.0e-6);
+        // Impedance-matched background pressure.
+        let bar = BarImpact::copper_bar2();
+        let expected = BAR2_DENSITY * bar.wave_speed() * bar.wave_speed() / 1.4;
+        let (pressure, density) = run.impact_probe();
+        assert!(((pressure - expected) / expected).abs() < 1.0e-12);
+        assert_eq!(density, BAR2_DENSITY);
+        assert!(((run.wall_pressure() - pressure) / pressure).abs() < 1.0e-15);
+        assert!(((run.top_pressure() - pressure) / pressure).abs() < 1.0e-15);
+    }
+
+    #[test]
+    fn slab_step_rejects_bad_cfl() {
+        let mut run = ImpactSlab::bar2_analog();
+        assert!(run.step(0.0).is_err());
+        assert!(run.step(1.0).is_err());
+        assert!(run.step(1.5).is_err());
+        assert!(run.step(f64::NAN).is_err());
+        let dt = run.step(0.5).unwrap();
+        assert!(dt > 0.0 && run.time() == dt);
+        assert_eq!(run.steps(), 1);
+    }
+
+    #[test]
+    fn slab_run_rejects_bad_inputs() {
+        let mut run = ImpactSlab::bar2_analog();
+        assert!(run.run(0.0, 5, 0.5).is_err());
+        assert!(run.run(-1.0, 5, 0.5).is_err());
+        assert!(run.run(1.0e-6, 1, 0.5).is_err());
+        assert!(run.run(1.0e-6, 5, 0.0).is_err());
+        assert!(run.run(1.0e-6, 5, 2.0).is_err());
+    }
+
+    #[test]
+    fn short_run_moves_mesh_and_conserves() {
+        fn snapshot(run: &ImpactSlab) -> Vec<[f64; 2]> {
+            let mut nodes = Vec::new();
+            for j in 0..=BAR2_NY {
+                for i in 0..=BAR2_NX {
+                    nodes.push(run.grid().node(i, j));
+                }
+            }
+            nodes
+        }
+        let mut run = ImpactSlab::bar2_analog();
+        let before = snapshot(&run);
+        let series = run.run(5.0e-6, 5, 0.5).unwrap();
+        assert_eq!(series.len(), 5);
+        assert!(series.times.windows(2).all(|w| w[1] > w[0]));
+        // Interior mesh rode the material while rows stayed pinned.
+        let after = snapshot(&run);
+        assert!(
+            after.iter().zip(before.iter()).any(|(a, b)| a != b),
+            "ALE mesh must move"
+        );
+        assert_eq!(after[0], before[0]);
+        assert_eq!(
+            after[BAR2_NY * (BAR2_NX + 1) + BAR2_NX / 2],
+            before[BAR2_NY * (BAR2_NX + 1) + BAR2_NX / 2]
+        );
+        // Closed box: mass to roundoff, energy tight.
+        let mass = series.channel("MASS").unwrap();
+        assert!(((mass[4] - mass[0]) / mass[0]).abs() < 1.0e-12);
+        let total = series.channel("TOTAL ENERGY").unwrap();
+        assert!(((total[4] - total[0]) / total[0]).abs() < 1.0e-3);
+        for channel in series.channels.values() {
+            assert!(channel.iter().all(|v| v.is_finite()));
+        }
+    }
+
+    #[test]
+    fn full_run_rebounds_and_bounds_energy() {
+        let mut run = ImpactSlab::bar2_analog();
+        let series = run.run(BAR2_END_TIME, 200, 0.5).unwrap();
+        assert_eq!(series.len(), 200);
+        assert!(run.steps() > BAR2_REMAP_INTERVAL as u64);
+        let zmomentum = series.channel("Z-MOMENTUM").unwrap();
+        let kinetic = series.channel("KINETIC ENERGY").unwrap();
+        // Impact signature: downward launch, strong rebound slosh,
+        // decaying but alive at the final stamp.
+        assert!(zmomentum[0] < 0.0);
+        let peak = zmomentum.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!(
+            peak > 0.5 * -zmomentum[0],
+            "rebound peak {peak} vs launch {}",
+            zmomentum[0]
+        );
+        assert!(
+            *kinetic.last().unwrap() > 0.0 && *kinetic.last().unwrap() < kinetic[0],
+            "slosh decays but survives"
+        );
+        // Transverse momentum stays at roundoff (1D impact).
+        let transverse = series.channel("Y-MOMENTUM").unwrap();
+        assert!(
+            transverse.iter().all(|v| v.abs() < 1.0e-6),
+            "transverse must stay quiet"
+        );
+        assert!(
+            series
+                .channel("X-MOMENTUM")
+                .unwrap()
+                .iter()
+                .all(|v| *v == 0.0),
+            "out-of-plane momentum is exactly zero"
+        );
+        // Closed-box conservation: mass to roundoff, energy tight.
+        let mass = series.channel("MASS").unwrap();
+        let mass_drift = mass
+            .iter()
+            .map(|m| ((m - mass[0]) / mass[0]).abs())
+            .fold(0.0f64, f64::max);
+        assert!(mass_drift < 1.0e-12, "mass drift {mass_drift}");
+        let total = series.channel("TOTAL ENERGY").unwrap();
+        let drift = total
+            .iter()
+            .map(|e| ((e - total[0]) / total[0]).abs())
+            .fold(0.0f64, f64::max);
+        assert!(drift < 1.0e-4, "energy drift {drift}");
+        // Wall pulse rises on impact; the top sees both the reflected
+        // compression and the rarefaction.
+        let wall = series.channel("WALL PRESSURE").unwrap();
+        let wall_peak = wall.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        assert!(wall_peak > 1.05 * wall[0], "wall pulse {wall_peak}");
+        let top = series.channel("TOP PRESSURE").unwrap();
+        assert!(
+            top.iter().any(|p| *p < top[0]),
+            "top rarefaction must arrive"
+        );
+        assert!(
+            top.iter().any(|p| *p > top[0]),
+            "top compression must arrive"
+        );
     }
 }

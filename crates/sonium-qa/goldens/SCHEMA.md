@@ -95,7 +95,7 @@ fail.
 ## Regen
 
 ```
-REGEN_OC_GOLDENS=1 cargo run -p sonium-qa --features qa-binaries --bin qa-oc-harvest -- --deck <case> --max-samples 2000
+REGEN_OC_GOLDENS=1 cargo run --release -p sonium-qa --features qa-binaries --bin qa-oc-harvest -- --deck <case> --max-samples 2000
 ```
 
 needs `--miniqa`/`OPENCOURANT_MINIQA` and `--exe`/`RADISS_EXE`/

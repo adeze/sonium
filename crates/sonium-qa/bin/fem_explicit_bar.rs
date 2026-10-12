@@ -13,6 +13,16 @@ use sonium_fem::solver::explicit_dynamics::{
 };
 
 fn main() {
+    match run() {
+        Ok(()) => println!("SUCCESS: qa-fem-explicit-bar"),
+        Err(error) => {
+            eprintln!("FAILED: qa-fem-explicit-bar: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     // Gaussian pulse vs d'Alembert before reflections return.
     let mut bar = ElasticBar1D::new(400, 20.0, 0.01, 200.0e9, 7800.0, false);
     let c = bar.wave_speed();
@@ -80,4 +90,5 @@ fn main() {
     // Mass scaling quadruples density at double step.
     assert!((mass_scaling_factor(2.0e-6, 1.0e-6) - 4.0).abs() < 1e-12);
     println!("PASS: qa-fem-explicit-bar");
+    Ok(())
 }

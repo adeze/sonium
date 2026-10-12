@@ -1,4 +1,4 @@
-//! SUBMODEL sections and TRANSF transforms for Radioss decks.
+//! SUBMODEL sections and TRANSF transforms for OpenCourant decks.
 //!
 //! Applies `//SUBMODEL` section splits and merges plus `/TRANSFORM`
 //! node-group maps onto decks parsed by [`RadDeck`](crate::rad_parse::RadDeck).

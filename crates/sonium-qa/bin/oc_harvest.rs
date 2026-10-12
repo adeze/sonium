@@ -135,6 +135,7 @@ fn main() {
     };
     let golden = harvest(&options).unwrap_or_else(|error| {
         eprintln!("harvest failed: {error}");
+        println!("FAILED: qa-oc-harvest");
         std::process::exit(1);
     });
     let out = args
@@ -143,6 +144,7 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("goldens"));
     let path = write_golden(&out, &golden).unwrap_or_else(|error| {
         eprintln!("error: {error}");
+        println!("FAILED: qa-oc-harvest");
         std::process::exit(1);
     });
     println!(
@@ -155,4 +157,5 @@ fn main() {
     if let Some(note) = &golden.meta.th_note {
         println!("note: cycle-only golden ({note})");
     }
+    println!("SUCCESS: qa-oc-harvest");
 }

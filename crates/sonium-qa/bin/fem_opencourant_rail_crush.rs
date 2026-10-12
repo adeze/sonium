@@ -1,7 +1,7 @@
-//! QA: rail crush vs Radioss/OpenRadioss (elastic prove-out leg).
+//! QA: rail crush vs OpenCourant (elastic prove-out leg).
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the crusher force (EA delta / L, pre-buckling) and the loaded
 //! face motion against the elastic closed form. Without an engine it prints
 //! the documented skip message and exits 0.
@@ -13,7 +13,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadCase, RadElasticMaterial, RadFunction, RadNodeSet, RadProbe, RadWall, assert_probe_close,
+    OpenCourantCase, RadElasticMaterial, RadFunction, RadNodeSet, RadProbe, RadWall, assert_probe_close,
     cantilever_brick_mesh, engine_exe, probes_json, run_case, write_engine, write_starter,
 };
 use std::path::PathBuf;
@@ -21,7 +21,7 @@ use std::path::PathBuf;
 const NAME: &str = "rail_crush";
 
 /// Builds the rail crush case on the real `sonium_qa::rad` API.
-fn rail_crush_case() -> RadCase {
+fn rail_crush_case() -> OpenCourantCase {
     // Short box column along x; 1% quasi-static crush stays elastic and
     // far below the Euler buckling load (5x margin by construction).
     let length = 0.2;
@@ -49,7 +49,7 @@ fn rail_crush_case() -> RadCase {
     }
     let crusher_point = [length, 0.0, 0.0];
     let driver = mesh.add_node(crusher_point);
-    RadCase {
+    OpenCourantCase {
         name: NAME.to_string(),
         title: "sonium_qa rad rail crush elastic compression".to_string(),
         mesh,
@@ -165,7 +165,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -208,7 +208,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-rail-crush");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-rail-crush");
+    println!("PASS: qa-fem-opencourant-rail-crush");
+    println!("SUCCESS: qa-fem-opencourant-rail-crush");
 }

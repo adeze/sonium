@@ -9,11 +9,12 @@
 //!
 //! where:
 //! - K_uu = ∫ cᴱ:ε(u):ε(v) dΩ   (elastic stiffness at constant E)
-//! - K_uφ = −∫ eᵗ·∇φ:ε(v) dΩ    (inverse piezoelectric effect: E → strain)
+//! - K_uφ = ∫ eᵗ·∇φ:ε(v) dΩ    (inverse piezoelectric effect: E → strain)
 //! - K_φu = ∫ e:ε(u)·∇ψ dΩ      (direct piezoelectric effect: strain → charge)
 //! - K_φφ = −∫ εˢ·∇φ·∇ψ dΩ      (dielectric stiffness at constant strain)
 //!
-//! Note: K_uφ = K_φuᵀ (the system is symmetric).
+//! With electric field `E = -grad(phi)`, both coupling blocks have positive
+//! coefficients, so K_uφ = K_φuᵀ (the system is symmetric indefinite).
 //!
 //! # Simplified 1D forms
 //!
@@ -21,7 +22,7 @@
 //! 3-faces (d₃₃ mode), the forms reduce to scalars:
 //!
 //! - K_uu: cᴱ₃₃ · ∫ (du/dx₃)(dv/dx₃) dΩ
-//! - K_uφ: −e₃₃ · ∫ (dφ/dx₃)(dv/dx₃) dΩ
+//! - K_uφ: e₃₃ · ∫ (dφ/dx₃)(dv/dx₃) dΩ
 //! - K_φφ: −εˢ₃₃ · ∫ (dφ/dx₃)(dψ/dx₃) dΩ
 
 use crate::forms::{BilinearForm, LocalMatrix};
@@ -86,7 +87,7 @@ impl BilinearForm<f64> for PiezoStiffnessForm {
 
 /// Piezoelectric coupling form (K_uφ or K_φu block).
 ///
-/// Forward (inverse piezoelectric): `a(φ, v) = −e_{kd} · ∫ (∂φ/∂x_k)(∂v/∂x_d) dΩ`
+/// Forward (inverse piezoelectric): `a(φ, v) = e_{kd} · ∫ (∂φ/∂x_k)(∂v/∂x_d) dΩ`
 /// Adjoint (direct piezoelectric): `a(u, ψ) = e_{kd} · ∫ (∂u/∂x_d)(∂ψ/∂x_k) dΩ`
 ///
 /// For d₃₃ mode: e₃₃, both axes = 2 (poling direction).
@@ -95,11 +96,11 @@ impl BilinearForm<f64> for PiezoStiffnessForm {
 pub struct PiezoCouplingForm {
     /// Piezoelectric stress constant e (C/m²).
     pub e_coeff: f64,
-    /// Axis for the mechanical (strain) gradient.
+    /// Axis of the test gradient: mechanical for inverse, electrical for direct.
     pub mech_axis: usize,
-    /// Axis for the electrical (potential) gradient.
+    /// Axis of the trial gradient: electrical for inverse, mechanical for direct.
     pub elec_axis: usize,
-    /// Sign: +1 for K_φu (direct), −1 for K_uφ (inverse).
+    /// Multiplier for the coupling coefficient; both stress-charge blocks use +1.
     pub sign: f64,
 }
 
@@ -116,13 +117,13 @@ impl PiezoCouplingForm {
     }
 
     /// Inverse piezoelectric effect (K_uφ): E-field → strain.
-    /// `a(φ, v) = −e · ∫ (∂φ/∂x_e)(∂v/∂x_m) dΩ`
+    /// `a(φ, v) = e · ∫ (∂φ/∂x_e)(∂v/∂x_m) dΩ`
     pub fn inverse_d33(material: &PiezoMaterial) -> Self {
         Self {
             e_coeff: material.piezo_stress[2][2],
             mech_axis: 2,
             elec_axis: 2,
-            sign: -1.0,
+            sign: 1.0,
         }
     }
 
@@ -130,8 +131,8 @@ impl PiezoCouplingForm {
     pub fn direct_d31(material: &PiezoMaterial) -> Self {
         Self {
             e_coeff: material.piezo_stress[2][0], // e₃₁
-            mech_axis: 0,
-            elec_axis: 2,
+            mech_axis: 2,
+            elec_axis: 0,
             sign: 1.0,
         }
     }
@@ -142,7 +143,7 @@ impl PiezoCouplingForm {
             e_coeff: material.piezo_stress[2][0],
             mech_axis: 0,
             elec_axis: 2,
-            sign: -1.0,
+            sign: 1.0,
         }
     }
 }
@@ -156,14 +157,14 @@ impl BilinearForm<f64> for PiezoCouplingForm {
         local_matrix: &mut LocalMatrix<f64>,
     ) {
         let n = test.n_dofs;
-        let dm = self.mech_axis.min(test.spatial_dim - 1);
-        let de = self.elec_axis.min(trial.spatial_dim - 1);
+        let test_axis = self.mech_axis.min(test.spatial_dim - 1);
+        let trial_axis = self.elec_axis.min(trial.spatial_dim - 1);
         let w = weight * test.det_j * self.sign * self.e_coeff;
 
         for i in 0..n {
-            let grad_test = test.grad(i, dm);
+            let grad_test = test.grad(i, test_axis);
             for j in 0..n {
-                let grad_trial = trial.grad(j, de);
+                let grad_trial = trial.grad(j, trial_axis);
                 local_matrix.add(i, j, w * grad_test * grad_trial);
             }
         }
@@ -176,8 +177,8 @@ impl BilinearForm<f64> for PiezoCouplingForm {
 ///
 /// For 1D: `a(φ, ψ) = −εˢ_{kk} · ∫ (∂φ/∂x_k)(∂ψ/∂x_k) dΩ`
 ///
-/// Note: the negative sign makes the full 2×2 system positive semi-definite
-/// when combined with the mechanical and coupling blocks.
+/// The full displacement/potential block is symmetric indefinite. Eliminating
+/// the open-circuit potential gives the positive stiffness increment e²/epsilon.
 #[derive(Debug, Clone)]
 pub struct PiezoDielectricForm {
     /// Permittivity component for the electric field direction (F/m).
@@ -290,33 +291,60 @@ mod tests {
     }
 
     #[test]
-    fn test_coupling_form_transpose_relation() {
-        // K_uφ = −K_φuᵀ (direct vs inverse piezo effect)
+    fn coupling_blocks_are_transposes_for_d33_and_d31() {
         let mat = PiezoMaterial::pzt_5a();
-        let direct = PiezoCouplingForm::direct_d33(&mat);
-        let inverse = PiezoCouplingForm::inverse_d33(&mat);
-
-        let mesh = unit_square_triangles(2);
+        let mesh = crate::mesh::unit_cube_tetrahedra(1);
         let space = H1Space::new(PolynomialDegree::P1);
-        let tab = space.tabulate(&mesh, 0, 1.0 / 3.0, 1.0 / 3.0, 0.0);
-        let n = tab.n_dofs;
-
-        let mut k_direct = LocalMatrix::zeros(n);
-        let mut k_inverse = LocalMatrix::zeros(n);
-        direct.integrate_point(&tab, &tab, 1.0, &mut k_direct);
-        inverse.integrate_point(&tab, &tab, 1.0, &mut k_inverse);
-
-        // K_direct = +e·... and K_inverse = −e·..., so K_direct = −K_inverse
-        // (when test and trial spaces are the same and axes match)
-        for i in 0..n {
-            for j in 0..n {
-                let sum = k_direct.get(i, j) + k_inverse.get(i, j);
-                assert!(
-                    sum.abs() < 1e-10,
-                    "K_direct + K_inverse should be zero at ({i},{j}): {sum}"
-                );
+        for element in 0..mesh.num_elements() {
+            let tab = space.tabulate(&mesh, element, 0.2, 0.3, 0.1);
+            for (direct, inverse) in [
+                (
+                    PiezoCouplingForm::direct_d33(&mat),
+                    PiezoCouplingForm::inverse_d33(&mat),
+                ),
+                (
+                    PiezoCouplingForm::direct_d31(&mat),
+                    PiezoCouplingForm::inverse_d31(&mat),
+                ),
+            ] {
+                let mut kd = LocalMatrix::zeros(tab.n_dofs);
+                let mut ki = LocalMatrix::zeros(tab.n_dofs);
+                direct.integrate_point(&tab, &tab, 1.0, &mut kd);
+                inverse.integrate_point(&tab, &tab, 1.0, &mut ki);
+                for i in 0..tab.n_dofs {
+                    for j in 0..tab.n_dofs {
+                        assert!((kd.get(i, j) - ki.get(j, i)).abs() < 1e-12);
+                    }
+                }
             }
         }
+    }
+
+    #[test]
+    fn open_circuit_elimination_stiffens_the_mechanical_block() {
+        let mat = PiezoMaterial::pzt_5a();
+        let tab = BasisTabulation {
+            n_dofs: 2,
+            spatial_dim: 1,
+            values: vec![0.4, 0.6],
+            derivatives: vec![-1.0, 1.0],
+            hessians: vec![],
+            det_j: 1.0,
+            physical_coords: [0.6, 0.0, 0.0],
+        };
+        let mut kuu = LocalMatrix::zeros(2);
+        let mut kup = LocalMatrix::zeros(2);
+        let mut kpu = LocalMatrix::zeros(2);
+        let mut kpp = LocalMatrix::zeros(2);
+        PiezoStiffnessForm::d33(&mat).integrate_point(&tab, &tab, 1.0, &mut kuu);
+        PiezoCouplingForm::inverse_d33(&mat).integrate_point(&tab, &tab, 1.0, &mut kup);
+        PiezoCouplingForm::direct_d33(&mat).integrate_point(&tab, &tab, 1.0, &mut kpu);
+        PiezoDielectricForm::d33(&mat).integrate_point(&tab, &tab, 1.0, &mut kpp);
+        let effective = kuu.get(1, 1) - kup.get(1, 1) * kpu.get(1, 1) / kpp.get(1, 1);
+        let expected =
+            mat.stiffness[2][2] + mat.piezo_stress[2][2].powi(2) / mat.permittivity[2][2];
+        assert!(effective > kuu.get(1, 1));
+        assert!((effective / expected - 1.0).abs() < 1e-12);
     }
 
     #[test]

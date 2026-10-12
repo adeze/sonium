@@ -104,14 +104,14 @@ jobs:
       - name: Probe missing CUDA device fails closed
         run: |
           if SONIUM_REQUIRE_BACKEND=cuda SONIUM_CUDA_DEVICE_ORDINAL=999999 \
-            cargo run -p sonium-qa --features qa-binaries,cuda --bin qa-compute-operation-matrix; then
+            cargo run --release -p sonium-qa --features qa-binaries,cuda --bin qa-compute-operation-matrix; then
             echo "missing-device probe unexpectedly passed" >&2
             exit 1
           fi
       - name: Probe forced CUDA fallback fails closed
         run: |
           if SONIUM_REQUIRE_BACKEND=cuda SONIUM_CUDA_FORCE_FALLBACK=1 \
-            cargo run -p sonium-qa --features qa-binaries,cuda --bin qa-compute-operation-matrix; then
+            cargo run --release -p sonium-qa --features qa-binaries,cuda --bin qa-compute-operation-matrix; then
             echo "forced-fallback probe unexpectedly passed" >&2
             exit 1
           fi
@@ -144,11 +144,11 @@ jobs:
       - name: Test Metal parity
         run: cargo test -p sonium-compute --features metal --test parity
       - name: Run Metal operation matrix
-        run: cargo run -p sonium-qa --features qa-binaries,metal --bin qa-compute-operation-matrix
+        run: cargo run --release -p sonium-qa --features qa-binaries,metal --bin qa-compute-operation-matrix
         env:
           SONIUM_REQUIRE_BACKEND: metal
       - name: Run Metal sparse workload
-        run: cargo run -p sonium-qa --features qa-binaries,metal --bin qa-compute-workloads
+        run: cargo run --release -p sonium-qa --features qa-binaries,metal --bin qa-compute-workloads
         env:
           SONIUM_REQUIRE_BACKEND: metal
       - name: Check FFT Metal feature

@@ -1,10 +1,10 @@
-//! Quad-dominant shell patches extruded into Radioss bricks.
+//! Quad-dominant shell patches extruded into OpenCourant bricks.
 //!
 //! This module builds small crash-mesh sections (Taylor bar, square and
 //! round crush tubes, clamped plate) from quad-dominant surface patches and
-//! turns them into [`RadCase`] brick meshes by straight extrusion or into a
+//! turns them into [`OpenCourantCase`] brick meshes by straight extrusion or into a
 //! [`RadExtendedCase`] shell deck. It is Phase-4 lane 4C: it constructs
-//! `RadCase` with existing fields only and adds no fields to it.
+//! `OpenCourantCase` with existing fields only and adds no fields to it.
 //!
 //! Indexing follows the [`RadMesh`] convention: `nodes` storage is 0-based
 //! while `quads`, `tris`, and `bricks` connectivity is 1-based. Patch quads
@@ -27,7 +27,7 @@
 // Rust guideline compliant 2026-02-21
 
 use crate::analytical::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadError,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadError,
     RadExtendedCase, RadFunction, RadMesh, RadNodeSet, RadProbe, RadShellMesh, RadShellProperty,
     RadThRequest, RadWall, shel_channel,
 };
@@ -43,7 +43,7 @@ use std::fmt;
 /// inverted corners.
 pub const MIN_SCALED_JACOBIAN: f64 = 0.2;
 
-/// Taylor bar length in metres (1 inch, matches `fem_radioss_taylor_bar`).
+/// Taylor bar length in metres (1 inch, matches `fem_opencourant_taylor_bar`).
 const TAYLOR_LENGTH_M: f64 = 0.0254;
 /// Taylor bar radius in metres (1/8 inch diameter section).
 const TAYLOR_RADIUS_M: f64 = 0.003_175;
@@ -472,7 +472,7 @@ pub fn tri_scaled_jacobian(nodes: &[[f64; 3]], tri: &[usize; 3]) -> f64 {
 /// assert!((brick_scaled_jacobian(&nodes, &brick) - 1.0).abs() < 1e-12);
 /// ```
 pub fn brick_scaled_jacobian(nodes: &[[f64; 3]], brick: &[usize; 8]) -> f64 {
-    // Corner neighbors in Radioss bottom-then-top ordering. Triples are
+    // Corner neighbors in OpenCourant bottom-then-top ordering. Triples are
     // right-handed: the top corners list the downward edge second so the
     // determinant stays positive on valid bricks.
     const NEIGHBORS: [[usize; 3]; 8] = [
@@ -706,7 +706,7 @@ fn watertight_detail(mesh: &RadMesh) -> (bool, usize, usize) {
     if mesh.bricks.is_empty() {
         return (false, 0, 0);
     }
-    // Faces in Radioss bottom-then-top ordering, canonically sorted.
+    // Faces in OpenCourant bottom-then-top ordering, canonically sorted.
     const FACES: [[usize; 4]; 6] = [
         [0, 1, 2, 3],
         [4, 5, 6, 7],
@@ -1132,7 +1132,7 @@ pub fn annulus_patch(outer_m: f64, inner_m: f64, n_rings: usize, n_sectors: usiz
 /// A copper bar floats one approach gap above a rising anvil; by Galilean
 /// equivalence the contact force matches the flying-bar test. Probes read
 /// the anvil force plateau (`rho c A V`) and the impact-face travel. Uses
-/// existing [`RadCase`] fields only.
+/// existing [`OpenCourantCase`] fields only.
 ///
 /// # Examples
 ///
@@ -1143,7 +1143,7 @@ pub fn annulus_patch(outer_m: f64, inner_m: f64, n_rings: usize, n_sectors: usiz
 /// case.mesh.validate().unwrap();
 /// assert_eq!(case.probes.len(), 2);
 /// ```
-pub fn taylor_bar_case() -> RadCase {
+pub fn taylor_bar_case() -> OpenCourantCase {
     let section = taylor_patch(6, TAYLOR_RADIUS_M);
     // One microsecond of free approach before contact starts.
     let gap = TAYLOR_VELOCITY_M_PER_S * 1.0e-6;
@@ -1175,7 +1175,7 @@ pub fn taylor_bar_case() -> RadCase {
     let density: f64 = 8930.0;
     let plateau = density * (youngs / density).sqrt() * area * TAYLOR_VELOCITY_M_PER_S;
     let travel = TAYLOR_VELOCITY_M_PER_S * (stop - 1.0e-6);
-    RadCase {
+    OpenCourantCase {
         name: "mesh_taylor_bar".to_string(),
         title: "sonium_qa rad_mesh taylor bar elastic impact".to_string(),
         mesh,
@@ -1240,7 +1240,7 @@ pub fn taylor_bar_case() -> RadCase {
 /// A hollow steel box column along z crushes 1% quasi-statically between
 /// a fixed anvil and a moving crusher. Probes read the elastic crusher
 /// force (`E A delta / L`) and the loaded-face travel. Uses existing
-/// [`RadCase`] fields only.
+/// [`OpenCourantCase`] fields only.
 ///
 /// # Examples
 ///
@@ -1251,7 +1251,7 @@ pub fn taylor_bar_case() -> RadCase {
 /// case.mesh.validate().unwrap();
 /// assert_eq!(case.walls.len(), 2);
 /// ```
-pub fn crash_box_case() -> RadCase {
+pub fn crash_box_case() -> OpenCourantCase {
     let section = square_ring_patch(CRASH_OUTER_M, CRASH_INNER_M, 4, 1);
     let layers = 10;
     let mut mesh = section
@@ -1279,7 +1279,7 @@ pub fn crash_box_case() -> RadCase {
     let top_node = mesh.num_nodes();
     let crusher_point = [0.0, 0.0, CRASH_LENGTH_M];
     let driver = mesh.add_node(crusher_point);
-    RadCase {
+    OpenCourantCase {
         name: "mesh_crash_box".to_string(),
         title: "sonium_qa rad_mesh square tube crush".to_string(),
         mesh,
@@ -1411,7 +1411,7 @@ pub fn shell_plate_case() -> RadExtendedCase {
     let probe_radius = PLATE_RADIUS_M * 1.5 / n_rings as f64;
     let radial = pressure / 16.0
         * ((1.0 + poisson) * PLATE_RADIUS_M.powi(2) - (3.0 + poisson) * probe_radius.powi(2));
-    let base = RadCase {
+    let base = OpenCourantCase {
         name: "mesh_shell_plate".to_string(),
         title: "sonium_qa rad_mesh clamped plate pressure".to_string(),
         mesh: RadMesh {

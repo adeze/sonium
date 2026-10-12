@@ -3,7 +3,7 @@
 //! Provides exact closed-form solutions for classical benchmark problems
 //! across multiple physics domains. All functions are f64-only.
 //!
-//! The [`rad`] submodule (Radioss comparison harness) is declared here so
+//! The [`rad`] submodule (OpenCourant comparison harness) is declared here so
 //! the crate root stays untouched; the crate-level glob re-export surfaces
 //! it as `sonium_qa::rad`.
 

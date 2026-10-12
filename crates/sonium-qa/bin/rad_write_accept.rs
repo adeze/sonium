@@ -20,7 +20,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadAirbagInjector, RadAirbagPorous, RadBeamElems, RadBeamProp, RadBoundaryCondition, RadCase,
+    RadAirbagInjector, RadAirbagPorous, RadBeamElems, RadBeamProp, RadBoundaryCondition, OpenCourantCase,
     RadCommuBag, RadCommuJet, RadCommuVent, RadDamping, RadDampingFull, RadElasticMaterial,
     RadEngineDamping, RadExtendedCase, RadExtra, RadExtraContext, RadExtraPart, RadFunction,
     RadGasKind, RadGasPredef, RadGrnodSurfs, RadInject2, RadInjectGas, RadInterType2,
@@ -104,7 +104,7 @@ fn acceptance_case() -> RadExtendedCase {
         [0.0, 4.0, 0.0],
         [1.0, 4.0, 0.0],
     ]);
-    let base = RadCase {
+    let base = OpenCourantCase {
         name: "rad4b_accept".to_string(),
         title: "sonium_qa rad lane 4B writer acceptance".to_string(),
         mesh: RadMesh {
@@ -803,7 +803,9 @@ fn main() {
             "4B RESULT FAIL (engine input rejected) scratch={} keep={keep}",
             scratch.display()
         );
+        println!("FAILED: qa-rad-write-accept");
         std::process::exit(1);
     }
     println!("4B RESULT PASS scratch={} keep={keep}", scratch.display());
+    println!("SUCCESS: qa-rad-write-accept");
 }

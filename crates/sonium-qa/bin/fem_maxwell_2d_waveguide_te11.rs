@@ -1,7 +1,10 @@
-//! Analytical reference check.
+//! Analytical reference-only check; no numerical FEM accuracy claim.
 //!
 //! This binary validates a closed-form benchmark or helper without assembling a `sonium_fem` finite-element system.
 //! Keep FEM solver and assembly validations in binaries that import `sonium_fem`.
+
+#[path = "support/reference_result.rs"]
+mod reference_result;
 
 use sonium_qa::analytical::maxwell_circular_waveguide_te11_cutoff;
 
@@ -13,6 +16,7 @@ fn main() {
         assert!((2.0 * fc - maxwell_circular_waveguide_te11_cutoff(0.005)).abs() / fc < 1e-12);
         println!("Maxwell circular TE11 cutoff: {:.6e} Hz", fc);
     });
+    reference_result::emit("reference.fem-maxwell-2d-waveguide-te11.v1", result.is_ok());
     if result.is_ok() {
         println!("SUCCESS");
     } else {

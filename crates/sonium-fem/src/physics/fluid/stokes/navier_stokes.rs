@@ -3810,9 +3810,6 @@ where
             Ok(triplet) => triplet,
             Err(_) => return false,
         };
-    let viscous_triplet = transported_viscous_triplet
-        .as_ref()
-        .unwrap_or(&workspace.viscous_unit_triplet);
 
     // Build monolithic system: block (0,0) = ρ a₀/Δt M + mu_step·K_unit + C(u*)
     let mass_coeff = config.rho * coeffs.a0 / dt;
@@ -3828,53 +3825,10 @@ where
     let mu_step = config
         .effective_dynamic_viscosity_and_speed_derivative(velocity_magnitude_max)
         .0;
-    let mut mono = crate::assembly::TripletMatrix::new(n_total, n_total);
-
-    // Mass term: ρ a₀/Δt M
-    for k in 0..mass_triplet.nnz() {
-        mono.push(
-            mass_triplet.rows[k],
-            mass_triplet.cols[k],
-            mass_coeff * mass_triplet.values[k],
-        );
-    }
     // Viscous: either the lagged element-local transported block or the
     // legacy uniform unit-viscosity block scaled by `mu_step`.
-    let viscous_scale = if transported_viscous_triplet.is_some() {
-        1.0
-    } else {
-        mu_step
-    };
-    for k in 0..viscous_triplet.nnz() {
-        mono.push(
-            viscous_triplet.rows[k],
-            viscous_triplet.cols[k],
-            viscous_scale * viscous_triplet.values[k],
-        );
-    }
-    // Divergence blocks
-    for k in 0..workspace.block_01.nnz() {
-        mono.push(
-            workspace.block_01.rows[k],
-            workspace.block_01.cols[k] + n_v,
-            workspace.block_01.values[k],
-        );
-    }
-    for k in 0..workspace.block_10.nnz() {
-        mono.push(
-            workspace.block_10.rows[k] + n_v,
-            workspace.block_10.cols[k],
-            workspace.block_10.values[k],
-        );
-    }
-    // Convection: C(u*)
-    for k in 0..conv_triplet.nnz() {
-        mono.push(
-            conv_triplet.rows[k],
-            conv_triplet.cols[k],
-            conv_triplet.values[k],
-        );
-    }
+    let use_transported = transported_viscous_triplet.is_some();
+    let viscous_scale = if use_transported { 1.0 } else { mu_step };
 
     // RHS: velocity block = ρ/Δt M × (-a₁ u^n - a₂ u^{n-1}) + body_force
     let rho_over_dt = config.rho / dt;
@@ -3885,9 +3839,9 @@ where
         .map(|(&un, &unm1)| rho_over_dt * (-coeffs.a1 * un - coeffs.a2 * unm1))
         .collect();
 
-    // Multiply BDF source by mass matrix: rhs_v = M × bdf_source
-    let mass_csr = workspace.mass_triplet.to_csr();
-    let rhs_v = mass_csr.matvec(&bdf_source);
+    // Multiply BDF source by mass matrix: rhs_v = M × bdf_source. The CSR
+    // conversion happens once at workspace setup, not every step.
+    let rhs_v = workspace.mass_csr.matvec(&bdf_source);
 
     let mut rhs = vec![0.0; n_total];
     for (i, &val) in rhs_v.iter().enumerate() {
@@ -3914,14 +3868,6 @@ where
         mesh,
         workspace.quad_order,
     );
-    for entry in 0..body_force_matrix.nnz() {
-        mono.push(
-            body_force_matrix.rows[entry],
-            body_force_matrix.cols[entry],
-            body_force_matrix.values[entry],
-        );
-    }
-
     // Pressure-traction natural BCs: adds ∫_Γ (−p·n)·v dΓ to the momentum RHS.
     super::traction::assemble_pressure_tractions_for_space(mesh, v_space, tractions, &mut rhs);
 
@@ -3945,17 +3891,65 @@ where
     if n_p > 0 {
         is_bc[n_v + workspace.pressure_pin] = true;
         bc_values[n_v + workspace.pressure_pin] = workspace.pressure_pin_value;
-        // The unstabilised Taylor-Hood pressure block has no structural
-        // diagonal; materialise the pinned entry before CSR conversion.
-        mono.push(
-            n_v + workspace.pressure_pin,
-            n_v + workspace.pressure_pin,
-            0.0,
-        );
     }
 
+    // Fixed-pattern assembly: the merged monolithic pattern never changes
+    // across steps, so values are recomputed in place instead of merging
+    // and sorting tens of millions of triplets every step. A pattern
+    // mismatch (or the first step) rebuilds the cache from scratch.
+    let pin = if n_p > 0 {
+        Some(n_v + workspace.pressure_pin)
+    } else {
+        None
+    };
+    let cached_fill = workspace
+        .mono_pattern_cache
+        .borrow()
+        .as_ref()
+        .and_then(|cache| {
+            cache.try_fill(
+                mass_coeff,
+                viscous_scale,
+                use_transported,
+                transported_viscous_triplet.as_ref(),
+                &conv_triplet,
+                &body_force_matrix,
+            )
+        });
+    let (values, value_fingerprints) = match cached_fill {
+        Some(filled) => filled,
+        None => {
+            let cache = super::workspace::BdfMonoPatternCache::build(
+                n_total,
+                n_v,
+                mass_triplet,
+                &workspace.viscous_unit_triplet,
+                transported_viscous_triplet.as_ref(),
+                &workspace.block_01,
+                &workspace.block_10,
+                &conv_triplet,
+                &body_force_matrix,
+                pin,
+            );
+            let filled = cache
+                .try_fill(
+                    mass_coeff,
+                    viscous_scale,
+                    use_transported,
+                    transported_viscous_triplet.as_ref(),
+                    &conv_triplet,
+                    &body_force_matrix,
+                )
+                .expect("fresh pattern cache matches current triplets");
+            workspace.mono_pattern_cache.borrow_mut().replace(cache);
+            filled
+        }
+    };
+    let cached_pattern = workspace.mono_pattern_cache.borrow();
+    let cache = cached_pattern.as_ref().expect("pattern cache built above");
+
     // Apply symmetric Dirichlet BCs: lift RHS, zero rows+cols, set diagonal=1
-    let mut csr = mono.to_csr();
+    let mut csr = cache.to_csr(values);
     for row in 0..n_total {
         let row_start = csr.row_ptrs[row];
         let row_end = csr.row_ptrs[row + 1];
@@ -3975,6 +3969,21 @@ where
         }
     }
 
+    // Backend (GPU) Schur product, memoized across same-matrix solves (the
+    // coupled base/probe pair shares one). Pure function of the assembled
+    // values, keyed on the pattern cache's dynamic fingerprints plus the
+    // per-step scales.
+    let backend_schur = backend_btdiagb_schur_cached(
+        config,
+        workspace,
+        &csr,
+        n_v,
+        mass_coeff,
+        viscous_scale,
+        use_transported,
+        value_fingerprints,
+    );
+
     // Solve
     let b: Vec<f64> = rhs;
     workspace.record_linear_system(&csr, &b);
@@ -3983,15 +3992,13 @@ where
     initial_guess.extend_from_slice(&state.velocity);
     initial_guess.extend_from_slice(&state.pressure);
     let Some((x, telemetry)) = solve_cached_bdf_linear_system(
-        mesh,
-        p_space,
         config,
         workspace,
         &csr,
         &b,
         &initial_guess,
         n_v,
-        mu_step,
+        backend_schur,
     ) else {
         return false;
     };
@@ -4006,17 +4013,60 @@ where
     true
 }
 
+/// Unsteady Schur product for backend (GPU/CPU-fallback) Jacobi-Schur
+/// solves, memoized in the workspace across same-matrix solves.
+///
+/// The `BtDiagB` product is a pure function of the assembled monolithic
+/// values, which are identified exactly by the fill's value fingerprints
+/// plus the per-step scales. A key mismatch rebuilds from scratch, so
+/// the memo can only save work, never serve a stale product.
 #[allow(clippy::too_many_arguments)]
-fn solve_cached_bdf_linear_system<PSpace: crate::spaces::FunctionSpace>(
-    mesh: &crate::mesh::Mesh,
-    p_space: &PSpace,
+fn backend_btdiagb_schur_cached(
+    config: &NavierStokesConfig,
+    workspace: &super::workspace::BdfWorkspace,
+    csr: &sonium_solvers::CsrMatrix<f64>,
+    velocity_block_size: usize,
+    mass_coeff: f64,
+    viscous_scale: f64,
+    use_transported: bool,
+    fingerprints: super::workspace::ValueFingerprints,
+) -> Option<sonium_solvers::CsrMatrix<f64>> {
+    let resolved_backend = match config.linear_solver_backend {
+        LinearSolverBackend::Auto => LinearSolverBackend::resolve_auto(),
+        backend => backend,
+    };
+    if matches!(resolved_backend, LinearSolverBackend::Cpu)
+        || config.linear_solver_backend_preconditioner != BackendPreconditionerKind::JacobiSchur
+    {
+        return None;
+    }
+    let mut guard = workspace.bdf_schur_cache.borrow_mut();
+    if let Some(entry) = guard.as_mut() {
+        if entry.matches(mass_coeff, viscous_scale, use_transported, fingerprints) {
+            entry.hits += 1;
+            return Some(entry.schur.clone());
+        }
+    }
+    let schur = sonium_solvers::btdiagb_schur_from_monolithic(csr, velocity_block_size);
+    *guard = Some(super::workspace::BdfSchurCacheEntry {
+        mass_coeff_bits: mass_coeff.to_bits(),
+        viscous_scale_bits: viscous_scale.to_bits(),
+        use_transported,
+        value_fingerprints: fingerprints,
+        schur: schur.clone(),
+        hits: 0,
+    });
+    Some(schur)
+}
+
+fn solve_cached_bdf_linear_system(
     config: &NavierStokesConfig,
     workspace: &super::workspace::BdfWorkspace,
     csr: &sonium_solvers::CsrMatrix<f64>,
     b: &[f64],
     x0: &[f64],
     velocity_block_size: usize,
-    mu_step: f64,
+    backend_schur: Option<sonium_solvers::CsrMatrix<f64>>,
 ) -> Option<(Vec<f64>, super::workspace::BdfLinearSolveTelemetry)> {
     use super::workspace::{BdfCachedLinearSolver, BdfLinearSolveTelemetry, BdfLinearSolverKind};
 
@@ -4027,9 +4077,19 @@ fn solve_cached_bdf_linear_system<PSpace: crate::spaces::FunctionSpace>(
             backend => backend,
         };
         if !matches!(resolved_backend, LinearSolverBackend::Cpu) {
-            let pressure_schur = (config.linear_solver_backend_preconditioner
-                == BackendPreconditionerKind::JacobiSchur)
-                .then(|| pressure_mass_schur_csr(p_space, mesh, mu_step, workspace.pressure_pin));
+            // Unsteady BtDiagB Schur product, memoized across same-matrix
+            // solves by the caller (a steady-Stokes Mp/mu matrix would
+            // mis-scale the preconditioned Schur block by ~sigma/mu and
+            // stall the backend Krylov solver on refined unsteady
+            // systems).
+            let pressure_schur = backend_schur;
+            if progress {
+                eprintln!(
+                    "BDF_LINEAR_SETUP solver=backend-gmres rows={} nnz={} reused=false",
+                    csr.num_rows,
+                    csr.values.len()
+                );
+            }
             let (solution, actual_backend, iterations) = solve_iterative_linear_system(
                 config,
                 csr,
@@ -4055,6 +4115,18 @@ fn solve_cached_bdf_linear_system<PSpace: crate::spaces::FunctionSpace>(
             let converged = solution.iter().all(|value| value.is_finite())
                 && true_relative_residual.is_finite()
                 && true_relative_residual <= config.linear_solver_tolerance;
+            if progress {
+                let solver_name = match solver {
+                    BdfLinearSolverKind::BackendFgmres => "backend-gmres",
+                    BdfLinearSolverKind::GmresIlu => "gmres-ilu",
+                    BdfLinearSolverKind::FgmresJacobiSchur => "fgmres-jacobi-schur",
+                    BdfLinearSolverKind::FgmresIlutSchur => "fgmres-ilut-schur",
+                    BdfLinearSolverKind::Direct => "direct",
+                };
+                eprintln!(
+                    "BDF_LINEAR_SOLVE_DONE solver={solver_name} iterations={iterations} residual={true_relative_residual:.12e} converged={converged} reused=false"
+                );
+            }
             return converged.then_some((
                 solution,
                 BdfLinearSolveTelemetry {
@@ -6505,6 +6577,612 @@ mod tests {
             "REPRO_DIAG velocity_error={velocity_error:.6e} velocity_scale={velocity_scale:.6e}"
         );
         assert!(velocity_error / velocity_scale <= 1.0e-6);
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn cuda_jacobi_schur_converges_mass_dominated_unsteady_step() {
+        use crate::physics::fluid::stokes::time_stepping::{BdfConfig, BdfState};
+        use crate::physics::fluid::stokes::traction::PressureTraction;
+        use crate::physics::fluid::stokes::workspace::BdfWorkspace;
+
+        // Skip-capable on hosts without an NVIDIA driver, following the
+        // sonium-compute CUDA test convention.
+        if sonium_compute::cuda::CudaBackend::new_default().is_err() {
+            if std::env::var("SONIUM_REQUIRE_CUDA").is_ok() {
+                panic!("CUDA required by SONIUM_REQUIRE_CUDA but unavailable");
+            }
+            eprintln!("skipping CUDA Jacobi/Schur test: no NVIDIA driver");
+            return;
+        }
+
+        // Same mass-dominated port-flow fixture as the CPU regression test:
+        // the backend must upload the unsteady BtDiagB Schur product, not a
+        // steady-Stokes Mp/mu matrix, or backend GMRES stalls and the solve
+        // falls back to CPU.
+        let (mesh, inlet, outlet) = marked_channel_mesh(1.0, 0.1, 32, 16);
+        let v_space = VectorH1Space::new(PolynomialDegree::P2, 2);
+        let p_space = H1Space::new(PolynomialDegree::P1);
+        let n_v = v_space.num_global_dofs(&mesh);
+        let n_p = p_space.num_global_dofs(&mesh);
+        let mut bc_dofs = v_space.boundary_dofs(&mesh, 3);
+        bc_dofs.sort_unstable();
+        bc_dofs.dedup();
+        let bc_fn = |_: f64, _: f64, _: f64| vec![0.0, 0.0];
+        let bdf = BdfConfig::bdf2(8.844870228e-5, 2);
+        let base = NavierStokesConfig {
+            mu: 1.85e-5,
+            rho: 1.2,
+            use_residual_stabilisation: false,
+            use_direct_solver: false,
+            linear_solver_max_iterations: 5000,
+            // Tighter than the CPU test: the backend GMRES stopping
+            // criterion leaves a larger forward error at 1e-8 residual on
+            // this ill-conditioned saddle system.
+            linear_solver_tolerance: 1.0e-10,
+            linear_solver_backend: LinearSolverBackend::Cuda,
+            linear_solver_backend_preconditioner: BackendPreconditionerKind::JacobiSchur,
+            ..Default::default()
+        };
+        let direct_config = NavierStokesConfig {
+            use_direct_solver: true,
+            linear_solver_backend: LinearSolverBackend::Cpu,
+            ..base.clone()
+        };
+        let mut direct = BdfState::from_rest(n_v, n_p);
+        let direct_workspace = BdfWorkspace::new(&mesh, &v_space, &p_space);
+        let tractions = [
+            PressureTraction {
+                marker: inlet,
+                pressure_pa: 1.0,
+            },
+            PressureTraction {
+                marker: outlet,
+                pressure_pa: 0.0,
+            },
+        ];
+        assert!(solve_bdf_step_cached(
+            &mesh,
+            &v_space,
+            &p_space,
+            &direct_config,
+            &bdf,
+            &mut direct,
+            &bc_fn,
+            &bc_dofs,
+            &tractions,
+            &direct_workspace,
+        ));
+        let mut iterative = BdfState::from_rest(n_v, n_p);
+        let iterative_workspace = BdfWorkspace::new(&mesh, &v_space, &p_space);
+        assert!(solve_bdf_step_cached(
+            &mesh,
+            &v_space,
+            &p_space,
+            &base,
+            &bdf,
+            &mut iterative,
+            &bc_fn,
+            &bc_dofs,
+            &tractions,
+            &iterative_workspace,
+        ));
+        let telemetry = iterative_workspace
+            .last_linear_solve_telemetry()
+            .expect("telemetry recorded");
+        assert_eq!(
+            telemetry.resolved_linear_solver_backend,
+            LinearSolverBackend::Cuda,
+            "backend solve fell back to CPU"
+        );
+        assert!(telemetry.true_relative_residual <= 1.0e-10);
+        const MAX_CUDA_STALL_REGRESSION_ITERATIONS: usize = 3000;
+        assert!(
+            telemetry.iterations <= MAX_CUDA_STALL_REGRESSION_ITERATIONS,
+            "unsteady Schur stall on CUDA: {} iterations",
+            telemetry.iterations
+        );
+        let velocity_error = direct
+            .velocity
+            .iter()
+            .zip(&iterative.velocity)
+            .map(|(a, b)| (a - b).powi(2))
+            .sum::<f64>()
+            .sqrt();
+        let velocity_scale = direct
+            .velocity
+            .iter()
+            .map(|value| value * value)
+            .sum::<f64>()
+            .sqrt()
+            .max(f64::MIN_POSITIVE);
+        eprintln!(
+            "CUDA_DIAG iterations={} velocity_error={velocity_error:.6e} velocity_scale={velocity_scale:.6e}",
+            telemetry.iterations
+        );
+        assert!(velocity_error / velocity_scale <= 1.0e-6);
+    }
+
+    /// Run the coupled-port base/probe solve pair (same BDF step, two
+    /// pressure loadings) and return the workspace plus the affine-combined
+    /// accepted state and combination factor, mirroring `run_coupled_port`.
+    #[allow(clippy::too_many_arguments)]
+    fn run_affine_probe_pair(
+        mesh: &Mesh,
+        v_space: &VectorH1Space,
+        p_space: &H1Space,
+        bdf: &crate::physics::fluid::stokes::time_stepping::BdfConfig,
+        bc_fn: &impl Fn(f64, f64, f64) -> Vec<f64>,
+        bc_dofs: &[usize],
+        inlet: i32,
+        outlet: i32,
+        config: &NavierStokesConfig,
+    ) -> (
+        crate::physics::fluid::stokes::workspace::BdfWorkspace,
+        Vec<f64>,
+        f64,
+    ) {
+        use crate::physics::fluid::stokes::time_stepping::BdfState;
+        use crate::physics::fluid::stokes::traction::PressureTraction;
+        use crate::physics::fluid::stokes::workspace::BdfWorkspace;
+
+        let n_v = v_space.num_global_dofs(mesh);
+        let n_p = p_space.num_global_dofs(mesh);
+        let workspace = BdfWorkspace::new(mesh, v_space, p_space);
+        let previous = BdfState::from_rest(n_v, n_p);
+        let solve_at_pressure = |pressure_pa: f64, trial: &mut BdfState| {
+            let tractions = [
+                PressureTraction {
+                    marker: inlet,
+                    pressure_pa,
+                },
+                PressureTraction {
+                    marker: outlet,
+                    pressure_pa: 0.0,
+                },
+            ];
+            solve_bdf_step_cached(
+                mesh, v_space, p_space, config, bdf, trial, bc_fn, bc_dofs, &tractions, &workspace,
+            )
+        };
+        let mut flow_base = previous.clone();
+        assert!(solve_at_pressure(1.0, &mut flow_base));
+        let mut flow_probe = previous.clone();
+        assert!(solve_at_pressure(2.0, &mut flow_probe));
+        let factor = 0.25;
+        let mut accepted = Vec::with_capacity(n_v + n_p);
+        accepted.extend_from_slice(&flow_base.velocity);
+        accepted.extend_from_slice(&flow_base.pressure);
+        let probe_state: Vec<f64> = flow_probe
+            .velocity
+            .iter()
+            .chain(&flow_probe.pressure)
+            .copied()
+            .collect();
+        for (value, probe) in accepted.iter_mut().zip(&probe_state) {
+            *value += factor * (*probe - *value);
+        }
+        (workspace, accepted, factor)
+    }
+
+    #[test]
+    fn affine_probe_residual_available_after_cpu_solves() {
+        use crate::physics::fluid::stokes::time_stepping::BdfConfig;
+
+        let (mesh, inlet, outlet) = marked_channel_mesh(1.0, 0.1, 32, 16);
+        let v_space = VectorH1Space::new(PolynomialDegree::P2, 2);
+        let p_space = H1Space::new(PolynomialDegree::P1);
+        let mut bc_dofs = v_space.boundary_dofs(&mesh, 3);
+        bc_dofs.sort_unstable();
+        bc_dofs.dedup();
+        let bc_fn = |_: f64, _: f64, _: f64| vec![0.0, 0.0];
+        let bdf = BdfConfig::bdf2(8.844870228e-5, 2);
+        let config = NavierStokesConfig {
+            mu: 1.85e-5,
+            rho: 1.2,
+            use_residual_stabilisation: false,
+            use_direct_solver: false,
+            linear_solver_max_iterations: 5000,
+            linear_solver_tolerance: 1.0e-8,
+            linear_solver_backend: LinearSolverBackend::Cpu,
+            linear_solver_cpu_preconditioner: LinearSolverCpuPreconditionerKind::JacobiSchur,
+            ..Default::default()
+        };
+        let (workspace, accepted, factor) = run_affine_probe_pair(
+            &mesh, &v_space, &p_space, &bdf, &bc_fn, &bc_dofs, inlet, outlet, &config,
+        );
+        let residual = workspace
+            .affine_true_relative_residual(&accepted, factor)
+            .expect("affine residual available after CPU solves");
+        assert!(residual <= 1.0e-6, "affine residual {residual:e}");
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn affine_probe_residual_available_after_cuda_solves() {
+        use crate::physics::fluid::stokes::time_stepping::BdfConfig;
+
+        if sonium_compute::cuda::CudaBackend::new_default().is_err() {
+            if std::env::var("SONIUM_REQUIRE_CUDA").is_ok() {
+                panic!("CUDA required by SONIUM_REQUIRE_CUDA but unavailable");
+            }
+            eprintln!("skipping CUDA affine test: no NVIDIA driver");
+            return;
+        }
+        let (mesh, inlet, outlet) = marked_channel_mesh(1.0, 0.1, 32, 16);
+        let v_space = VectorH1Space::new(PolynomialDegree::P2, 2);
+        let p_space = H1Space::new(PolynomialDegree::P1);
+        let mut bc_dofs = v_space.boundary_dofs(&mesh, 3);
+        bc_dofs.sort_unstable();
+        bc_dofs.dedup();
+        let bc_fn = |_: f64, _: f64, _: f64| vec![0.0, 0.0];
+        let bdf = BdfConfig::bdf2(8.844870228e-5, 2);
+        let config = NavierStokesConfig {
+            mu: 1.85e-5,
+            rho: 1.2,
+            use_residual_stabilisation: false,
+            use_direct_solver: false,
+            linear_solver_max_iterations: 5000,
+            linear_solver_tolerance: 1.0e-10,
+            linear_solver_backend: LinearSolverBackend::Cuda,
+            linear_solver_backend_preconditioner: BackendPreconditionerKind::JacobiSchur,
+            ..Default::default()
+        };
+        let (workspace, accepted, factor) = run_affine_probe_pair(
+            &mesh, &v_space, &p_space, &bdf, &bc_fn, &bc_dofs, inlet, outlet, &config,
+        );
+        let residual = workspace
+            .affine_true_relative_residual(&accepted, factor)
+            .expect("affine residual available after CUDA solves");
+        assert!(residual <= 1.0e-6, "affine residual {residual:e}");
+    }
+
+    #[test]
+    #[cfg(feature = "cuda")]
+    fn backend_schur_cache_reuses_same_matrix_product() {
+        use crate::physics::fluid::stokes::time_stepping::{BdfConfig, BdfState};
+        use crate::physics::fluid::stokes::traction::PressureTraction;
+        use crate::physics::fluid::stokes::workspace::BdfWorkspace;
+
+        if sonium_compute::cuda::CudaBackend::new_default().is_err() {
+            if std::env::var("SONIUM_REQUIRE_CUDA").is_ok() {
+                panic!("CUDA required by SONIUM_REQUIRE_CUDA but unavailable");
+            }
+            eprintln!("skipping CUDA Schur-cache test: no NVIDIA driver");
+            return;
+        }
+        let (mesh, inlet, outlet) = marked_channel_mesh(1.0, 0.1, 32, 16);
+        let v_space = VectorH1Space::new(PolynomialDegree::P2, 2);
+        let p_space = H1Space::new(PolynomialDegree::P1);
+        let n_v = v_space.num_global_dofs(&mesh);
+        let n_p = p_space.num_global_dofs(&mesh);
+        let mut bc_dofs = v_space.boundary_dofs(&mesh, 3);
+        bc_dofs.sort_unstable();
+        bc_dofs.dedup();
+        let bc_fn = |_: f64, _: f64, _: f64| vec![0.0, 0.0];
+        let bdf = BdfConfig::bdf2(8.844870228e-5, 2);
+        let config = NavierStokesConfig {
+            mu: 1.85e-5,
+            rho: 1.2,
+            use_residual_stabilisation: false,
+            use_direct_solver: false,
+            linear_solver_max_iterations: 5000,
+            linear_solver_tolerance: 1.0e-10,
+            linear_solver_backend: LinearSolverBackend::Cuda,
+            linear_solver_backend_preconditioner: BackendPreconditionerKind::JacobiSchur,
+            ..Default::default()
+        };
+        let workspace = BdfWorkspace::new(&mesh, &v_space, &p_space);
+        let solve_at_pressure = |pressure_pa: f64, trial: &mut BdfState| {
+            let tractions = [
+                PressureTraction {
+                    marker: inlet,
+                    pressure_pa,
+                },
+                PressureTraction {
+                    marker: outlet,
+                    pressure_pa: 0.0,
+                },
+            ];
+            solve_bdf_step_cached(
+                &mesh, &v_space, &p_space, &config, &bdf, trial, &bc_fn, &bc_dofs, &tractions,
+                &workspace,
+            )
+        };
+        let hits = || {
+            workspace
+                .bdf_schur_cache
+                .borrow()
+                .as_ref()
+                .map(|entry| entry.hits)
+        };
+        // Same step, same state, two loadings: identical matrices, so the
+        // second solve must reuse the memoized Schur product.
+        let previous = BdfState::from_rest(n_v, n_p);
+        let mut flow_base = previous.clone();
+        assert!(solve_at_pressure(1.0, &mut flow_base));
+        assert_eq!(hits(), Some(0));
+        let mut flow_probe = previous.clone();
+        assert!(solve_at_pressure(2.0, &mut flow_probe));
+        assert_eq!(hits(), Some(1));
+        // Changed advecting state: different convection block, so the memo
+        // must miss and rebuild instead of serving a stale product.
+        let mut perturbed = previous.clone();
+        for value in perturbed.velocity.iter_mut().take(n_v.min(16)) {
+            *value += 0.5;
+        }
+        assert!(solve_at_pressure(1.0, &mut perturbed));
+        assert_eq!(hits(), Some(0));
+    }
+
+    #[test]
+    fn mono_pattern_cache_matches_triplet_merge() {
+        use crate::physics::fluid::stokes::workspace::{BdfMonoPatternCache, BdfWorkspace};
+
+        let (mesh, _, _) = marked_channel_mesh(1.0, 0.1, 8, 4);
+        let v_space = VectorH1Space::new(PolynomialDegree::P2, 2);
+        let p_space = H1Space::new(PolynomialDegree::P1);
+        let n_v = v_space.num_global_dofs(&mesh);
+        let n_p = p_space.num_global_dofs(&mesh);
+        let n_total = n_v + n_p;
+        let workspace = BdfWorkspace::new(&mesh, &v_space, &p_space);
+        // Deterministic nonzero advecting field so convection values are live.
+        let u_star: Vec<f64> = (0..n_v).map(|i| 0.001 * ((i % 7) as f64)).collect();
+        let conv = assemble_bdf_convection(&mesh, &v_space, &workspace, &u_star, 1.2, 2);
+        let body = crate::assembly::assemble_bilinear(
+            &BdfBodyForceJacobianForm {
+                jacobian: |_| [[0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.5]],
+            },
+            &v_space,
+            &v_space,
+            &mesh,
+            workspace.quad_order,
+        );
+        let pin = if n_p > 0 {
+            Some(n_v + workspace.pressure_pin)
+        } else {
+            None
+        };
+        let mass_coeff = 20360.0;
+        let viscous_scale = 1.85e-5;
+
+        let cache = BdfMonoPatternCache::build(
+            n_total,
+            n_v,
+            &workspace.mass_triplet,
+            &workspace.viscous_unit_triplet,
+            None,
+            &workspace.block_01,
+            &workspace.block_10,
+            &conv,
+            &body,
+            pin,
+        );
+        let (values, _) = cache
+            .try_fill(mass_coeff, viscous_scale, false, None, &conv, &body)
+            .expect("cache matches current triplets");
+        let fast = cache.to_csr(values);
+
+        // Reference: legacy triplet merge with identical scales.
+        let mut mono = crate::assembly::TripletMatrix::new(n_total, n_total);
+        for k in 0..workspace.mass_triplet.nnz() {
+            mono.push(
+                workspace.mass_triplet.rows[k],
+                workspace.mass_triplet.cols[k],
+                mass_coeff * workspace.mass_triplet.values[k],
+            );
+        }
+        for k in 0..workspace.viscous_unit_triplet.nnz() {
+            mono.push(
+                workspace.viscous_unit_triplet.rows[k],
+                workspace.viscous_unit_triplet.cols[k],
+                viscous_scale * workspace.viscous_unit_triplet.values[k],
+            );
+        }
+        for k in 0..workspace.block_01.nnz() {
+            mono.push(
+                workspace.block_01.rows[k],
+                workspace.block_01.cols[k] + n_v,
+                workspace.block_01.values[k],
+            );
+        }
+        for k in 0..workspace.block_10.nnz() {
+            mono.push(
+                workspace.block_10.rows[k] + n_v,
+                workspace.block_10.cols[k],
+                workspace.block_10.values[k],
+            );
+        }
+        for k in 0..conv.nnz() {
+            mono.push(conv.rows[k], conv.cols[k], conv.values[k]);
+        }
+        for k in 0..body.nnz() {
+            mono.push(body.rows[k], body.cols[k], body.values[k]);
+        }
+        if let Some(dof) = pin {
+            mono.push(dof, dof, 0.0);
+        }
+        let reference = mono.to_csr();
+
+        assert_eq!(fast.row_ptrs, reference.row_ptrs);
+        assert_eq!(fast.col_indices, reference.col_indices);
+        let scale = reference
+            .values
+            .iter()
+            .fold(0.0_f64, |max, value| max.max(value.abs()))
+            .max(f64::MIN_POSITIVE);
+        let max_diff = fast
+            .values
+            .iter()
+            .zip(&reference.values)
+            .fold(0.0_f64, |max, (a, b)| max.max((a - b).abs()));
+        assert!(
+            max_diff / scale <= 1.0e-12,
+            "pattern-cache drift {max_diff:e} (scale {scale:e})"
+        );
+
+        // Fail-closed: reordered triplet positions must miss the cache even
+        // though they describe the same matrix.
+        let mut reordered = conv.clone();
+        let last = reordered.rows.len() - 1;
+        reordered.rows.swap(0, last);
+        reordered.cols.swap(0, last);
+        reordered.values.swap(0, last);
+        assert!(
+            cache
+                .try_fill(mass_coeff, viscous_scale, false, None, &reordered, &body)
+                .is_none(),
+            "reordered positions must miss the pattern cache"
+        );
+        // ...while a cache rebuilt from the reordered triplets is exact.
+        let rebuilt = BdfMonoPatternCache::build(
+            n_total,
+            n_v,
+            &workspace.mass_triplet,
+            &workspace.viscous_unit_triplet,
+            None,
+            &workspace.block_01,
+            &workspace.block_10,
+            &reordered,
+            &body,
+            pin,
+        );
+        let (rebuilt_values, _) = rebuilt
+            .try_fill(mass_coeff, viscous_scale, false, None, &reordered, &body)
+            .expect("rebuilt cache matches reordered triplets");
+        let rebuilt_csr = rebuilt.to_csr(rebuilt_values);
+        assert_eq!(rebuilt_csr.row_ptrs, reference.row_ptrs);
+        assert_eq!(rebuilt_csr.col_indices, reference.col_indices);
+        let rebuilt_diff = rebuilt_csr
+            .values
+            .iter()
+            .zip(&reference.values)
+            .fold(0.0_f64, |max, (a, b)| max.max((a - b).abs()));
+        assert!(
+            rebuilt_diff / scale <= 1.0e-12,
+            "rebuilt-cache drift {rebuilt_diff:e} (scale {scale:e})"
+        );
+
+        // Value fingerprints track values, not just positions: the Schur
+        // memo keys on these, so equal positions with different values
+        // must produce different fingerprints.
+        let mut rescaled = conv.clone();
+        for value in &mut rescaled.values {
+            *value *= 1.5;
+        }
+        let (_, base_fingerprints) = cache
+            .try_fill(mass_coeff, viscous_scale, false, None, &conv, &body)
+            .expect("base fill succeeds");
+        let (_, rescaled_fingerprints) = cache
+            .try_fill(mass_coeff, viscous_scale, false, None, &rescaled, &body)
+            .expect("same positions fill");
+        assert_ne!(
+            base_fingerprints.convection, rescaled_fingerprints.convection,
+            "value fingerprints must track values"
+        );
+
+        // Transported-viscosity mode: unit block replaced by the scattered
+        // transported block, and mode switches miss the cache.
+        let mut transported_config = NavierStokesConfig::default();
+        transported_config.transported_eddy_viscosity_per_element =
+            Some(vec![1.0e-4; mesh.num_elements()]);
+        let transported = assemble_transported_viscous_triplet(
+            &mesh,
+            &v_space,
+            &transported_config,
+            workspace.quad_order,
+        )
+        .expect("transported assembly succeeds")
+        .expect("transported block present");
+        let transported_cache = BdfMonoPatternCache::build(
+            n_total,
+            n_v,
+            &workspace.mass_triplet,
+            &workspace.viscous_unit_triplet,
+            Some(&transported),
+            &workspace.block_01,
+            &workspace.block_10,
+            &conv,
+            &body,
+            pin,
+        );
+        let (transported_values, _) = transported_cache
+            .try_fill(mass_coeff, 1.0, true, Some(&transported), &conv, &body)
+            .expect("transported cache matches");
+        let transported_csr = transported_cache.to_csr(transported_values);
+        let mut transported_mono = crate::assembly::TripletMatrix::new(n_total, n_total);
+        for k in 0..workspace.mass_triplet.nnz() {
+            transported_mono.push(
+                workspace.mass_triplet.rows[k],
+                workspace.mass_triplet.cols[k],
+                mass_coeff * workspace.mass_triplet.values[k],
+            );
+        }
+        for k in 0..transported.nnz() {
+            transported_mono.push(
+                transported.rows[k],
+                transported.cols[k],
+                transported.values[k],
+            );
+        }
+        for k in 0..workspace.block_01.nnz() {
+            transported_mono.push(
+                workspace.block_01.rows[k],
+                workspace.block_01.cols[k] + n_v,
+                workspace.block_01.values[k],
+            );
+        }
+        for k in 0..workspace.block_10.nnz() {
+            transported_mono.push(
+                workspace.block_10.rows[k] + n_v,
+                workspace.block_10.cols[k],
+                workspace.block_10.values[k],
+            );
+        }
+        for k in 0..conv.nnz() {
+            transported_mono.push(conv.rows[k], conv.cols[k], conv.values[k]);
+        }
+        for k in 0..body.nnz() {
+            transported_mono.push(body.rows[k], body.cols[k], body.values[k]);
+        }
+        if let Some(dof) = pin {
+            transported_mono.push(dof, dof, 0.0);
+        }
+        let transported_reference = transported_mono.to_csr();
+        assert_eq!(
+            transported_csr.row_ptrs, transported_reference.row_ptrs,
+            "transported pattern must match"
+        );
+        assert_eq!(
+            transported_csr.col_indices, transported_reference.col_indices,
+            "transported pattern must match"
+        );
+        let transported_scale = transported_reference
+            .values
+            .iter()
+            .fold(0.0_f64, |max, value| max.max(value.abs()))
+            .max(f64::MIN_POSITIVE);
+        let transported_diff = transported_csr
+            .values
+            .iter()
+            .zip(&transported_reference.values)
+            .fold(0.0_f64, |max, (a, b)| max.max((a - b).abs()));
+        assert!(
+            transported_diff / transported_scale <= 1.0e-12,
+            "transported drift {transported_diff:e}"
+        );
+        assert!(
+            transported_cache
+                .try_fill(mass_coeff, viscous_scale, false, None, &conv, &body)
+                .is_none(),
+            "viscosity-mode switch must miss the cache"
+        );
+        assert!(
+            cache
+                .try_fill(mass_coeff, 1.0, true, Some(&transported), &conv, &body)
+                .is_none(),
+            "viscosity-mode switch must miss the cache"
+        );
     }
 
     /// Run the pressure-driven Task-2 channel fixture to steady state with

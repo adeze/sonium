@@ -1,4 +1,4 @@
-//! Radioss and OpenRadioss comparison harness (contract C3).
+//! OpenCourant comparison harness (contract C3).
 //!
 //! This module single-sources small solid-mechanics cases (mesh, SI units,
 //! materials, boundary conditions, loads, probes) and renders them as
@@ -19,7 +19,7 @@
 //! Phase B (ticket P1-B-W1-0) adds [`RadExtendedCase`]: shell elements with
 //! `/PROP/SHELL` cards, quad/triangle shell meshing, plastic `/MAT/LAW2`
 //! and `/MAT/LAW36` cards, `/GRAV` loading, and guide-shaped `/TH/SHEL`
-//! plus `/TH/BRIC` element requests. The Phase-A [`RadCase`] writer is
+//! plus `/TH/BRIC` element requests. The Phase-A [`OpenCourantCase`] writer is
 //! frozen (other lanes assert byte-identical decks from it); every new
 //! block follows the Altair Radioss Reference Guide block format with the
 //! part identifier in the element-block header (`/SHELL/part_ID`,
@@ -44,7 +44,7 @@ pub mod oc_golden;
 #[path = "oc_regen.rs"]
 pub mod oc_regen;
 
-/// Failure of a Radioss harness operation.
+/// Failure of a OpenCourant harness operation.
 #[derive(Debug)]
 pub enum RadError {
     /// Filesystem or subprocess failure.
@@ -85,13 +85,13 @@ pub enum RadError {
 impl fmt::Display for RadError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(error) => write!(f, "radioss harness I/O failure: {error}"),
-            Self::Parse(message) => write!(f, "radioss harness parse failure: {message}"),
+            Self::Io(error) => write!(f, "opencourant harness I/O failure: {error}"),
+            Self::Parse(message) => write!(f, "opencourant harness parse failure: {message}"),
             Self::EngineFailed {
                 stage,
                 code,
                 output,
-            } => write!(f, "radioss {stage} failed (code {code:?}): {output}"),
+            } => write!(f, "opencourant {stage} failed (code {code:?}): {output}"),
             Self::MissingChannel { channel, available } => {
                 write!(
                     f,
@@ -198,7 +198,7 @@ pub struct RadNodeSet {
 pub struct RadBoundaryCondition {
     /// Name used in deck comments.
     pub name: String,
-    /// Index into [`RadCase::node_sets`].
+    /// Index into [`OpenCourantCase::node_sets`].
     pub set: usize,
     /// Locked `[Tx, Ty, Tz, Rx, Ry, Rz]` flags.
     pub lock: [bool; 6],
@@ -218,11 +218,11 @@ pub struct RadFunction {
 pub struct RadConcentratedLoad {
     /// Load name used in deck comments.
     pub name: String,
-    /// Index into [`RadCase::node_sets`].
+    /// Index into [`OpenCourantCase::node_sets`].
     pub set: usize,
     /// Load direction: 1..3 force X/Y/Z, 4..6 moment X/Y/Z.
     pub direction: usize,
-    /// Index into [`RadCase::functions`].
+    /// Index into [`OpenCourantCase::functions`].
     pub function: usize,
     /// Force scale in N.
     pub force_scale_n: f64,
@@ -269,9 +269,9 @@ pub struct RadProbe {
     pub rel_tol: f64,
 }
 
-/// A single-sourced Radioss comparison case.
+/// A single-sourced OpenCourant comparison case.
 #[derive(Debug, Clone)]
-pub struct RadCase {
+pub struct OpenCourantCase {
     /// Case stem: decks are `<name>_0000.rad` / `<name>_0001.rad`.
     pub name: String,
     /// Title line written into both decks.
@@ -301,6 +301,10 @@ pub struct RadCase {
     /// Animation output period in seconds.
     pub anim_period_s: f64,
 }
+
+/// Pre-rename alias kept for downstream users.
+#[deprecated(since = "0.1.6", note = "renamed to `OpenCourantCase`")]
+pub type RadCase = OpenCourantCase;
 
 fn field_int(value: usize) -> String {
     format!("{value:>10}")
@@ -370,13 +374,13 @@ fn write_wall_block(deck: &mut String, index: usize, wall: &RadWall) {
 /// # Examples
 ///
 /// ```rust
-/// use sonium_qa::rad::{RadCase, cantilever_case, write_starter};
+/// use sonium_qa::rad::{OpenCourantCase, cantilever_case, write_starter};
 /// let case = cantilever_case();
 /// let deck = write_starter(&case);
 /// assert!(deck.contains("#RADIOSS STARTER"));
 /// assert!(deck.contains("/END"));
 /// ```
-pub fn write_starter(case: &RadCase) -> String {
+pub fn write_starter(case: &OpenCourantCase) -> String {
     let mut deck = String::new();
     deck.push_str("#RADIOSS STARTER\n");
     deck.push_str(&format!(
@@ -524,13 +528,13 @@ pub fn write_starter(case: &RadCase) -> String {
 /// # Examples
 ///
 /// ```rust
-/// use sonium_qa::rad::{RadCase, cantilever_case, write_engine};
+/// use sonium_qa::rad::{OpenCourantCase, cantilever_case, write_engine};
 /// let case = cantilever_case();
 /// let deck = write_engine(&case);
 /// assert!(deck.contains("#RADIOSS ENGINE"));
 /// assert!(deck.contains("/TH/TITLE"));
 /// ```
-pub fn write_engine(case: &RadCase) -> String {
+pub fn write_engine(case: &OpenCourantCase) -> String {
     // Proven against the engine: /RUN takes the bare stop time (no title,
     // no step count), /ANIM/DT takes start+period, and the deck ends after
     // the last card (no /STOP or /END terminator).
@@ -556,13 +560,13 @@ pub fn write_engine(case: &RadCase) -> String {
 ///
 /// A brick-meshed steel beam clamped at `x = 0` carries a ramped tip load;
 /// the tip displacement probe replays the Euler-Bernoulli closed form.
-pub fn cantilever_case() -> RadCase {
+pub fn cantilever_case() -> OpenCourantCase {
     let (mesh, root_set, tip_set, tip_node) = cantilever_brick_mesh(10, 2, 2, 1.0, 0.05, 0.05);
     let expected =
         super::beam_euler_cantilever_point(1.0, 1.0, 200.0e9, 0.05 * 0.05f64.powi(3) / 12.0, 100.0);
     // /CLOAD applies the scale to EACH node of the set.
     let tip_scale = 100.0 / tip_set.len() as f64;
-    RadCase {
+    OpenCourantCase {
         name: "cantilever".to_string(),
         title: "sonium_qa rad cantilever quasi-static tip load".to_string(),
         mesh,
@@ -624,7 +628,7 @@ pub fn cantilever_case() -> RadCase {
 /// Quasi-static Hertz is duration-independent, and the 1 s run grows a
 /// contact-mode instability past ~150k cycles, so the press stops at 0.1 s
 /// (137k cycles) where the parasitic kinetic energy is still 1e-7 J.
-pub fn hertz_sphere_case() -> RadCase {
+pub fn hertz_sphere_case() -> OpenCourantCase {
     let radius = 0.05;
     let mut mesh = sphere_ball_mesh(10, radius);
     let press_speed = 1.0e-4;
@@ -653,7 +657,7 @@ pub fn hertz_sphere_case() -> RadCase {
     }
     let top_point = [0.0, 0.0, 2.0 * radius];
     let driver = mesh.add_node(top_point);
-    RadCase {
+    OpenCourantCase {
         name: "hertz_sphere".to_string(),
         title: "sonium_qa rad hertz sphere between rigid planes".to_string(),
         mesh,
@@ -867,10 +871,10 @@ pub fn sphere_ball_mesh(cells_per_side: usize, radius_m: f64) -> RadMesh {
 
 /// Resolve the engine executable from the environment.
 ///
-/// Returns `RADISS_EXE` when set, else `OPENCOURANT_EXE`, else `None` so
-/// binaries can report the documented skip message and exit 0.
+/// Returns `OPENCOURANT_EXE` when set, else legacy `RADISS_EXE`, else
+/// `None` so binaries can report the documented skip message and exit 0.
 pub fn engine_exe() -> Option<PathBuf> {
-    for name in ["RADISS_EXE", "OPENCOURANT_EXE"] {
+    for name in ["OPENCOURANT_EXE", "RADISS_EXE"] {
         if let Ok(path) = std::env::var(name) {
             let trimmed = path.trim();
             if !trimmed.is_empty() {
@@ -887,7 +891,7 @@ pub fn engine_flavor(exe: &Path) -> &'static str {
     if haystack.contains("courant") {
         "OpenCourant"
     } else {
-        "Radioss"
+        "OpenCourant"
     }
 }
 
@@ -935,7 +939,7 @@ pub(crate) fn best_sibling(dir: &Path, prefix: &str) -> Option<PathBuf> {
 
 /// Resolve the starter/engine binary pair behind one configured path.
 ///
-/// OpenCourant/Radioss ship separate `starter_*` and `engine_*` binaries,
+/// OpenCourant ships separate `starter_*` and `engine_*` binaries,
 /// so one configured path cannot serve both stages directly. Accepts:
 /// - a directory (e.g. `.../exec`): picks the best `starter_*`/`engine_*`
 ///   pair, preferring double-precision SMP builds;
@@ -1020,7 +1024,7 @@ pub struct RunOutput {
 ///
 /// Returns [`RadError`] when a stage fails, when conversion is unavailable
 /// for a binary history, or when parsing fails.
-pub fn run_case(decks_dir: &Path, exe: &Path, case: &RadCase) -> Result<RunOutput, RadError> {
+pub fn run_case(decks_dir: &Path, exe: &Path, case: &OpenCourantCase) -> Result<RunOutput, RadError> {
     let starter_deck = decks_dir.join(format!("{}_0000.rad", case.name));
     let engine_deck = decks_dir.join(format!("{}_0001.rad", case.name));
     let (starter_exe, engine_exe) = resolve_engine_pair(exe)?;
@@ -1429,7 +1433,7 @@ pub fn assert_probes_payload_eq(checked: &str, expected: &str, context: &str) {
 ///
 /// Records expected probe values, tolerances, and the producing engine
 /// version (`"none (prove-out deferred)"` until an engine runs).
-pub fn probes_json(case: &RadCase, engine_version: &str) -> String {
+pub fn probes_json(case: &OpenCourantCase, engine_version: &str) -> String {
     let mut out = String::from("{\n");
     out.push_str(&format!("  \"case\": \"{}\",\n", case.name));
     out.push_str(&format!("  \"engine\": \"{engine_version}\",\n"));
@@ -1490,7 +1494,7 @@ impl RadShellProperty {
     ///
     /// Uses Ishell 24 (QEPH), Ismstr 2, Ish3n 2, Idrill 2, N 5,
     /// constant thickness, and radial-return plasticity per the
-    /// Reference Guide and the Radioss modeling best practices.
+    /// Reference Guide and the OpenCourant modeling best practices.
     pub fn qeph(name: &str, thickness_m: f64) -> Self {
         Self {
             name: name.to_string(),
@@ -1741,9 +1745,9 @@ pub struct RadGravity {
     pub direction: char,
     /// Gravity value in m/s^2 (constant) or curve scale.
     pub value_m_per_s2: f64,
-    /// Index into [`RadCase::functions`] (`None` = constant load).
+    /// Index into [`OpenCourantCase::functions`] (`None` = constant load).
     pub function: Option<usize>,
-    /// Index into [`RadCase::node_sets`] (`None` = whole model).
+    /// Index into [`OpenCourantCase::node_sets`] (`None` = whole model).
     pub set: Option<usize>,
 }
 
@@ -1826,9 +1830,9 @@ impl RadThRequest {
     }
 }
 
-/// An extended Radioss comparison case with shells or plasticity.
+/// An extended OpenCourant comparison case with shells or plasticity.
 ///
-/// Wraps a base [`RadCase`] (nodes, bricks, sets, boundary conditions,
+/// Wraps a base [`OpenCourantCase`] (nodes, bricks, sets, boundary conditions,
 /// loads, walls, node probes, run controls) and adds shell elements, a
 /// shell property, a possibly plastic material, gravity, and element
 /// time-history requests. Brick-only plastic cases wrap with empty
@@ -1836,7 +1840,7 @@ impl RadThRequest {
 #[derive(Debug, Clone)]
 pub struct RadExtendedCase {
     /// Base case: mesh nodes, bricks, sets, BCs, loads, probes, controls.
-    pub base: RadCase,
+    pub base: OpenCourantCase,
     /// Material card selected for every part.
     pub material: RadMaterial,
     /// Shell elements indexing `base.mesh.nodes`.
@@ -1855,7 +1859,7 @@ pub struct RadExtendedCase {
 
 impl RadExtendedCase {
     /// Wrap a base case with its elastic material and node outputs.
-    pub fn wrap_elastic(base: RadCase) -> Self {
+    pub fn wrap_elastic(base: OpenCourantCase) -> Self {
         let material = RadMaterial::Elastic(base.material);
         Self {
             base,
@@ -2611,7 +2615,7 @@ pub fn shell_scordelis_lo_case() -> RadExtendedCase {
     let mesh = scordelis_lo_shell_mesh(32, 32);
     // Density carries the 90 Pa self weight through rho * g * t.
     let density = 90.0 / (9.81 * 0.25);
-    let base = RadCase {
+    let base = OpenCourantCase {
         name: "shell_scordelis_lo".to_string(),
         title: "sonium_qa rad scordelis-lo roof quasi-static gravity".to_string(),
         mesh: RadMesh {
@@ -2767,7 +2771,7 @@ pub fn shell_clamped_plate_case() -> RadExtendedCase {
     }
     let center = clamped_plate_center_deflection(pressure, radius, young, poisson, thick);
     let hoop = clamped_plate_hoop_moment(pressure, radius, poisson, mesh.probe_radius_m);
-    let base = RadCase {
+    let base = OpenCourantCase {
         name: "shell_clamped_plate".to_string(),
         title: "sonium_qa rad clamped plate quasi-static pressure".to_string(),
         mesh: RadMesh {
@@ -2847,7 +2851,7 @@ pub fn perfectly_plastic_steel_law36(
 
 // =====================================================================
 // Phase-4 lane 4B writer completion. Additive: nothing above this line
-// changes behavior or writer output. P4C1: `RadCase` is frozen, so every
+// changes behavior or writer output. P4C1: `OpenCourantCase` is frozen, so every
 // new card arrives as a NEW type plus a NEW `write_*` function, bundled
 // for deck splicing through `RadExtra` (`write_starter_extra` /
 // `write_engine_extra`). Card layouts follow the Altair Radioss 2022
@@ -5345,7 +5349,7 @@ pub fn write_state_flag(deck: &mut String, flag: RadStateFlag) {
 
 /// Extra starter and engine cards (Phase-4 lane 4B bundle).
 ///
-/// P4C1 keeps `RadCase` frozen, so every 4B card family lives here
+/// P4C1 keeps `OpenCourantCase` frozen, so every 4B card family lives here
 /// and renders through [`write_starter_extra`] (spliced before the
 /// terminal `/END`) and [`write_engine_extra`] (appended to the
 /// engine deck). All ids are absolute: extra ids must not collide
@@ -5432,8 +5436,8 @@ pub struct RadExtraContext {
 }
 
 impl RadExtraContext {
-    /// Context of a basic [`RadCase`] deck.
-    pub fn of_case(case: &RadCase) -> Self {
+    /// Context of a basic [`OpenCourantCase`] deck.
+    pub fn of_case(case: &OpenCourantCase) -> Self {
         Self {
             num_nodes: case.mesh.num_nodes(),
             num_node_sets: case.node_sets.len(),
@@ -6230,7 +6234,7 @@ impl RadExtra {
 ///
 /// Mirrors the base writer exactly (one group per ten-variable
 /// card): node output plus one wall group when walls exist.
-pub fn starter_th_groups(case: &RadCase) -> usize {
+pub fn starter_th_groups(case: &OpenCourantCase) -> usize {
     let mut groups = 0;
     if !case.th_nodes.is_empty() {
         groups += 1;
@@ -6846,7 +6850,7 @@ mod tests {
         );
         assert_eq!(
             engine_flavor(Path::new("/opt/radioss/exec/engine_linux64_gf")),
-            "Radioss"
+            "OpenCourant"
         );
     }
 

@@ -1034,6 +1034,29 @@ fn repair_schur_zero_diagonal<T: ComplexField>(schur: CsrMatrix<T>) -> CsrMatrix
     CsrMatrix::from_triplets(schur.num_rows, schur.num_cols, triplets)
 }
 
+/// Assemble the `BtDiagB` Schur approximation from a monolithic matrix.
+///
+/// Extracts the leading `block1_size` velocity block `A` and the coupling
+/// block `B` from `matrix` and returns `B^T * diag(A)^{-1} * B` with the
+/// same constrained-row repair [`SchurStrategy::BtDiagB`] applies
+/// internally. Backend (GPU) saddle-point solvers upload this product as
+/// their pressure Schur matrix so unsteady systems get the correctly
+/// scaled approximation instead of a steady-Stokes mass matrix.
+///
+/// # Panics
+///
+/// Panics when `block1_size` exceeds the matrix dimensions.
+pub fn btdiagb_schur_from_monolithic<T: ComplexField>(
+    matrix: &CsrMatrix<T>,
+    block1_size: usize,
+) -> CsrMatrix<T> {
+    let n = matrix.num_rows;
+    let m = n - block1_size;
+    let block1 = extract_block(matrix, 0, 0, block1_size, block1_size);
+    let coupling_b = extract_block(matrix, 0, block1_size, block1_size, m);
+    form_bt_diag_b(&block1, &coupling_b)
+}
+
 /// Build a preconditioner from configuration.
 fn build_preconditioner<T: ComplexField>(
     matrix: &CsrMatrix<T>,

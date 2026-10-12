@@ -1,7 +1,7 @@
-//! QA: 3-point bending vs Radioss/OpenRadioss quasi-statics.
+//! QA: 3-point bending vs OpenCourant quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the center deflection against Euler-Bernoulli (FL^3/48EI).
 //! Without an engine it prints the documented skip message and exits 0.
 //!
@@ -13,7 +13,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
     RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case, write_engine,
     write_starter,
 };
@@ -22,7 +22,7 @@ use std::path::PathBuf;
 const NAME: &str = "bending_3pt";
 
 /// Builds the 3-point bending case on the real `sonium_qa::rad` API.
-fn bending_case() -> RadCase {
+fn bending_case() -> OpenCourantCase {
     let length = 1.0;
     let section = 0.05;
     let youngs = 200.0e9;
@@ -32,7 +32,7 @@ fn bending_case() -> RadCase {
     let inertia = section * section.powi(3) / 12.0;
     let expected = force * length.powi(3) / (48.0 * youngs * inertia);
     let center_scale = force / center_set.len() as f64;
-    RadCase {
+    OpenCourantCase {
         name: NAME.to_string(),
         title: "sonium_qa rad three point bending quasi-static".to_string(),
         mesh,
@@ -216,7 +216,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -257,7 +257,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-bending-3pt");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-bending-3pt");
+    println!("PASS: qa-fem-opencourant-bending-3pt");
+    println!("SUCCESS: qa-fem-opencourant-bending-3pt");
 }

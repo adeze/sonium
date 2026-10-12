@@ -20,9 +20,11 @@ struct FormMetrics {
     nnz_3d: usize,
 }
 
-/// Run three independent checks for one dimension-generic bilinear form:
-/// tetrahedral assembly/invariant, a linear manufactured patch under
-/// refinement, and a 2-D versus z-invariant 3-D comparison.
+/// Check a dimension-generic bilinear form's assembly invariants.
+///
+/// Compares prescribed-coordinate energies and row sums on tetrahedral meshes,
+/// including a 2D versus z-invariant 3D comparison. No field equation is solved;
+/// these contracts do not establish the named physics' solution accuracy.
 pub fn run_bilinear_case<F>(case_id: &str, form: &F, constant_is_null: bool)
 where
     F: BilinearForm<f64>,
@@ -41,6 +43,12 @@ where
                 .maximum("refinement_error", PATCH_TOLERANCE)
                 .minimum("energy_3d", 0.0)
                 .minimum("nnz_3d", 1.0)
+                 .metric("numerical_solve_executed", 0.0)
+                .maximum("numerical_solve_executed", 0.0)
+                .formulation("assembly-contract only: bilinear row sums and prescribed x+y coordinate energies; no field solve or named coupling/history accuracy claim")
+                .dimension("2D triangles and 3D tetrahedra; prescribed z-invariant coordinate field")
+                .reference("partition of unity and prescribed-coordinate bilinear energy identities")
+                .tolerance("assembly invariant relative errors <= 2e-10")
                 .seed("unit-square-n2/unit-cube-tet-n1-n2:p1:x+y");
             if constant_is_null {
                 record = record.maximum("max_row_sum", PATCH_TOLERANCE);
@@ -84,6 +92,9 @@ pub fn run_biharmonic_case() {
             .minimum("tetra_nnz", 1.0)
             .minimum("triangle_nnz", 1.0)
             .maximum("lower_left_nonzeros", 0.0)
+            .metric("numerical_solve_executed",0.0).maximum("numerical_solve_executed",0.0)
+            .formulation("assembly-contract only: mixed P1 biharmonic blocks; no field solve or accuracy claim")
+            .reference("mixed q=-Laplacian(u) block structure; accuracy is in qa-fem-biharmonic-mms-3d")
             .seed("unit-square/unit-cube:p1:mixed-q=-laplace-u"),
     );
 }
@@ -142,6 +153,9 @@ pub fn run_fsi_case() {
             .maximum("patch_residual", 1.0e-11)
             .maximum("virtual_work_error", 1.0e-11)
             .minimum("rebuild_triggered", 1.0)
+            .metric("numerical_solve_executed",0.0).maximum("numerical_solve_executed",0.0)
+            .formulation("interface-contract only: mortar patch, virtual work and rebuild; no coupled fluid/solid solve")
+            .reference("constant trace and exact transpose virtual work identity; no FSI solution accuracy claim")
             .seed("coarse-2tri/fine-4tri:dual-p1:constant-vector"),
     );
 }

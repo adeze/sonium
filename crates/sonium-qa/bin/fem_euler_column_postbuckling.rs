@@ -773,6 +773,16 @@ fn run_pinned_pinned_k1() {
 }
 
 fn main() {
+    match run() {
+        Ok(()) => println!("SUCCESS: qa-fem-euler-column-postbuckling"),
+        Err(error) => {
+            eprintln!("FAILED: qa-fem-euler-column-postbuckling: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     // EULER_PINNED_ONLY=1 skips the cantilever arc trace to iterate fast
     // on the pinned path; the default full run gates both paths.
     if std::env::var("EULER_PINNED_ONLY").as_deref() != Ok("1") {
@@ -780,4 +790,5 @@ fn main() {
     }
     run_pinned_pinned_k1();
     println!("PASS: qa-fem-euler-column-postbuckling");
+    Ok(())
 }

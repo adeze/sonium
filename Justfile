@@ -469,6 +469,69 @@ fastmath-evidence:
 [group('qa')]
 qa: qa-full
 
+# OpenCourant-parity QA subset (release): engine-free native/golden legs,
+# sonium-qa lib suites (default + funct-python), and the 15 live-engine legs
+# (they skip loudly when OPENCOURANT_EXE is unset). Fails on any FAILED leg
+# or suite; skips never fail. Needs TMPDIR on project scratch (defaulted).
+[group('qa')]
+qa-opencourant:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    export TMPDIR="${TMPDIR:-$HOME/src/all_of_sonium/tmp}"
+    pass=0; fail=0; skip=0; failed_bins=""
+    run_bin() {
+        local bin="$1"
+        local features="${2:-qa-binaries}"
+        local out rc
+        out=$({{cargo}} run -q --release -p sonium-qa --features "$features" --bin "$bin" 2>&1); rc=$?
+        if [ $rc -ne 0 ]; then
+            echo "FAIL  $bin (exit $rc)"; echo "$out" | tail -5
+            fail=$((fail+1)); failed_bins="$failed_bins $bin"
+        elif echo "$out" | grep -qE 'FAILED'; then
+            echo "FAIL  $bin (FAILED marker)"
+            fail=$((fail+1)); failed_bins="$failed_bins $bin"
+        elif echo "$out" | grep -qE 'SUCCESS'; then
+            echo "PASS  $bin"; pass=$((pass+1))
+        else
+            echo "SKIP  $bin"; echo "$out" | tail -2; skip=$((skip+1))
+        fi
+    }
+    run_suite() {
+        local desc="$1"; shift
+        local out rc
+        out=$("$@" 2>&1); rc=$?
+        if [ $rc -eq 0 ]; then
+            echo "PASS  $desc"; echo "$out" | grep -E 'test result' | tail -1; pass=$((pass+1))
+        else
+            echo "FAIL  $desc (exit $rc)"
+            echo "$out" | grep -E 'test result|FAILED|failures:' | head -5
+            fail=$((fail+1)); failed_bins="$failed_bins $desc"
+        fi
+    }
+    if [ -z "${OPENCOURANT_EXE:-}${RADISS_EXE:-}" ]; then
+        echo "note: OPENCOURANT_EXE unset - the 15 engine legs will skip (exit 0)."
+    fi
+    echo "== native/golden legs (engine-free) =="
+    for b in qa-fem-explicit-taylor-plastic qa-fem-shell-explicit qa-fem-foam-native qa-fem-rupture-native qa-fem-sph qa-fem-ale qa-funct-python; do
+        run_bin "$b"
+    done
+    echo "== sonium-qa lib =="
+    run_suite "sonium-qa lib" {{cargo}} test -q --release -p sonium-qa --lib
+    echo "== funct-python feature =="
+    if {{cargo}} build -q --release -p sonium-qa --features qa-binaries,funct-python --bin qa-funct-python 2>/dev/null; then
+        run_bin qa-funct-python qa-binaries,funct-python
+        run_suite "sonium-qa lib [funct-python]" {{cargo}} test -q --release -p sonium-qa --features funct-python --lib
+    else
+        echo "SKIP  qa-funct-python[funct-python] (feature build failed: no Python dev libs?)"; skip=$((skip+1))
+    fi
+    echo "== live-engine legs =="
+    for b in plasticity-thick-cylinder cantilever hertz-sphere beam-3d-cantilever beam-torsion shell-scordelis-lo shell-clamped-plate taylor-bar rail-crush bending-3pt necking-bar beam-curved-arch beam-warping shell-twisted-beam shell-oht-elastic; do
+        run_bin "qa-fem-opencourant-$b"
+    done
+    echo "----"
+    echo "opencourant subset: $pass passed, $fail failed, $skip skipped"
+    if [ $fail -ne 0 ]; then echo "failed:$failed_bins"; exit 1; fi
+
 # Run the canonical Wolfram reproduction of the release QA manifest.
 # Set WOLFRAMSCRIPT when the executable is not on PATH.
 [group('qa')]

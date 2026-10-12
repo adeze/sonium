@@ -76,7 +76,7 @@ golden = <|
   "tolerances" -> <|
     "abs" -> 1.0*^-12,
     "partition_vs_one" -> 0.05,
-    "gradient_vs_exact" -> 0.06|> |;
+    "gradient_vs_exact" -> 0.06|> |>;
 
 outdir = If[$InputFileName =!= "", DirectoryName[$InputFileName], "."];
 Export[FileNameJoin[{outdir, "sph_kernel_consistency_golden.json"}], golden, "JSON"];

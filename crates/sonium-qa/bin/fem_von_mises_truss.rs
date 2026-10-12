@@ -11,6 +11,16 @@ use sonium_fem::solver::nonlinear::arc_length::{ArcLengthConfig, riks_continuati
 use sonium_qa::truss_von_mises_load;
 
 fn main() {
+    match run() {
+        Ok(()) => println!("SUCCESS: qa-fem-von-mises-truss"),
+        Err(error) => {
+            eprintln!("FAILED: qa-fem-von-mises-truss: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     let (span, height, young, area) = (1.0, 0.1, 1.0, 1.0);
     let internal = |u: &[f64]| vec![truss_von_mises_load(u[0], span, height, young, area)];
     let tangent = |u: &[f64], rhs: &[f64]| {
@@ -76,4 +86,5 @@ fn main() {
         "trace stalled before the mirror branch"
     );
     println!("PASS: qa-fem-von-mises-truss");
+    Ok(())
 }

@@ -1,7 +1,10 @@
-//! Analytical reference check.
+//! Analytical reference-only check; no numerical FEM accuracy claim.
 //!
 //! This binary validates a closed-form benchmark or helper without assembling a `sonium_fem` finite-element system.
 //! Keep FEM solver and assembly validations in binaries that import `sonium_fem`.
+
+#[path = "support/reference_result.rs"]
+mod reference_result;
 
 use sonium_qa::analytical::circuit_rc_step_voltage;
 
@@ -15,6 +18,7 @@ fn main() {
         assert!((v_tau / v - (1.0 - (-1.0_f64).exp())).abs() < 1e-12);
         println!("RC step voltage at tau = {:.6e} V", v_tau);
     });
+    reference_result::emit("reference.fem-lumped-circuit-rc-step.v1", result.is_ok());
     if result.is_ok() {
         println!("SUCCESS");
     } else {

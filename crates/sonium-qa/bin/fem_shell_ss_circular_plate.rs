@@ -1,3 +1,8 @@
+//! Mesh and analytical reference fixture; no solved shell field.
+
+#[path = "support/reference_result.rs"]
+mod reference_result;
+
 use sonium_fem::mesh::circular_shell_mesh_triangles;
 use sonium_qa::analytical::{biharmonic_ss_circular_point_center, plate_bending_stiffness};
 
@@ -13,6 +18,7 @@ fn main() {
             w
         );
     });
+    reference_result::emit("reference.fem-shell-ss-circular-plate.v1", result.is_ok());
     if result.is_ok() {
         println!("SUCCESS");
     } else {

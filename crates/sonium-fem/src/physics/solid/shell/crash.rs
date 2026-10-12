@@ -21,9 +21,13 @@
 //! pp. 55-58) select the hourglass variant, strain, thickness,
 //! plasticity, triangle, and drilling behavior; the fully integrated
 //! QBAT (Ishell 12) and QEPH (Ishell 24) formulations need different
-//! kernels and return [`CrashError`] instead of silently degrading.
-//! [`ThickShellHook`] leaves a typed extension point for thick-shell
-//! transverse-shear resultants (solid-shell theory, p. 164).
+//! kernels and return [`CrashError`] instead of silently degrading,
+//! with the dated reason on [`ShellFormulation::native_status`].
+//! The DKT18 (Ish3n 30) and DKT_S3 (Ish3n 31) triangles likewise fail
+//! loudly with the reason on [`TriShellFormulation::native_status`].
+//! [`ThickShellHook`] carries transverse-shear resultants from thin
+//! crash shells; the solid-shell (TSHELL) build/defer verdict lives on
+//! [`THICK_SHELL_VERDICT`] (deferred 2026-10-12, no target).
 //!
 //! Geometry reuses the seeds: [`QuadShellElement`](super::mitc4::QuadShellElement)
 //! frames the Q4 path, [`ShellElement`](super::element::ShellElement)
@@ -60,6 +64,56 @@ impl std::fmt::Display for CrashError {
 }
 
 impl std::error::Error for CrashError {}
+
+/// Native-kernel availability of a deck formulation flag.
+///
+/// Every `/DEF_SHELL` formulation reports either its implementing
+/// kernel or a dated deferral reason; dispatch sites embed the reason
+/// in their [`CrashError`] so unsupported flags fail loudly with a
+/// pointer instead of a bare rejection.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::shell::crash::{
+///     NativeStatus, ShellFormulation, TriShellFormulation,
+/// };
+///
+/// assert!(ShellFormulation::BelytschkoTsay.native_status().is_implemented());
+/// assert!(matches!(
+///     TriShellFormulation::Dkt18.native_status(),
+///     NativeStatus::Deferred { .. }
+/// ));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NativeStatus {
+    /// Implemented by the named native kernel.
+    Implemented(&'static str),
+    /// Deferred with the verdict date and reason.
+    Deferred {
+        /// Verdict date (`YYYY-MM-DD`).
+        since: &'static str,
+        /// Why no native kernel exists.
+        reason: &'static str,
+    },
+}
+
+impl NativeStatus {
+    /// Reports whether a native kernel implements the flag.
+    #[must_use]
+    pub fn is_implemented(&self) -> bool {
+        matches!(self, Self::Implemented(_))
+    }
+}
+
+impl std::fmt::Display for NativeStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Implemented(kernel) => write!(f, "implemented ({kernel})"),
+            Self::Deferred { since, reason } => write!(f, "deferred since {since}: {reason}"),
+        }
+    }
+}
 
 /// `/DEF_SHELL Ishell` quadrilateral formulation flag (Reference Guide p. 55).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +157,31 @@ impl ShellFormulation {
             self,
             Self::BelytschkoTsay | Self::Hallquist | Self::ElastoPlasticHg | Self::WarpOrthogonal
         )
+    }
+
+    /// Native-kernel availability of the formulation.
+    ///
+    /// Flags 1-4 run the one-point kernel ([`q4_crash_forces`]); QBAT
+    /// (12) and QEPH (24) carry their dated deferral reasons.
+    #[must_use]
+    pub fn native_status(&self) -> NativeStatus {
+        match self {
+            Self::BelytschkoTsay
+            | Self::Hallquist
+            | Self::ElastoPlasticHg
+            | Self::WarpOrthogonal => NativeStatus::Implemented("one-point Q4 crash kernel"),
+            Self::Qbat => NativeStatus::Deferred {
+                since: "2026-10-12",
+                reason: "QBAT needs a fully integrated 2x2 Bathe-Dvorkin kernel \
+                     with membrane-shear locking control; no such kernel exists \
+                     on the MITC4 seed",
+            },
+            Self::Qeph => NativeStatus::Deferred {
+                since: "2026-10-12",
+                reason: "QEPH needs physical (Belytschko-Leviathan) stabilization \
+                     projections; no such projector exists on the MITC4 seed",
+            },
+        }
     }
 }
 
@@ -236,6 +315,30 @@ impl TriShellFormulation {
     pub fn is_centroid(&self) -> bool {
         matches!(self, Self::C0 | Self::C0LargeRotation)
     }
+
+    /// Native-kernel availability of the formulation.
+    ///
+    /// Flags 1-2 run the centroid kernel ([`t3_crash_forces`]); DKT18
+    /// (30) and DKT_S3 (31) carry their dated deferral reasons.
+    #[must_use]
+    pub fn native_status(&self) -> NativeStatus {
+        match self {
+            Self::C0 | Self::C0LargeRotation => {
+                NativeStatus::Implemented("centroid T3 crash kernel")
+            }
+            Self::Dkt18 => NativeStatus::Deferred {
+                since: "2026-10-12",
+                reason: "DKT18 needs membrane-drilling coupling on the DKT plate \
+                     plus a non-conforming membrane; the centroid kernel carries \
+                     no drilling coupling",
+            },
+            Self::DktS3 => NativeStatus::Deferred {
+                since: "2026-10-12",
+                reason: "DKT_S3 after Batoz needs the discrete-shear triangle \
+                     with drilling coupling; the CST/DKT centroid seed has neither",
+            },
+        }
+    }
 }
 
 /// `/DEF_SHELL Idril` drilling-stiffness flag (Reference Guide p. 58).
@@ -361,7 +464,7 @@ pub struct ThicknessPoint {
 
 /// Gauss-Legendre thickness quadrature with `n` points.
 ///
-/// Supports 1 to 5 points; the 5-point default matches the Radioss shell
+/// Supports 1 to 5 points; the 5-point default matches the OpenCourant shell
 /// property default. Nodes and weights are the standard Gauss-Legendre
 /// tables scaled from `[-1, 1]` to `[-t/2, t/2]`.
 ///
@@ -450,18 +553,38 @@ impl<S: Clone> LayerStates<S> {
     }
 }
 
-/// Transverse-shear hook for thick-shell extensions.
+/// Transverse-shear hook for thin crash shells.
 ///
-/// Thin crash shells carry no transverse-shear stiffness; thick-shell
-/// (TSHELL) drivers implement this hook to supply shear resultants
-/// `Q = f(gamma)` from the center shear strains. The default
-/// [`NoThickShell`] returns zero.
+/// Thin crash shells select their transverse-shear behavior through
+/// this hook: [`NoThickShell`] for Kirchhoff (no shear energy),
+/// [`ElasticShearHook`] for shear-stiff response. A solid-shell
+/// (TSHELL) element is a different element, not a hook setting; its
+/// build/defer verdict lives on [`THICK_SHELL_VERDICT`].
 pub trait ThickShellHook: std::fmt::Debug {
     /// Shear forces `[Qx, Qy]` in N/m from shear strains.
     fn shear_forces(&self, shear_strain: &[f64; 2], thickness: f64) -> [f64; 2];
 }
 
+/// Thick-shell (TSHELL) build/defer verdict (Phase 7 lane 7B).
+///
+/// DEFER: a solid-shell element needs 8-node kinematics with
+/// through-thickness stretch plus a dedicated explicit kernel (Theory
+/// Manual solid-shell theory, p. 164); no current seed covers either,
+/// and no harvested thick-shell golden exists to prove a native solve
+/// against. Thin crash shells keep [`NoThickShell`] as the deliberate
+/// Kirchhoff default and [`ElasticShearHook`] as the shear-stiff path.
+pub const THICK_SHELL_VERDICT: NativeStatus = NativeStatus::Deferred {
+    since: "2026-10-12",
+    reason: "solid-shell TSHELL needs 8-node through-thickness-stretch \
+         kinematics with a dedicated explicit kernel; no seed covers it, \
+         and no harvested thick-shell golden exists to prove a native solve",
+};
+
 /// Thin-shell default: no transverse-shear resultants.
+///
+/// This is the deliberate Kirchhoff selection (transverse shear
+/// carries no energy in thin-shell theory), not a placeholder: the
+/// solid-shell build question is settled on [`THICK_SHELL_VERDICT`].
 #[derive(Debug, Clone, Copy, Default)]
 pub struct NoThickShell;
 
@@ -473,9 +596,9 @@ impl ThickShellHook for NoThickShell {
 
 /// Isotropic elastic transverse shear: `Q = kappa G t gamma`.
 ///
-/// Uses the Reissner shear correction `5/6`, the same value as the
-/// MITC4 seed, for drivers that need shear-stiff thin shells without a
-/// full thick-shell model.
+/// Uses the Reissner [`SHEAR_CORRECTION`](super::section::SHEAR_CORRECTION),
+/// the same value as the MITC4 seed, for drivers that need shear-stiff
+/// thin shells without a solid-shell element.
 #[derive(Debug, Clone, Copy)]
 pub struct ElasticShearHook {
     /// Shear modulus in Pa.
@@ -500,10 +623,8 @@ impl ElasticShearHook {
 
 impl ThickShellHook for ElasticShearHook {
     fn shear_forces(&self, shear_strain: &[f64; 2], thickness: f64) -> [f64; 2] {
-        // Reissner shear correction for plates; changing it rescales
-        // every transverse-shear force linearly.
-        const SHEAR_CORRECTION: f64 = 5.0 / 6.0;
-        let factor = SHEAR_CORRECTION * self.shear_modulus * thickness;
+        // Single source: `section::SHEAR_CORRECTION` documents the value.
+        let factor = super::section::SHEAR_CORRECTION * self.shear_modulus * thickness;
         [factor * shear_strain[0], factor * shear_strain[1]]
     }
 }
@@ -577,7 +698,8 @@ impl HourglassParams {
     ) -> Result<Self, CrashError> {
         if !formulation.is_one_point() {
             return Err(CrashError::new(format!(
-                "one-point hourglass has no {formulation:?} variant"
+                "one-point hourglass has no {formulation:?} variant ({})",
+                formulation.native_status()
             )));
         }
         for (name, value) in [
@@ -1022,8 +1144,9 @@ pub fn q4_crash_forces<M: StressUpdateModel<StrainIncrement = [f64; 6]>, H: Thic
     def_shell.validate()?;
     if !def_shell.formulation.is_one_point() {
         return Err(CrashError::new(format!(
-            "one-point kernel has no {:?} variant",
-            def_shell.formulation
+            "one-point kernel has no {:?} variant ({})",
+            def_shell.formulation,
+            def_shell.formulation.native_status()
         )));
     }
     if dt.is_nan() || dt <= 0.0 {
@@ -1315,8 +1438,9 @@ pub fn t3_crash_forces<M: StressUpdateModel<StrainIncrement = [f64; 6]>>(
     def_shell.validate()?;
     if !def_shell.tri.is_centroid() {
         return Err(CrashError::new(format!(
-            "centroid kernel has no {:?} variant",
-            def_shell.tri
+            "centroid kernel has no {:?} variant ({})",
+            def_shell.tri,
+            def_shell.tri.native_status()
         )));
     }
     if dt.is_nan() || dt <= 0.0 {
@@ -1915,6 +2039,113 @@ mod tests {
         assert!((geom.critical_step(4500.0) - 1.0 / 4500.0).abs() < 1e-18);
         let tri = unit_triangle();
         assert!((tri.char_length - 0.5 / 2.0_f64.sqrt()).abs() < 1e-14);
+    }
+
+    #[test]
+    fn native_status_pins_every_flag() {
+        use ShellFormulation as Q;
+        for flag in [
+            Q::BelytschkoTsay,
+            Q::Hallquist,
+            Q::ElastoPlasticHg,
+            Q::WarpOrthogonal,
+        ] {
+            assert!(flag.is_one_point());
+            assert!(flag.native_status().is_implemented());
+        }
+        for flag in [Q::Qbat, Q::Qeph] {
+            assert!(!flag.is_one_point());
+            let status = flag.native_status();
+            assert!(!status.is_implemented());
+            assert!(matches!(
+                status,
+                NativeStatus::Deferred {
+                    since: "2026-10-12",
+                    ..
+                }
+            ));
+            assert!(status.to_string().starts_with("deferred since 2026-10-12"));
+        }
+        use TriShellFormulation as T;
+        for flag in [T::C0, T::C0LargeRotation] {
+            assert!(flag.is_centroid());
+            assert!(flag.native_status().is_implemented());
+        }
+        for flag in [T::Dkt18, T::DktS3] {
+            assert!(!flag.is_centroid());
+            assert!(matches!(
+                flag.native_status(),
+                NativeStatus::Deferred {
+                    since: "2026-10-12",
+                    ..
+                }
+            ));
+        }
+        assert_eq!(
+            Q::BelytschkoTsay.native_status().to_string(),
+            "implemented (one-point Q4 crash kernel)"
+        );
+    }
+
+    #[test]
+    fn rejections_carry_verdict_reasons() {
+        let quad = unit_square();
+        let tri = unit_triangle();
+        let material = elastic_j2();
+        let mut quad_layers = LayerStates::new(PlasticState::new_3d(), 2, quad.thickness).unwrap();
+        let mut tri_layers = LayerStates::new(PlasticState::new_3d(), 2, tri.thickness).unwrap();
+        let hg = HourglassParams {
+            membrane_viscous: 1.0,
+            membrane_stiffness: 0.0,
+            bending_viscous: 1.0,
+            bending_stiffness: 0.0,
+            drilling: 0.0,
+        };
+        let mut def = DefShell::explicit_defaults();
+        def.formulation = ShellFormulation::Qeph;
+        let quad_err = q4_crash_forces(
+            &quad,
+            &mut quad_layers,
+            &material,
+            &def,
+            &[0.0; 24],
+            &[0.0; 24],
+            1.0e-3,
+            &hg,
+            &NoThickShell,
+        )
+        .unwrap_err();
+        assert!(quad_err.message.contains("deferred since 2026-10-12"));
+        assert!(quad_err.message.contains("Qeph"));
+        def.formulation = ShellFormulation::BelytschkoTsay;
+        def.tri = TriShellFormulation::DktS3;
+        let tri_err = t3_crash_forces(
+            &tri,
+            &mut tri_layers,
+            &material,
+            &def,
+            &[0.0; 18],
+            &[0.0; 18],
+            1.0e-3,
+            0.0,
+        )
+        .unwrap_err();
+        assert!(tri_err.message.contains("deferred since 2026-10-12"));
+        assert!(tri_err.message.contains("DktS3"));
+    }
+
+    #[test]
+    fn thick_shell_verdict_is_deferred() {
+        assert!(!THICK_SHELL_VERDICT.is_implemented());
+        assert!(matches!(
+            THICK_SHELL_VERDICT,
+            NativeStatus::Deferred {
+                since: "2026-10-12",
+                ..
+            }
+        ));
+        // The thin-shell hooks keep their behavior under the verdict.
+        assert_eq!(NoThickShell.shear_forces(&[0.5, -0.25], 0.01), [0.0, 0.0]);
     }
 
     #[test]

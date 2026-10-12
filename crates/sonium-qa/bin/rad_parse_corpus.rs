@@ -219,5 +219,9 @@ fn main() {
         "summary: {decks_count} decks, {total_cards} cards, \
          {with_include} decks with #include, {failures} failures"
     );
-    std::process::exit(i32::from(failures > 0));
+    if failures > 0 {
+        println!("FAILED: qa-rad-parse-corpus");
+        std::process::exit(1);
+    }
+    println!("SUCCESS: qa-rad-parse-corpus");
 }

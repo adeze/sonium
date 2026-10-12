@@ -22,10 +22,13 @@
 //! neighbor search, summation/differential continuity, symmetric momentum with
 //! artificial viscosity, compatible energy update, the polynomial equation of
 //! state used by the deck, smoothing-length adaptation, ghost-particle
-//! symmetry boundaries, and explicit time step control. Engine time-history
-//! replay stays deferred (see `qa-fem-sph`): only the checked-in golden and
-//! `SCHEMA.md` are visible offline, and vendor TH channels cannot be
-//! reproduced to vendor tolerance by an independent integrator.
+//! symmetry boundaries, and explicit time step control. Phase 7 lane 7D
+//! adds the native [`CompressionRun`] driver plus [`Series`] output in
+//! TH-CSV shape: `qa-fem-sph --series` emits a native compression run,
+//! while `qa-fem-sph --replay` compares a provided engine series against
+//! the harvested golden at vendor tolerance. The native series comes
+//! from an independent integrator with its own documented invariant
+//! bands; it is not claimed at vendor tolerance.
 //!
 //! W-tier fixtures: `fixtures/sph_kernel_consistency` (kernel values,
 //! partition of unity, gradient accuracy) and `fixtures/sph_waves`
@@ -33,7 +36,8 @@
 
 // Rust guideline compliant 2026-02-21
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::path::Path;
 
 use thiserror::Error;
 
@@ -1056,6 +1060,55 @@ impl SymmetryPlane {
         ]
     }
 
+    /// Returns the plane reference point.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::SymmetryPlane;
+    ///
+    /// let plane = SymmetryPlane::new([1.0, 2.0, 3.0], [0.0, 0.0, 1.0]).unwrap();
+    /// assert_eq!(plane.point(), [1.0, 2.0, 3.0]);
+    /// ```
+    pub fn point(&self) -> [f64; 3] {
+        self.point
+    }
+
+    /// Returns the unit plane normal.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::SymmetryPlane;
+    ///
+    /// let plane = SymmetryPlane::new([0.0; 3], [0.0, 0.0, 2.0]).unwrap();
+    /// assert_eq!(plane.normal(), [0.0, 0.0, 1.0]);
+    /// ```
+    pub fn normal(&self) -> [f64; 3] {
+        self.normal
+    }
+
+    /// Returns the signed distance from the plane along its normal.
+    ///
+    /// Positive on the normal side, negative behind it; the deck
+    /// symmetry planes face into the material, so contained particles
+    /// read non-negative.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::SymmetryPlane;
+    ///
+    /// let plane = SymmetryPlane::new([0.0; 3], [0.0, 0.0, 1.0]).unwrap();
+    /// assert_eq!(plane.signed_distance([0.0, 0.0, 2.0]), 2.0);
+    /// assert_eq!(plane.signed_distance([0.0, 0.0, -1.0]), -1.0);
+    /// ```
+    pub fn signed_distance(&self, position: [f64; 3]) -> f64 {
+        (position[0] - self.point[0]) * self.normal[0]
+            + (position[1] - self.point[1]) * self.normal[1]
+            + (position[2] - self.point[2]) * self.normal[2]
+    }
+
     /// Ghost velocity for `condition` (`SLIDE` mirrors, `TIED` opposes).
     pub fn ghost_velocity(&self, velocity: [f64; 3], condition: SymmetryCondition) -> [f64; 3] {
         match condition {
@@ -1154,6 +1207,706 @@ pub fn smoothed_velocity(
         smoothed[2] += weight * (other.velocity[2] - home.velocity[2]);
     }
     Ok(smoothed)
+}
+
+/// Copper reference density of the deck (`/MAT/HYDPLA` `RHO_0`).
+///
+/// Deck value in kg-mm-ms units; the native run derives particle mass
+/// from this density times the lattice cell volume.
+pub const WAVES_RHO0: f64 = 8.93;
+
+/// Linear bulk coefficient of the deck (`/EOS/POLYNOMIAL` `C1`).
+///
+/// Deck literal (float32 spelling of 1.3); all other polynomial
+/// coefficients are zero.
+pub const WAVES_EOS_C1: f64 = 1.29999995;
+
+/// Minimum pressure (`/MAT/HYDPLA` `Pmin`, deck literal).
+///
+/// Equation-of-state pressures clip at this floor, so tension never
+/// pulls: free-surface and edge particles with under-supported
+/// summation densities rest at zero pressure instead of collapsing
+/// inward. Sound speeds keep the unclipped bulk slope.
+pub const WAVES_PMIN: f64 = 0.0;
+
+/// Quadratic artificial-viscosity coefficient (`/PROP/TYPE34` `qa`).
+pub const WAVES_QA: f64 = 2.0;
+
+/// Linear artificial-viscosity coefficient (`/PROP/TYPE34` `qb`).
+pub const WAVES_QB: f64 = 1.0;
+
+/// Initial downward velocity (`/INIVEL/TRA` `Vz`, deck literal).
+pub const WAVES_VZ: f64 = -0.0381500006;
+
+/// Explicit run length (`/RUN/CUBC/1`, deck time units).
+pub const WAVES_END_TIME: f64 = 30.1;
+
+/// Cell count of the native impact column.
+///
+/// The deck resolves the bar height with 32 planes; the native
+/// column doubles that axial resolution (64 cells over the same
+/// span) so the compression front spans several particles.
+pub const WAVES_COLUMN_CELLS: usize = 64;
+
+/// Minimum corner of the deck particle box (kg-mm-ms length units).
+///
+/// The native column spans the box `z` extent; the `x`/`y` extents
+/// set the column cross-section for extensive probes.
+pub const WAVES_BOX_MIN: [f64; 3] = [-1.283001, -1.283001, 0.0];
+
+/// Maximum corner of the deck particle box (kg-mm-ms length units).
+pub const WAVES_BOX_MAX: [f64; 3] = [1.283001, 1.283001, 9.943255];
+
+/// Smoothing length as a multiple of the column spacing.
+///
+/// At `1.3` spacings the one-dimensional kernel sum over the column
+/// lattice reads unity within 1%, with about five neighbors in
+/// support. Raising it damps the impact pulse; lowering it toward
+/// 1.0 noisifies the summation density.
+pub const WAVES_SMOOTHING_FACTOR: f64 = 1.3;
+
+/// Stamped channel set in TH-CSV shape.
+///
+/// A [`CompressionRun`] fills one of these per run; [`Series::to_csv`]
+/// renders the vendor time-history layout (a `Time` column plus one
+/// column per channel) at full roundtrip precision. The text parses
+/// through the golden replay CSV reader, so native series overlay the
+/// harvested goldens column by column.
+#[derive(Debug, Clone, Default)]
+pub struct Series {
+    /// Stamp times in deck time units, strictly increasing.
+    pub times: Vec<f64>,
+    /// Channel name to one sample per stamp.
+    pub channels: BTreeMap<String, Vec<f64>>,
+    order: Vec<String>,
+}
+
+impl Series {
+    /// Builds an empty series with fixed channel order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::Series;
+    ///
+    /// let mut series = Series::with_channels(&["MASS", "Z-MOMENTUM"]);
+    /// series.push(0.0, &[1.0, 2.0]);
+    /// assert_eq!(series.len(), 1);
+    /// assert_eq!(series.channel("MASS"), Some(&[1.0][..]));
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics when a channel name repeats; callers pass distinct
+    /// probe names by construction.
+    pub fn with_channels(names: &[&str]) -> Self {
+        let channels: BTreeMap<String, Vec<f64>> = names
+            .iter()
+            .map(|name| ((*name).to_string(), Vec::new()))
+            .collect();
+        assert_eq!(
+            channels.len(),
+            names.len(),
+            "series channels must be distinct"
+        );
+        Self {
+            times: Vec::new(),
+            channels,
+            order: names.iter().map(|name| (*name).to_string()).collect(),
+        }
+    }
+
+    /// Appends one stamp with a value per channel.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::Series;
+    ///
+    /// let mut series = Series::with_channels(&["MASS"]);
+    /// series.push(0.5, &[3.0]);
+    /// assert_eq!(series.times, vec![0.5]);
+    /// ```
+    ///
+    /// # Panics
+    ///
+    /// Panics when `values` does not hold exactly one entry per
+    /// channel; callers pass full probe rows by construction.
+    pub fn push(&mut self, time: f64, values: &[f64]) {
+        assert_eq!(
+            values.len(),
+            self.order.len(),
+            "series stamp needs one value per channel"
+        );
+        self.times.push(time);
+        for (name, value) in self.order.iter().zip(values.iter()) {
+            self.channels
+                .get_mut(name)
+                .expect("series channel registered at build")
+                .push(*value);
+        }
+    }
+
+    /// Returns the stamp count.
+    pub fn len(&self) -> usize {
+        self.times.len()
+    }
+
+    /// Reports whether the series holds no stamps.
+    pub fn is_empty(&self) -> bool {
+        self.times.is_empty()
+    }
+
+    /// Looks up a channel by name.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::Series;
+    ///
+    /// let series = Series::with_channels(&["MASS"]);
+    /// assert!(series.channel("Z-MOMENTUM").is_none());
+    /// ```
+    pub fn channel(&self, name: &str) -> Option<&[f64]> {
+        self.channels.get(name).map(Vec::as_slice)
+    }
+
+    /// Renders the series as TH-CSV text.
+    ///
+    /// The header starts with a `Time` column followed by the channels
+    /// in build order; every value prints at full roundtrip precision
+    /// with no trailing comma, matching the replay reader's shape.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::Series;
+    ///
+    /// let mut series = Series::with_channels(&["MASS"]);
+    /// series.push(0.0, &[1.5]);
+    /// let text = series.to_csv();
+    /// assert!(text.starts_with("Time,MASS\n"));
+    /// assert_eq!(text.lines().count(), 2);
+    /// ```
+    pub fn to_csv(&self) -> String {
+        let mut text = String::from("Time");
+        for name in &self.order {
+            text.push(',');
+            text.push_str(name);
+        }
+        text.push('\n');
+        for (stamp, time) in self.times.iter().enumerate() {
+            text.push_str(&format!("{time}"));
+            for name in &self.order {
+                let value = self.channels[name][stamp];
+                text.push_str(&format!(",{value}"));
+            }
+            text.push('\n');
+        }
+        text
+    }
+
+    /// Writes [`Series::to_csv`] output to `path`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::Series;
+    ///
+    /// let mut series = Series::with_channels(&["MASS"]);
+    /// series.push(0.0, &[1.5]);
+    /// let path = std::env::temp_dir().join("sph-series-doctest.csv");
+    /// series.write_csv(&path).unwrap();
+    /// assert!(std::fs::read_to_string(&path).unwrap().starts_with("Time,MASS\n"));
+    /// std::fs::remove_file(&path).unwrap();
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns the underlying I/O error when the file cannot be
+    /// written.
+    pub fn write_csv(&self, path: &Path) -> std::io::Result<()> {
+        std::fs::write(path, self.to_csv())
+    }
+}
+
+/// Native SPH compression run mirroring WavesCompression.
+///
+/// A kick-drift-kick leapfrog integrator over a one-dimensional
+/// column with the deck `/PROP/TYPE34` viscosity, the deck
+/// polynomial equation of state with the deck `Pmin` pressure floor,
+/// and one `TIED` ghost-particle floor at `z = 0` matching the deck
+/// `/SPHBCS` card. The reduction is the laterally uniform impact the
+/// deck's own four `SLIDE` symmetry planes enforce: transverse
+/// motion stays exactly zero, so the column carries the full
+/// compression-wave physics (shock formation, wall rebound, kinetic
+/// to internal conversion) without lateral boundary artifacts.
+/// Ghosts closer than the kernel support mirror live particles every
+/// evaluation; ghosts exactly coincident with their source are
+/// skipped because they carry no gradient and would double-count the
+/// self density. The smoothing length stays fixed (the impact
+/// compression is only a few percent); energy advances by the
+/// trapezoid of the compatible [`energy_rate`].
+///
+/// Mass per unit area convention: with the one-dimensional kernel,
+/// particle `mass` stores reference density times column spacing, so
+/// summation densities come out as true volumetric densities and
+/// every extensive probe scales by the deck cross-section. Viscosity
+/// runs raw (`qa`/`qb` unscaled): the pair limiter would need an
+/// energy-rate twin to stay adjoint-consistent, and the deck impact
+/// is compression-dominated, where the switch reads near one anyway.
+/// See [`balsara_factor`] for the available switch.
+///
+/// All quantities use the deck unit system (kg-mm-ms).
+///
+/// Boundary containment runs after every drift: particles behind the
+/// floor reflect back inside with the `TIED` condition velocity (the
+/// deck `Ilev = 1` elastic rebound). The deck-side mass accounting
+/// then matches to 2.2%: the native total is exactly reference
+/// density times deck box volume, while the golden MASS reads
+/// 597.9077 (the starter log evidences an undocumented engine-side
+/// renormalization of the nominal particle mass).
+#[derive(Debug, Clone)]
+pub struct CompressionRun {
+    particles: Vec<Particle>,
+    eos: PolynomialEos,
+    planes: Vec<(SymmetryPlane, SymmetryCondition)>,
+    qa: f64,
+    qb: f64,
+    cfl: f64,
+    h: f64,
+    area: f64,
+    time: f64,
+    center: usize,
+}
+
+/// One operator evaluation over the ghost-completed system.
+struct Evaluation {
+    accelerations: Vec<[f64; 3]>,
+    rates: Vec<f64>,
+    densities: Vec<f64>,
+    sounds: Vec<f64>,
+}
+
+impl CompressionRun {
+    /// Builds the deck-mirror run at `t = 0`.
+    ///
+    /// Particles start cell-centered on the deck-height column with
+    /// uniform downward velocity [`WAVES_VZ`], zero internal energy,
+    /// and summation-density thermodynamic state; the center probe
+    /// tracks the particle nearest mid-height.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::{CompressionRun, WAVES_COLUMN_CELLS};
+    ///
+    /// let run = CompressionRun::waves_compression().unwrap();
+    /// assert_eq!(run.particles().len(), WAVES_COLUMN_CELLS);
+    /// assert_eq!(run.time(), 0.0);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SphError`] when the deck constants violate a kernel
+    /// contract (unreachable for the checked-in values).
+    pub fn waves_compression() -> Result<Self, SphError> {
+        let eos = PolynomialEos::new(WAVES_EOS_C1, 0.0, 0.0, WAVES_RHO0)?;
+        let height = WAVES_BOX_MAX[2] - WAVES_BOX_MIN[2];
+        let spacing = height / WAVES_COLUMN_CELLS as f64;
+        let area = (WAVES_BOX_MAX[0] - WAVES_BOX_MIN[0]) * (WAVES_BOX_MAX[1] - WAVES_BOX_MIN[1]);
+        let mut particles = Vec::with_capacity(WAVES_COLUMN_CELLS);
+        for cell in 0..WAVES_COLUMN_CELLS {
+            particles.push(Particle::new(
+                [0.0, 0.0, WAVES_BOX_MIN[2] + (cell as f64 + 0.5) * spacing],
+                [0.0, 0.0, WAVES_VZ],
+                WAVES_RHO0 * spacing,
+            )?);
+        }
+        let h = WAVES_SMOOTHING_FACTOR * spacing;
+        let planes = vec![(
+            SymmetryPlane::new([0.0, 0.0, WAVES_BOX_MIN[2]], [0.0, 0.0, 1.0])?,
+            SymmetryCondition::Tied,
+        )];
+        let mid = 0.5 * (WAVES_BOX_MIN[2] + WAVES_BOX_MAX[2]);
+        let mut center = 0;
+        let mut best = f64::INFINITY;
+        for (index, particle) in particles.iter().enumerate() {
+            let gap = (particle.position[2] - mid).abs();
+            if gap < best {
+                best = gap;
+                center = index;
+            }
+        }
+        let mut run = Self {
+            particles,
+            eos,
+            planes,
+            qa: WAVES_QA,
+            qb: WAVES_QB,
+            cfl: DEFAULT_CFL,
+            h,
+            area,
+            time: 0.0,
+            center,
+        };
+        run.refresh()?;
+        Ok(run)
+    }
+
+    /// Returns the live particles.
+    pub fn particles(&self) -> &[Particle] {
+        &self.particles
+    }
+
+    /// Returns the current time in deck time units.
+    pub fn time(&self) -> f64 {
+        self.time
+    }
+
+    /// Returns the current smoothing length.
+    pub fn smoothing_length(&self) -> f64 {
+        self.h
+    }
+
+    /// Returns the center-probe particle index.
+    pub fn center_index(&self) -> usize {
+        self.center
+    }
+
+    /// Returns the column cross-section in deck area units.
+    pub fn cross_section(&self) -> f64 {
+        self.area
+    }
+
+    /// Returns the total mass (exactly conserved: no mass update).
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::CompressionRun;
+    ///
+    /// let run = CompressionRun::waves_compression().unwrap();
+    /// assert!(run.total_mass() > 500.0);
+    /// ```
+    pub fn total_mass(&self) -> f64 {
+        self.area * self.particles.iter().map(|p| p.mass).sum::<f64>()
+    }
+
+    /// Returns the total internal energy `area * sum m e`.
+    pub fn internal_energy(&self) -> f64 {
+        self.area
+            * self
+                .particles
+                .iter()
+                .map(|p| p.mass * p.energy)
+                .sum::<f64>()
+    }
+
+    /// Returns the total kinetic energy `area * sum m v^2 / 2`.
+    pub fn kinetic_energy(&self) -> f64 {
+        self.area
+            * self
+                .particles
+                .iter()
+                .map(|p| {
+                    0.5 * p.mass
+                        * (p.velocity[0] * p.velocity[0]
+                            + p.velocity[1] * p.velocity[1]
+                            + p.velocity[2] * p.velocity[2])
+                })
+                .sum::<f64>()
+    }
+
+    /// Returns the total momentum `area * sum m v`.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::{CompressionRun, WAVES_VZ};
+    ///
+    /// let run = CompressionRun::waves_compression().unwrap();
+    /// let momentum = run.momentum();
+    /// assert_eq!(momentum[0], 0.0);
+    /// assert_eq!(momentum[1], 0.0);
+    /// assert!((momentum[2] - run.total_mass() * WAVES_VZ).abs() < 1.0e-9);
+    /// ```
+    pub fn momentum(&self) -> [f64; 3] {
+        let mut total = [0.0; 3];
+        for particle in &self.particles {
+            total[0] += particle.mass * particle.velocity[0];
+            total[1] += particle.mass * particle.velocity[1];
+            total[2] += particle.mass * particle.velocity[2];
+        }
+        [
+            self.area * total[0],
+            self.area * total[1],
+            self.area * total[2],
+        ]
+    }
+
+    /// Returns the center-probe density and pressure.
+    pub fn center_probe(&self) -> (f64, f64) {
+        let particle = &self.particles[self.center];
+        (particle.density, particle.pressure)
+    }
+
+    /// Evaluates the deck equation of state with the `Pmin` floor.
+    fn clipped_pressure(&self, density: f64) -> f64 {
+        self.eos.pressure(density).max(WAVES_PMIN)
+    }
+
+    /// Advances one CFL-limited leapfrog step.
+    ///
+    /// Returns the step taken. Densities refresh from summation every
+    /// evaluation, so no continuity drift accumulates.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::CompressionRun;
+    ///
+    /// let mut run = CompressionRun::waves_compression().unwrap();
+    /// let dt = run.step().unwrap();
+    /// assert!(dt > 0.0 && run.time() == dt);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SphError`] when the signal speed collapses (all sound
+    /// speeds plus bulk motion reach zero) or a kernel contract fails.
+    pub fn step(&mut self) -> Result<f64, SphError> {
+        let first = self.evaluate()?;
+        let sound = first.sounds.iter().cloned().fold(0.0, f64::max);
+        let signal = self
+            .particles
+            .iter()
+            .map(|p| {
+                (p.velocity[0] * p.velocity[0]
+                    + p.velocity[1] * p.velocity[1]
+                    + p.velocity[2] * p.velocity[2])
+                    .sqrt()
+            })
+            .fold(0.0, f64::max);
+        let dt = stable_time_step(self.cfl, self.h, sound, signal)?;
+        self.advance(dt, &first)?;
+        Ok(dt)
+    }
+
+    /// Runs to `end_time`, stamping `stamps` rows into a series.
+    ///
+    /// Stamps land on an approximately uniform grid (steps may
+    /// overshoot a target; the final stamp sits at or just past
+    /// `end_time`). Channels are `MASS`, `INTERNAL ENERGY`, `KINETIC
+    /// ENERGY`, `TOTAL ENERGY`, `X-MOMENTUM`, `Y-MOMENTUM`,
+    /// `Z-MOMENTUM`, `TIME STEP`, `CENTER DENSITY`, and `CENTER
+    /// PRESSURE`; the first stamp carries a zero step (no step taken
+    /// yet). `TOTAL ENERGY` maps to the vendor `NO NAME` channel and
+    /// the `CENTER` probes are native analogs of the deck
+    /// `/TH/SPHCEL` column, not vendor samples.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::fluid::sph::CompressionRun;
+    ///
+    /// let mut run = CompressionRun::waves_compression().unwrap();
+    /// let series = run.run(0.5, 3).unwrap();
+    /// assert_eq!(series.len(), 3);
+    /// assert_eq!(series.times[0], 0.0);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SphError::BadState`] when `end_time` does not exceed
+    /// the current time or fewer than two stamps are requested, plus
+    /// any [`CompressionRun::step`] failure.
+    pub fn run(&mut self, end_time: f64, stamps: usize) -> Result<Series, SphError> {
+        if !end_time.is_finite() || end_time <= self.time {
+            return Err(SphError::BadState("end time must exceed current time"));
+        }
+        if stamps < 2 {
+            return Err(SphError::BadState("series needs at least two stamps"));
+        }
+        let mut series = Series::with_channels(&[
+            "MASS",
+            "INTERNAL ENERGY",
+            "KINETIC ENERGY",
+            "TOTAL ENERGY",
+            "X-MOMENTUM",
+            "Y-MOMENTUM",
+            "Z-MOMENTUM",
+            "TIME STEP",
+            "CENTER DENSITY",
+            "CENTER PRESSURE",
+        ]);
+        let start = self.time;
+        series.push(start, &self.stamp(0.0));
+        let mut next = 1;
+        while self.time < end_time {
+            let dt = self.step()?;
+            while next < stamps
+                && self.time >= start + (end_time - start) * next as f64 / (stamps - 1) as f64
+            {
+                series.push(self.time, &self.stamp(dt));
+                next += 1;
+            }
+        }
+        Ok(series)
+    }
+
+    /// Samples the current probe row with the given last step.
+    fn stamp(&self, dt: f64) -> [f64; 10] {
+        let internal = self.internal_energy();
+        let kinetic = self.kinetic_energy();
+        let momentum = self.momentum();
+        let (density, pressure) = self.center_probe();
+        [
+            self.total_mass(),
+            internal,
+            kinetic,
+            internal + kinetic,
+            momentum[0],
+            momentum[1],
+            momentum[2],
+            dt,
+            density,
+            pressure,
+        ]
+    }
+
+    /// Applies one kick-drift-kick advance of `dt` from `first`.
+    fn advance(&mut self, dt: f64, first: &Evaluation) -> Result<(), SphError> {
+        for (particle, accel) in self.particles.iter_mut().zip(first.accelerations.iter()) {
+            for (component, pull) in particle.velocity.iter_mut().zip(accel.iter()) {
+                *component += 0.5 * dt * pull;
+            }
+        }
+        for particle in self.particles.iter_mut() {
+            for (coordinate, speed) in particle.position.iter_mut().zip(particle.velocity.iter()) {
+                *coordinate += dt * speed;
+            }
+        }
+        for particle in self.particles.iter_mut() {
+            for (plane, condition) in &self.planes {
+                // Axis-aligned planes: sequential reflection lands
+                // corner crossers inside every plane at once.
+                if plane.signed_distance(particle.position) < 0.0 {
+                    particle.position = plane.reflect_position(particle.position);
+                    particle.velocity = plane.ghost_velocity(particle.velocity, *condition);
+                }
+            }
+        }
+        // Fixed smoothing length (no per-step adaptation): snapping
+        // h to the live density feeds back through the kernel self
+        // term, and the impact compression is only a few percent, so
+        // the support needs no tracking. See
+        // updated_smoothing_length for the available rule.
+        let second = self.evaluate()?;
+        for (index, particle) in self.particles.iter_mut().enumerate() {
+            for (component, pull) in particle
+                .velocity
+                .iter_mut()
+                .zip(second.accelerations[index].iter())
+            {
+                *component += 0.5 * dt * pull;
+            }
+            particle.energy += 0.5 * dt * (first.rates[index] + second.rates[index]);
+        }
+        let pressures: Vec<f64> = second
+            .densities
+            .iter()
+            .map(|density| self.clipped_pressure(*density))
+            .collect();
+        for (index, particle) in self.particles.iter_mut().enumerate() {
+            particle.density = second.densities[index];
+            particle.pressure = pressures[index];
+            particle.sound_speed = self.eos.sound_speed(second.densities[index]);
+        }
+        self.time += dt;
+        Ok(())
+    }
+
+    /// Refreshes stored thermodynamic state from one evaluation.
+    fn refresh(&mut self) -> Result<(), SphError> {
+        let evaluation = self.evaluate()?;
+        let pressures: Vec<f64> = evaluation
+            .densities
+            .iter()
+            .map(|density| self.clipped_pressure(*density))
+            .collect();
+        for (index, particle) in self.particles.iter_mut().enumerate() {
+            particle.density = evaluation.densities[index];
+            particle.pressure = pressures[index];
+            particle.sound_speed = self.eos.sound_speed(evaluation.densities[index]);
+        }
+        Ok(())
+    }
+
+    /// Evaluates accelerations and energy rates with ghost support.
+    fn evaluate(&self) -> Result<Evaluation, SphError> {
+        let support = SUPPORT_RADIUS_FACTOR * self.h;
+        let mut system = self.extended_system(support);
+        let positions: Vec<[f64; 3]> = system.iter().map(|p| p.position).collect();
+        let search = NeighborSearch::build(&positions, support)?;
+        let count = self.particles.len();
+        let mut densities = vec![0.0; count];
+        for (index, slot) in densities.iter_mut().enumerate().take(count) {
+            let neighbors = search.neighbors(index);
+            *slot = summation_density(index, &system, &neighbors, self.h, 1)?;
+        }
+        let mut sounds = vec![0.0; count];
+        for index in 0..count {
+            system[index].density = densities[index];
+            system[index].pressure = self.clipped_pressure(densities[index]);
+            system[index].sound_speed = self.eos.sound_speed(densities[index]);
+            sounds[index] = system[index].sound_speed;
+        }
+        let mut accelerations = vec![[0.0; 3]; count];
+        let mut rates = vec![0.0; count];
+        for index in 0..count {
+            let neighbors = search.neighbors(index);
+            accelerations[index] =
+                momentum_acceleration(index, &system, &neighbors, self.h, 1, self.qa, self.qb)?;
+            rates[index] = energy_rate(index, &system, &neighbors, self.h, 1, self.qa, self.qb)?;
+        }
+        Ok(Evaluation {
+            accelerations,
+            rates,
+            densities,
+            sounds,
+        })
+    }
+
+    /// Mirrors live particles across symmetry planes within support.
+    ///
+    /// Ghosts copy their source mass and stored thermodynamic state;
+    /// mirrors exactly coincident with their source (particles sitting
+    /// on a plane) are skipped: they carry no gradient and would
+    /// double-count the self density.
+    fn extended_system(&self, support: f64) -> Vec<Particle> {
+        let mut system = self.particles.clone();
+        for (plane, condition) in &self.planes {
+            for particle in &self.particles {
+                let mirrored = plane.reflect_position(particle.position);
+                let gap = (mirrored[0] - particle.position[0])
+                    .hypot(mirrored[1] - particle.position[1])
+                    .hypot(mirrored[2] - particle.position[2]);
+                // Exact coincidence only: near-plane mirrors are real
+                // symmetric counterparts and must stay in the sum.
+                // Mirrors at or beyond the kernel support carry zero
+                // weight, so the filter is exact, not an approximation.
+                if gap == 0.0 || gap >= support {
+                    continue;
+                }
+                let mut ghost = particle.clone();
+                ghost.position = mirrored;
+                ghost.velocity = plane.ghost_velocity(particle.velocity, *condition);
+                system.push(ghost);
+            }
+        }
+        system
+    }
 }
 
 #[cfg(test)]
@@ -1403,5 +2156,186 @@ mod tests {
         let particles = pair(0.5, 1.0);
         let smoothed = smoothed_velocity(0, &particles, &[1], 1.0, 3, 0.0).unwrap();
         assert_eq!(smoothed, particles[0].velocity);
+    }
+
+    #[test]
+    fn column_matches_deck_footprint() {
+        let run = CompressionRun::waves_compression().unwrap();
+        assert_eq!(run.particles().len(), WAVES_COLUMN_CELLS);
+        let height = WAVES_BOX_MAX[2] - WAVES_BOX_MIN[2];
+        let spacing = height / WAVES_COLUMN_CELLS as f64;
+        for (cell, particle) in run.particles().iter().enumerate() {
+            assert_eq!(particle.position[0], 0.0);
+            assert_eq!(particle.position[1], 0.0);
+            let expected = WAVES_BOX_MIN[2] + (cell as f64 + 0.5) * spacing;
+            assert_eq!(particle.position[2], expected);
+            assert_eq!(particle.velocity, [0.0, 0.0, WAVES_VZ]);
+            assert_eq!(particle.mass, WAVES_RHO0 * spacing);
+        }
+        // Extensive total is exactly reference density times box volume.
+        let volume = height * run.cross_section();
+        let expected = WAVES_RHO0 * volume;
+        assert!(
+            (run.total_mass() - expected).abs() < 1.0e-9 * expected,
+            "mass {} vs {expected}",
+            run.total_mass()
+        );
+        let center = &run.particles()[run.center_index()];
+        assert!((center.position[2] - 0.5 * height).abs() < spacing);
+    }
+
+    #[test]
+    fn initial_state_matches_deck_drop() {
+        let run = CompressionRun::waves_compression().unwrap();
+        let momentum = run.momentum();
+        assert_eq!(momentum[0], 0.0);
+        assert_eq!(momentum[1], 0.0);
+        assert!((momentum[2] - run.total_mass() * WAVES_VZ).abs() < 1.0e-9);
+        assert_eq!(run.internal_energy(), 0.0);
+        let expected = 0.5 * run.total_mass() * WAVES_VZ * WAVES_VZ;
+        assert!((run.kinetic_energy() - expected).abs() < 1.0e-9 * expected);
+    }
+
+    #[test]
+    fn initial_densities_recover_reference() {
+        let run = CompressionRun::waves_compression().unwrap();
+        // Bulk and floor-adjacent particles sit within 2% (the floor
+        // ghosts complete the support); only the free top face dips,
+        // clipped to zero pressure by WAVES_PMIN.
+        for (index, particle) in run.particles().iter().enumerate() {
+            let last = index + 1 == run.particles().len();
+            let deviation = ((particle.density - WAVES_RHO0) / WAVES_RHO0).abs();
+            if last {
+                assert!(deviation < 0.30, "top face dip {deviation}");
+            } else {
+                assert!(deviation < 0.02, "particle {index}: {deviation}");
+            }
+            assert!(particle.pressure >= 0.0, "Pmin floor holds");
+        }
+        let (density, _) = run.center_probe();
+        assert!(((density - WAVES_RHO0) / WAVES_RHO0).abs() < 0.02);
+    }
+
+    #[test]
+    fn floor_ghosts_complete_near_support() {
+        let run = CompressionRun::waves_compression().unwrap();
+        let support = SUPPORT_RADIUS_FACTOR * run.smoothing_length();
+        let system = run.extended_system(support);
+        let ghosts = &system[run.particles().len()..];
+        assert!(!ghosts.is_empty(), "floor particles need mirrors");
+        // Every ghost sits below the floor within kernel support of
+        // its source, and cell-centered sources never coincide.
+        for ghost in ghosts {
+            assert!(ghost.position[2] < 0.0);
+            // Floor mirror of a source at -z: gap is twice the depth.
+            let gap = ghost.position[2].abs() * 2.0;
+            assert!(gap > 0.0 && gap < support, "ghost gap {gap}");
+        }
+        let near = run
+            .particles()
+            .iter()
+            .filter(|p| 2.0 * p.position[2] < support)
+            .count();
+        assert_eq!(ghosts.len(), near, "one mirror per near-floor particle");
+    }
+
+    #[test]
+    fn run_rejects_bad_inputs() {
+        let mut run = CompressionRun::waves_compression().unwrap();
+        assert!(run.run(0.0, 5).is_err());
+        assert!(run.run(-1.0, 5).is_err());
+        assert!(run.run(1.0, 1).is_err());
+        // A step advances time with a positive CFL step.
+        let dt = run.step().unwrap();
+        assert!(dt > 0.0 && run.time() == dt);
+        assert!(run.run(run.time(), 5).is_err());
+    }
+
+    #[test]
+    fn short_run_conserves_mass_and_stays_finite() {
+        let mut run = CompressionRun::waves_compression().unwrap();
+        let series = run.run(2.0, 5).unwrap();
+        assert_eq!(series.len(), 5);
+        assert_eq!(series.times[0], 0.0);
+        assert!(series.times.windows(2).all(|w| w[1] > w[0]));
+        // No mass update exists: bit-identical across stamps.
+        let mass = series.channel("MASS").unwrap();
+        assert!(mass.iter().all(|m| *m == mass[0]));
+        for channel in series.channels.values() {
+            assert_eq!(channel.len(), 5);
+            assert!(channel.iter().all(|v| v.is_finite()));
+        }
+        // Transverse momenta stay bit-exact zero (no lateral forces).
+        for name in ["X-MOMENTUM", "Y-MOMENTUM"] {
+            assert!(
+                series.channel(name).unwrap().iter().all(|v| *v == 0.0),
+                "{name} must stay zero"
+            );
+        }
+        // Energy drifts only at integration accuracy over 2 ms.
+        let total = series.channel("TOTAL ENERGY").unwrap();
+        assert!(((total[4] - total[0]) / total[0]).abs() < 0.02);
+    }
+
+    #[test]
+    fn full_run_rebounds_and_converts_energy() {
+        let mut run = CompressionRun::waves_compression().unwrap();
+        let h0 = run.smoothing_length();
+        let series = run.run(WAVES_END_TIME, 45).unwrap();
+        assert_eq!(series.len(), 45);
+        assert_eq!(run.smoothing_length(), h0, "fixed support");
+        let internal = series.channel("INTERNAL ENERGY").unwrap();
+        let kinetic = series.channel("KINETIC ENERGY").unwrap();
+        let zmomentum = series.channel("Z-MOMENTUM").unwrap();
+        // Impact signature: downward launch, upward rebound, and
+        // kinetic energy converted into internal energy.
+        assert!(zmomentum[0] < 0.0);
+        assert!(
+            *zmomentum.last().unwrap() > 0.0,
+            "rebound, got {}",
+            zmomentum.last().unwrap()
+        );
+        assert!(
+            internal.last().unwrap() > kinetic.last().unwrap(),
+            "conversion, ie={} ke={}",
+            internal.last().unwrap(),
+            kinetic.last().unwrap()
+        );
+        // Total energy (wall work plus clipping plus leapfrog error)
+        // stays within its documented qualitative band.
+        let total = series.channel("TOTAL ENERGY").unwrap();
+        let drift = total
+            .iter()
+            .map(|e| ((e - total[0]) / total[0]).abs())
+            .fold(0.0f64, f64::max);
+        assert!(drift < 0.10, "drift {drift}");
+        // Floor containment held every stamp of the probe column.
+        assert!(run.particles().iter().all(|p| p.position[2] >= 0.0));
+    }
+
+    #[test]
+    fn series_csv_renders_th_shape() {
+        let mut series = Series::with_channels(&["MASS", "Z-MOMENTUM"]);
+        series.push(0.0, &[584.5, -22.3]);
+        series.push(1.5, &[584.5, 5.1]);
+        let text = series.to_csv();
+        let mut lines = text.lines();
+        assert_eq!(lines.next().unwrap(), "Time,MASS,Z-MOMENTUM");
+        assert_eq!(lines.next().unwrap(), "0,584.5,-22.3");
+        assert_eq!(lines.next().unwrap(), "1.5,584.5,5.1");
+        assert_eq!(lines.next(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "distinct")]
+    fn series_rejects_duplicate_channels() {
+        let _ = Series::with_channels(&["MASS", "MASS"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "one value per channel")]
+    fn series_rejects_short_stamp() {
+        let mut series = Series::with_channels(&["MASS", "Z-MOMENTUM"]);
+        series.push(0.0, &[1.0]);
     }
 }

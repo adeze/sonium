@@ -2,7 +2,7 @@
 //!
 //! A circular shaft under end torque must reproduce `phi = T L / GJ`, and an
 //! I-beam smoke solve exercises the thin-walled torsion constant. The C3
-//! comparison case lives in `fem_radioss_beam_torsion.rs`.
+//! comparison case lives in `fem_opencourant_beam_torsion.rs`.
 
 // Rust guideline compliant 2026-02-21
 

@@ -33,25 +33,38 @@
 //!
 //! Calling a block per engine cycle with a float abscissa and float
 //! return; full Python call semantics (cross-block calls like
-//! `myfun2(x)`); the callback namespace above bound to live engine
-//! state (sensors, nodal and element fields at the current cycle);
-//! deterministic results (same abscissa and state give bitwise-equal
-//! returns). None of these exist in-tree: there is no Python runtime
-//! dependency, no engine-state binding layer, and no approved sandbox
-//! for executing deck-supplied code.
+//! `myfun2(x)`); the callback namespace above bound to engine state
+//! (sensors, nodal and element fields at the current cycle, passed as
+//! a per-call snapshot); deterministic results (same abscissa and
+//! state give bitwise-equal returns). Phase 7 lane 7D ships all four
+//! behind the `funct-python` feature ([`evaluate_python`]).
 //!
-//! # Verdict (P5C3)
+//! # Verdict (P5C3, closed by Phase 7 lane 7D)
 //!
-//! Dated deferral. Full evaluation is deferred to [`DEFER_UNTIL`]:
-//! the missing piece is [`DEFER_MISSING`], and the replay target it
-//! would hit is [`DEFER_TARGET`]. Rationale: a native subset evaluator
+//! Evaluation is implemented; without the `funct-python` feature it
+//! stays deferred to [`DEFER_UNTIL`] with [`DEFER_MISSING`] missing
+//! toward [`DEFER_TARGET`]. Rationale: a native subset evaluator
 //! cannot reproduce Python semantics and would silently diverge on
-//! decks outside its grammar, while embedding CPython needs a new
-//! dependency plus a sandbox decision this lane cannot take (no
-//! `Cargo.toml` edits, offline gate). What ships instead is real and
-//! tested: block parsing, call/accessor extraction, purity tagging,
-//! and a transcribed closed form of the deck smoothstep for
-//! cross-checks (not evaluation).
+//! decks outside its grammar, so Phase 7 evaluates real Python behind
+//! an explicit trust boundary instead of pretending a subset suffices.
+//! Block parsing, call/accessor extraction, purity tagging, and the
+//! transcribed deck smoothstep closed form remain as cross-checks.
+//!
+//! # Trust boundary (read before running decks)
+//!
+//! The evaluator embeds CPython and executes deck `def` bodies with
+//! the FULL interpreter: imports, builtins, file and network access,
+//! subprocesses, everything the host Python process can do. There is
+//! NO sandbox, NO restricted subset, NO import allowlist, and NO
+//! resource limit. Treat every `/FUNCT_PYTHON` deck as executable code
+//! from its author: run only decks you trust exactly as far as you
+//! trust their source, in an environment where arbitrary Python
+//! execution is acceptable. Sensor accessors expose only the snapshot
+//! values the caller places in [`PythonContext`]; they do not widen
+//! deck access beyond the interpreter itself. Determinism holds for
+//! pure decks (same blocks, abscissa, and context give bit-identical
+//! results); decks that read clocks, random state, files, or the
+//! network can vary run to run like any Python program.
 //!
 //! # Examples
 //!
@@ -72,23 +85,32 @@
 
 use crate::rad_parse::{CardKind, DeckCard, RadDeck};
 use std::backtrace::Backtrace;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::{Display, Formatter};
+#[cfg(feature = "funct-python")]
+use std::sync::Arc;
 
-/// Deferral revisit date (`YYYY-MM-DD`).
+/// Condition that lifts the evaluation deferral.
 ///
-/// Full `/FUNCT_PYTHON` evaluation lands on or before this date; the
-/// verdict above names the missing piece and replay target.
-pub const DEFER_UNTIL: &str = "2026-11-30";
+/// Without the `funct-python` feature, `/FUNCT_PYTHON` evaluation
+/// stays deferred until this condition holds; the verdict above names
+/// the missing piece and replay target.
+pub const DEFER_UNTIL: &str = "build enables the funct-python feature";
 
-/// Missing piece blocking evaluation.
-pub const DEFER_MISSING: &str = "approved Python execution sandbox (embedded CPython vs restricted evaluator) with live engine-state accessor bindings (TIME/DT, nodal and element sensor callbacks)";
+/// Missing piece blocking evaluation without the feature.
+pub const DEFER_MISSING: &str =
+    "embedded CPython interpreter (pyo3) with TIME/DT scalars and nodal/element sensor snapshots";
 
 /// Replay target the deferred evaluation would hit.
-pub const DEFER_TARGET: &str = "PYTHON/FUNCT_PYTHON golden TH series (test_torsion_orthstrain_shell) through IMPDISP-driven motion";
+pub const DEFER_TARGET: &str = "trusted-deck FUNCT_PYTHON evaluation returning abscissa-mapped sensor values (deterministic for pure decks; no sandbox)";
 
 /// Private failure modes behind [`FunctPythonError`].
+///
+/// Each configuration constructs a different subset: the
+/// interpreter variants only with the feature on, the unavailable
+/// variant only with the feature off.
 #[derive(Debug)]
+#[allow(dead_code)]
 enum ErrorKind {
     /// Block without its header identifier.
     MissingId,
@@ -98,6 +120,14 @@ enum ErrorKind {
     BadDef { line: String },
     /// Block with no body lines.
     EmptyBody,
+    /// Evaluation target id absent from the blocks.
+    UnknownBlock(i64),
+    /// Python raised, or the return is not a float.
+    EvaluationFailed(String),
+    /// Python returned NaN or an infinity.
+    NonFiniteResult(f64),
+    /// Evaluation without the `funct-python` feature.
+    EvaluationUnavailable,
 }
 
 /// `/FUNCT_PYTHON` block collection failure.
@@ -123,6 +153,24 @@ impl FunctPythonError {
         matches!(self.kind, ErrorKind::BadDef { .. })
     }
 
+    /// Reports an evaluation failure (unknown block, Python exception,
+    /// bad return, or non-finite result).
+    #[must_use]
+    pub const fn is_evaluation(&self) -> bool {
+        matches!(
+            self.kind,
+            ErrorKind::UnknownBlock(_)
+                | ErrorKind::EvaluationFailed(_)
+                | ErrorKind::NonFiniteResult(_)
+        )
+    }
+
+    /// Reports evaluation without the `funct-python` feature.
+    #[must_use]
+    pub const fn is_unavailable(&self) -> bool {
+        matches!(self.kind, ErrorKind::EvaluationUnavailable)
+    }
+
     fn from_kind(kind: ErrorKind) -> Self {
         Self {
             kind,
@@ -145,6 +193,31 @@ impl Display for FunctPythonError {
             }
             ErrorKind::EmptyBody => {
                 write!(f, "block has no body lines\n{}", self.backtrace)
+            }
+            ErrorKind::UnknownBlock(id) => {
+                write!(f, "unknown FUNCT_PYTHON block {id}\n{}", self.backtrace)
+            }
+            ErrorKind::EvaluationFailed(detail) => {
+                write!(
+                    f,
+                    "FUNCT_PYTHON evaluation failed: {detail}\n{}",
+                    self.backtrace
+                )
+            }
+            ErrorKind::NonFiniteResult(value) => {
+                write!(
+                    f,
+                    "FUNCT_PYTHON returned non-finite {value}\n{}",
+                    self.backtrace
+                )
+            }
+            ErrorKind::EvaluationUnavailable => {
+                write!(
+                    f,
+                    "FUNCT_PYTHON evaluation needs the funct-python feature \
+                     (see DEFER_UNTIL, DEFER_MISSING, DEFER_TARGET)\n{}",
+                    self.backtrace
+                )
             }
         }
     }
@@ -451,6 +524,213 @@ pub fn smoothstep_unit(abscissa: f64) -> f64 {
         let poly = 10.0 - 15.0 * abscissa + 6.0 * abscissa * abscissa;
         abscissa * abscissa * abscissa * poly
     }
+}
+
+/// Sensor snapshot bound into one Python evaluation.
+///
+/// Carries the `TIME`/`DT` scalars plus the nodal and element values
+/// the deck accessors read: displacement, velocity, and acceleration
+/// per `(node id, dof)` with dof `X`, `Y`, or `Z`, and element fields
+/// per `(element id, field name)`. Snapshots are per-call by design:
+/// an explicit driver rebuilds one per cycle from the current state,
+/// which keeps evaluation deterministic (same blocks, abscissa, and
+/// snapshot give bit-identical results for pure decks).
+///
+/// Missing entries fail closed: a deck call with no snapshot entry
+/// raises inside Python and surfaces as an evaluation error, never a
+/// silent zero.
+#[derive(Debug, Clone, Default)]
+pub struct PythonContext {
+    /// Current cycle time, bound as `TIME`.
+    pub time: f64,
+    /// Current step length, bound as `DT`.
+    pub dt: f64,
+    /// Nodal displacements keyed by `(node id, dof)`.
+    pub nodal_disp: BTreeMap<(i64, char), f64>,
+    /// Nodal velocities keyed by `(node id, dof)`.
+    pub nodal_vel: BTreeMap<(i64, char), f64>,
+    /// Nodal accelerations keyed by `(node id, dof)`.
+    pub nodal_acce: BTreeMap<(i64, char), f64>,
+    /// Element fields keyed by `(element id, field name)`.
+    pub element_var: BTreeMap<(i64, String), f64>,
+}
+
+/// Evaluates one `/FUNCT_PYTHON` block at an abscissa.
+///
+/// Reconstructs each block `def` (name, parameter, verbatim body) in
+/// deck order in one namespace (so sibling calls resolve), then calls
+/// block `id` with `abscissa`.
+/// The namespace also binds `TIME`/`DT` from `context` plus the
+/// `node_disp`, `node_vel`, `node_acce` (each `(id, dof)`, dof a
+/// `X`/`Y`/`Z` string or `1`/`2`/`3`), and `element_var`
+/// (`(id, name)`) sensor stubs backed by the context snapshot.
+/// Requires the `funct-python` feature; without it every call fails
+/// with [`FunctPythonError::is_unavailable`].
+///
+/// Decks sharing a function name resolve last-wins in deck order;
+/// well-formed decks keep names unique.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_qa::funct_python::{PythonContext, collect_blocks, evaluate_python};
+/// use sonium_qa::rad_parse::RadDeck;
+///
+/// let deck = RadDeck::parse_str(
+///     "/FUNCT_PYTHON/1\ndef linear(x):\n    return 2.0 * x + TIME\n/END\n",
+/// )
+/// .expect("deck");
+/// let blocks = collect_blocks(&deck).expect("collect");
+/// let context = PythonContext {
+///     time: 1.0,
+///     ..Default::default()
+/// };
+/// match evaluate_python(&blocks, 1, 3.0, &context) {
+///     Ok(value) => assert_eq!(value, 7.0),
+///     Err(err) => assert!(err.is_unavailable(), "unexpected {err}"),
+/// }
+/// ```
+///
+/// # Errors
+///
+/// Returns [`FunctPythonError`] for an unknown block id, any Python
+/// exception or non-float return, a non-finite return, or a missing
+/// feature build.
+pub fn evaluate_python(
+    blocks: &[FunctPythonBlock],
+    id: i64,
+    abscissa: f64,
+    context: &PythonContext,
+) -> Result<f64, FunctPythonError> {
+    #[cfg(not(feature = "funct-python"))]
+    {
+        let _ = (blocks, id, abscissa, context);
+        Err(FunctPythonError::from_kind(
+            ErrorKind::EvaluationUnavailable,
+        ))
+    }
+    #[cfg(feature = "funct-python")]
+    {
+        evaluate_python_inner(blocks, id, abscissa, context)
+    }
+}
+
+/// Real evaluator, compiled only with the `funct-python` feature.
+#[cfg(feature = "funct-python")]
+fn evaluate_python_inner(
+    blocks: &[FunctPythonBlock],
+    id: i64,
+    abscissa: f64,
+    context: &PythonContext,
+) -> Result<f64, FunctPythonError> {
+    use pyo3::exceptions::{PyRuntimeError, PyValueError};
+    use pyo3::prelude::*;
+    use pyo3::types::{PyCFunction, PyDict, PyTuple};
+
+    /// Normalizes a nodal dof string (`X`/`Y`/`Z`, case-insensitive).
+    fn normalize_dof_str(text: &str) -> Option<char> {
+        let axis = text.trim().to_ascii_uppercase();
+        if axis.len() == 1 {
+            let axis = axis.chars().next().unwrap_or('?');
+            if matches!(axis, 'X' | 'Y' | 'Z') {
+                return Some(axis);
+            }
+        }
+        None
+    }
+
+    /// Normalizes a nodal dof number (`1`/`2`/`3`).
+    fn normalize_dof_int(number: i64) -> Option<char> {
+        match number {
+            1 => Some('X'),
+            2 => Some('Y'),
+            3 => Some('Z'),
+            _ => None,
+        }
+    }
+
+    let target = blocks
+        .iter()
+        .find(|block| block.id == id)
+        .ok_or_else(|| FunctPythonError::from_kind(ErrorKind::UnknownBlock(id)))?;
+    let name = target.name.as_str();
+    let failed = |detail: String| FunctPythonError::from_kind(ErrorKind::EvaluationFailed(detail));
+    let lift = |err: PyErr| failed(err.to_string());
+
+    let snapshot = Arc::new(context.clone());
+    let nodal = |table: BTreeMap<(i64, char), f64>, label: &'static str| {
+        let table = Arc::new(table);
+        move |args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<f64> {
+            let node: i64 = args.get_item(0)?.extract()?;
+            let dof = args.get_item(1)?;
+            let axis = dof
+                .extract::<String>()
+                .ok()
+                .and_then(|text| normalize_dof_str(&text))
+                .or_else(|| dof.extract::<i64>().ok().and_then(normalize_dof_int))
+                .ok_or_else(|| PyValueError::new_err("dof must be an X/Y/Z string or 1/2/3"))?;
+            table.get(&(node, axis)).copied().ok_or_else(|| {
+                PyRuntimeError::new_err(format!(
+                    "{label} has no snapshot for node {node} dof {axis}"
+                ))
+            })
+        }
+    };
+    let disp = nodal(snapshot.nodal_disp.clone(), "node_disp");
+    let vel = nodal(snapshot.nodal_vel.clone(), "node_vel");
+    let acce = nodal(snapshot.nodal_acce.clone(), "node_acce");
+    let elements = Arc::new(snapshot.element_var.clone());
+    let element =
+        move |args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| -> PyResult<f64> {
+            let pair: (i64, String) = args.extract()?;
+            elements.get(&pair).copied().ok_or_else(|| {
+                PyRuntimeError::new_err(format!(
+                    "element_var has no snapshot for element {} field {}",
+                    pair.0, pair.1
+                ))
+            })
+        };
+
+    Python::with_gil(|py| {
+        let namespace = PyDict::new(py);
+        namespace.set_item("TIME", snapshot.time).map_err(lift)?;
+        namespace.set_item("DT", snapshot.dt).map_err(lift)?;
+        let disp = PyCFunction::new_closure(py, None, None, disp).map_err(lift)?;
+        namespace.set_item("node_disp", disp).map_err(lift)?;
+        let vel = PyCFunction::new_closure(py, None, None, vel).map_err(lift)?;
+        namespace.set_item("node_vel", vel).map_err(lift)?;
+        let acce = PyCFunction::new_closure(py, None, None, acce).map_err(lift)?;
+        namespace.set_item("node_acce", acce).map_err(lift)?;
+        let element = PyCFunction::new_closure(py, None, None, element).map_err(lift)?;
+        namespace.set_item("element_var", element).map_err(lift)?;
+        for block in blocks {
+            let source = format!(
+                "def {}({}):\n{}\n",
+                block.name,
+                block.param,
+                block.body.join("\n")
+            );
+            let code = std::ffi::CString::new(source.as_str())
+                .map_err(|_| failed(format!("block {} source holds a NUL byte", block.id)))?;
+            py.run(&code, Some(&namespace), None)
+                .map_err(|err| failed(format!("block {} exec: {err}", block.id)))?;
+        }
+        let function = namespace
+            .get_item(name)
+            .map_err(lift)?
+            .ok_or_else(|| failed(format!("function {name:?} missing after exec")))?;
+        let value: f64 = function
+            .call1((abscissa,))
+            .map_err(lift)?
+            .extract()
+            .map_err(|err| failed(format!("block {id} call: {err}")))?;
+        if !value.is_finite() {
+            return Err(FunctPythonError::from_kind(ErrorKind::NonFiniteResult(
+                value,
+            )));
+        }
+        Ok(value)
+    })
 }
 
 #[cfg(test)]
@@ -833,5 +1113,203 @@ mod tests {
         );
         assert_eq!(accessor_refs(&blocks[0].body).len(), 7);
         assert_eq!(accessor_refs(&blocks[1].body).len(), 89);
+    }
+
+    /// Builds a single-parameter block from raw body lines.
+    #[cfg(feature = "funct-python")]
+    fn eval_block(id: i64, name: &str, body: &[&str]) -> FunctPythonBlock {
+        FunctPythonBlock {
+            id,
+            name: name.to_string(),
+            param: "x".to_string(),
+            body: body.iter().map(|line| line.to_string()).collect(),
+        }
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_pure_math() {
+        let blocks = [eval_block(1, "linear", &["    return 2 * x + 1"])];
+        let context = PythonContext::default();
+        let value = evaluate_python(&blocks, 1, 3.0, &context).expect("eval");
+        assert_eq!(value, 7.0);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_body_import() {
+        let blocks = [eval_block(
+            1,
+            "floored",
+            &["    import math", "    return math.floor(x)"],
+        )];
+        let context = PythonContext::default();
+        let value = evaluate_python(&blocks, 1, 2.7, &context).expect("eval");
+        assert_eq!(value, 2.0);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_sibling_call() {
+        let blocks = [
+            eval_block(1, "double", &["    return 2 * x"]),
+            eval_block(2, "quad", &["    return 2 * double(x)"]),
+        ];
+        let context = PythonContext::default();
+        let value = evaluate_python(&blocks, 2, 3.0, &context).expect("eval");
+        assert_eq!(value, 12.0);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_time_scalars() {
+        let blocks = [eval_block(1, "clock", &["    return TIME + DT"])];
+        let context = PythonContext {
+            time: 1.5,
+            dt: 0.001,
+            ..Default::default()
+        };
+        let value = evaluate_python(&blocks, 1, 0.0, &context).expect("eval");
+        assert!((value - 1.501).abs() < 1e-12, "value {value}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_node_disp_str_dof() {
+        let blocks = [eval_block(1, "sense", &["    return node_disp(4, 'X')"])];
+        let context = PythonContext {
+            nodal_disp: BTreeMap::from([((4, 'X'), 2.5)]),
+            ..Default::default()
+        };
+        let value = evaluate_python(&blocks, 1, 0.0, &context).expect("eval");
+        assert_eq!(value, 2.5);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_node_vel_int_dof() {
+        let blocks = [eval_block(1, "sense", &["    return node_vel(4, 2)"])];
+        let context = PythonContext {
+            nodal_vel: BTreeMap::from([((4, 'Y'), -1.0)]),
+            ..Default::default()
+        };
+        let value = evaluate_python(&blocks, 1, 0.0, &context).expect("eval");
+        assert_eq!(value, -1.0);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_node_acce_lower_dof() {
+        let blocks = [eval_block(1, "sense", &["    return node_acce(7, 'z')"])];
+        let context = PythonContext {
+            nodal_acce: BTreeMap::from([((7, 'Z'), 3.0)]),
+            ..Default::default()
+        };
+        let value = evaluate_python(&blocks, 1, 0.0, &context).expect("eval");
+        assert_eq!(value, 3.0);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_element_var() {
+        let blocks = [eval_block(
+            1,
+            "sense",
+            &["    return element_var(9, 'HC_DSSE_F')"],
+        )];
+        let context = PythonContext {
+            element_var: BTreeMap::from([((9, "HC_DSSE_F".to_string()), 0.25)]),
+            ..Default::default()
+        };
+        let value = evaluate_python(&blocks, 1, 0.0, &context).expect("eval");
+        assert_eq!(value, 0.25);
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_missing_snapshot_fails_closed() {
+        let blocks = [eval_block(1, "sense", &["    return node_disp(4, 'X')"])];
+        let context = PythonContext::default();
+        let err = evaluate_python(&blocks, 1, 0.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+        assert!(!err.is_unavailable(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_bad_dof_fails_closed() {
+        let blocks = [eval_block(1, "sense", &["    return node_disp(4, 'W')"])];
+        let context = PythonContext {
+            nodal_disp: BTreeMap::from([((4, 'X'), 2.5)]),
+            ..Default::default()
+        };
+        let err = evaluate_python(&blocks, 1, 0.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_unknown_id_fails_closed() {
+        let blocks = [eval_block(1, "linear", &["    return x"])];
+        let context = PythonContext::default();
+        let err = evaluate_python(&blocks, 999, 1.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+        assert!(!err.is_unavailable(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_exception_fails_closed() {
+        let blocks = [eval_block(1, "boom", &["    raise ValueError('boom')"])];
+        let context = PythonContext::default();
+        let err = evaluate_python(&blocks, 1, 1.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_syntax_error_fails_closed() {
+        let blocks = [eval_block(1, "broken", &["    return x +"])];
+        let context = PythonContext::default();
+        let err = evaluate_python(&blocks, 1, 1.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_non_float_fails_closed() {
+        let blocks = [eval_block(1, "words", &["    return 'nope'"])];
+        let context = PythonContext::default();
+        let err = evaluate_python(&blocks, 1, 1.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_non_finite_fails_closed() {
+        let blocks = [eval_block(1, "huge", &["    return float('inf')"])];
+        let context = PythonContext::default();
+        let err = evaluate_python(&blocks, 1, 1.0, &context).expect_err("must fail");
+        assert!(err.is_evaluation(), "kind {err}");
+    }
+
+    #[cfg(feature = "funct-python")]
+    #[test]
+    fn eval_deck_roundtrip() {
+        let deck = RadDeck::parse_str("/FUNCT_PYTHON/1\ndef scaled(x):\n    return 3 * x\n/END\n")
+            .expect("deck");
+        let blocks = collect_blocks(&deck).expect("collect");
+        let context = PythonContext::default();
+        let value = evaluate_python(&blocks, 1, 2.0, &context).expect("eval");
+        assert_eq!(value, 6.0);
+    }
+
+    #[cfg(not(feature = "funct-python"))]
+    #[test]
+    fn eval_off_feature_is_unavailable() {
+        let context = PythonContext::default();
+        let err = evaluate_python(&[], 1, 0.0, &context).expect_err("must defer");
+        assert!(err.is_unavailable(), "kind {err}");
+        assert!(!err.is_evaluation(), "kind {err}");
     }
 }

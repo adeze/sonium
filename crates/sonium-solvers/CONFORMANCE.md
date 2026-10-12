@@ -58,7 +58,7 @@ To inspect the gate locally:
 
 ```text
 cargo test -p sonium-solvers --test factor_solve_properties --offline
-cargo run -p sonium-qa --bin qa-solvers-conformance-matrix \
+cargo run --release -p sonium-qa --bin qa-solvers-conformance-matrix \
   --features qa-binaries --offline
 ```
 

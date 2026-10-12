@@ -1,7 +1,7 @@
-//! QA: Hertz sphere vs Radioss/OpenRadioss rigid-wall contact.
+//! QA: Hertz sphere vs OpenCourant rigid-wall contact.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the pole displacement against the wall travel plus two custom
 //! force checks (wall-force balance, contact-stiffness window). The Hertz
 //! force magnitude itself is not asserted: the `sqrt(R delta)` patch is
@@ -61,7 +61,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -131,7 +131,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-hertz-sphere");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-hertz-sphere");
+    println!("PASS: qa-fem-opencourant-hertz-sphere");
+    println!("SUCCESS: qa-fem-opencourant-hertz-sphere");
 }

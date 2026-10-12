@@ -1,8 +1,8 @@
-//! QA: Scordelis-Lo roof shells vs Radioss/OpenRadioss quasi-statics.
+//! QA: Scordelis-Lo roof shells vs OpenCourant quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `RADISS_EXE` or
-//! `OPENCOURANT_EXE` is set and compares the free-edge midspan
+//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
+//! (or legacy `RADISS_EXE`) is set and compares the free-edge midspan
 //! deflection against a REGRESSION baseline (-0.2574), not the MacNeal
 //! target (-0.3024): the engine's quads lock 15% stiff on this curved
 //! membrane benchmark (see `shell_scordelis_lo_case`). Without an engine
@@ -70,7 +70,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -137,7 +137,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-shell-scordelis-lo");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-shell-scordelis-lo");
+    println!("PASS: qa-fem-opencourant-shell-scordelis-lo");
+    println!("SUCCESS: qa-fem-opencourant-shell-scordelis-lo");
 }

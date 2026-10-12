@@ -1054,8 +1054,10 @@ fn main() -> ExitCode {
         failed
     );
     if failed == 0 {
+        println!("SUCCESS: qa-fem-foam-laws");
         ExitCode::SUCCESS
     } else {
+        println!("FAILED: qa-fem-foam-laws");
         ExitCode::FAILURE
     }
 }

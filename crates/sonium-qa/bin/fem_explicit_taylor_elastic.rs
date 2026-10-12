@@ -1,6 +1,6 @@
 //! Phase-2 gate driver: elastic Taylor-class impact (native run).
 //!
-//! Mirrors the engine C3 leg `qa-fem-radioss-taylor-bar` (same frame: bar at
+//! Mirrors the engine C3 leg `qa-fem-opencourant-taylor-bar` (same frame: bar at
 //! rest, rigid wall rising at 227 m/s; Neo-Hookean E=117GPa/nu=0.35/rho=8930;
 //! 8x6 cylinder mesh; stop 4us) using ONLY Phase-1/2 production APIs:
 //! sonium-compute explicit state/dt, 2A `ExplicitStepDriver`, 2B
@@ -467,8 +467,10 @@ fn run_gate() -> Result<(), String> {
         failed = true;
     }
     if failed {
+        println!("FAILED: qa-fem-explicit-taylor-elastic");
         return Err("FAIL: qa-fem-explicit-taylor-elastic".to_string());
     }
     println!("PASS: qa-fem-explicit-taylor-elastic");
+    println!("SUCCESS: qa-fem-explicit-taylor-elastic");
     Ok(())
 }

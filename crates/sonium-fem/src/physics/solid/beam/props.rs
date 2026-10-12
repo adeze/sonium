@@ -1,4 +1,4 @@
-//! Radioss spring property cards mapped onto beam sections.
+//! OpenCourant spring property cards mapped onto beam sections.
 //!
 //! `/PROP/TYPE8 (SPR_GENE)`, `/PROP/TYPE25 (SPR_AXI)`, and `/PROP/TYPE32
 //! (SPR_PRE)` (Reference Guide pp. 1490-1493, 1531-1534, 1563-1567)

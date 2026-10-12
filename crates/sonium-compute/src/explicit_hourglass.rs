@@ -1,7 +1,8 @@
 //! Flanagan-Belytschko hourglass control and shock viscosity.
 //!
 //! Phase 1 lane 1C kernels for the explicit path: orthogonal hourglass
-//! stabilization of the under-integrated HEXA8 brick and the
+//! stabilization of the under-integrated HEXA8 brick (plus the Q4
+//! quadrilateral mirror added by Phase 7 lane 7D) and the
 //! von Neumann-Richtmyer artificial bulk viscosity for shock capturing.
 //! All kernels are dependency-free `f64` slice code in SI units; they take
 //! plain slices (never sparse matrices or FEM types) per contract P1C2.
@@ -21,6 +22,19 @@
 //! [`ExplicitState`](crate::explicit_state::ExplicitState). The four
 //! hourglass modes are `(xi*eta, eta*zeta, zeta*xi, xi*eta*zeta)` and the
 //! Gamma output is mode-major (`gamma[a * 8 + i]`, length 32).
+//!
+//! Q4 nodes use the counter-clockwise corner ordering shared with the
+//! bilinear shell quads, naturals `(xi, eta)` in `{-1, +1}^2`:
+//!
+//! ```text
+//! node:  0    1    2    3
+//! xi:   -1   +1   +1   -1
+//! eta:  -1   -1   +1   +1
+//! ```
+//!
+//! Q4 coordinates are node-major (`[x0, y0, ...]`, length 8). The single
+//! hourglass mode is `xi*eta` and the Gamma output is one vector
+//! (length 4).
 //!
 //! # Theory references
 //!
@@ -62,6 +76,15 @@ const NATURAL_COORDS: [[f64; 3]; 8] = [
     [1.0, 1.0, 1.0],
     [-1.0, 1.0, 1.0],
 ];
+
+/// Q4 natural node coordinates `(xi, eta)` in lane ordering.
+const Q4_NATURAL_COORDS: [[f64; 2]; 4] = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
+
+/// Flanagan-Belytschko Q4 hourglass base mode `xi*eta`.
+///
+/// Exact `+/-1` entries. On any parallelogram element the orthogonalized
+/// [`q4_gamma`] output equals this mode bit-for-bit.
+pub const Q4_HOURGLASS_BASE: [f64; 4] = [1.0, -1.0, 1.0, -1.0];
 
 /// Flanagan-Belytschko hourglass base modes `(xi*eta, eta*zeta, zeta*xi, xi*eta*zeta)`.
 ///
@@ -265,6 +288,154 @@ pub fn hexa8_hourglass_forces(gamma: &[f64], rates: &[f64], coeff: f64, forces: 
                 force += gamma[a * 8 + node] * modal[a];
             }
             forces[3 * node + i] = coeff * force;
+        }
+    }
+}
+
+/// Orthogonal hourglass vector of one Q4 element.
+///
+/// Computes the Flanagan-Belytschko Gamma vector `Gamma[I] = h[I] -
+/// sum_j (h . x[j]) * b[j, I]`, where `h` is the `xi*eta` base mode,
+/// `x[j]` the nodal coordinate vectors, and `b[j, I]` the centroid
+/// shape-function gradients from the uniform-strain operator. Gamma is
+/// orthogonal to the constant and linear fields, so hourglass forces
+/// built from it do zero work on rigid-body modes and constant-strain
+/// states (Flanagan and Belytschko, IJNME 17, 1981, quad section).
+///
+/// `coords` holds 4 node-major positions (length 8, meters); `gamma`
+/// receives the Gamma vector (length 4).
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_compute::explicit_hourglass::q4_gamma;
+///
+/// let coords = [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0];
+/// let mut gamma = [0.0; 4];
+/// q4_gamma(&coords, &mut gamma);
+/// // Unit square: Gamma equals the exact base mode.
+/// assert_eq!(gamma, [1.0, -1.0, 1.0, -1.0]);
+/// ```
+///
+/// # Panics
+///
+/// Panics if either slice has the wrong length, any coordinate is not
+/// finite, or the centroid Jacobian determinant is not positive finite
+/// (degenerate or inverted element).
+pub fn q4_gamma(coords: &[f64], gamma: &mut [f64]) {
+    assert_eq!(coords.len(), 8, "q4_gamma needs 4 node-major coords");
+    assert_eq!(gamma.len(), 4, "q4_gamma needs one Gamma vector");
+    assert!(
+        coords.iter().all(|v| v.is_finite()),
+        "q4_gamma needs finite coords"
+    );
+
+    // Centroid Jacobian J[j, m] = (1/4) sum_I nat[I, m] * x[j, I].
+    let mut jac = [[0.0; 2]; 2];
+    for (node, nat) in Q4_NATURAL_COORDS.iter().enumerate() {
+        for m in 0..2 {
+            for j in 0..2 {
+                jac[j][m] += nat[m] * coords[2 * node + j];
+            }
+        }
+    }
+    for row in jac.iter_mut() {
+        for value in row.iter_mut() {
+            *value *= 0.25;
+        }
+    }
+
+    let det = jac[0][0] * jac[1][1] - jac[0][1] * jac[1][0];
+    assert!(
+        det.is_finite() && det > 0.0,
+        "q4_gamma needs a non-degenerate element"
+    );
+
+    // Closed-form 2x2 inverse inv[m, j].
+    let inv = [
+        [jac[1][1] / det, -jac[0][1] / det],
+        [-jac[1][0] / det, jac[0][0] / det],
+    ];
+
+    // Centroid gradients b[j, I] = (1/4) sum_m nat[I, m] * inv[m, j].
+    let mut grad = [[0.0; 4]; 2];
+    for (node, nat) in Q4_NATURAL_COORDS.iter().enumerate() {
+        for j in 0..2 {
+            let mut sum = 0.0;
+            for m in 0..2 {
+                sum += nat[m] * inv[m][j];
+            }
+            grad[j][node] = 0.25 * sum;
+        }
+    }
+
+    // Projection c[j] = sum_J h[J] * x[j, J], then orthogonalize.
+    let mut proj = [0.0; 2];
+    for j in 0..2 {
+        let mut sum = 0.0;
+        for (node, h) in Q4_HOURGLASS_BASE.iter().enumerate() {
+            sum += h * coords[2 * node + j];
+        }
+        proj[j] = sum;
+    }
+    for (node, h) in Q4_HOURGLASS_BASE.iter().enumerate() {
+        gamma[node] = h - (proj[0] * grad[0][node] + proj[1] * grad[1][node]);
+    }
+}
+
+/// Q4 hourglass nodal forces from Gamma and modal rates.
+///
+/// Evaluates `f[i, I] = coeff * Gamma[I] * sum_J Gamma[J] *
+/// rates[i, J]`: the stiffness form when `rates` holds displacements
+/// (coefficient in N/m) or the viscous form when `rates` holds
+/// velocities (coefficient in N*s/m). The viscous power `P = v^T f =
+/// coeff * sum(q^2) >= 0` dissipates hourglass energy and vanishes on
+/// rigid-body modes by Gamma orthogonality.
+///
+/// `gamma` holds the Gamma vector (length 4), `rates` 4 node-major
+/// rate vectors (length 8); `forces` (length 8, newtons) is
+/// overwritten, so callers scatter-add it into the global residual.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_compute::explicit_hourglass::{Q4_HOURGLASS_BASE, q4_hourglass_forces};
+///
+/// // Rigid translation: hourglass forces vanish exactly.
+/// let rates = [2.0; 8];
+/// let mut forces = [1.0; 8];
+/// q4_hourglass_forces(&Q4_HOURGLASS_BASE, &rates, 0.1, &mut forces);
+/// assert!(forces.iter().all(|f| *f == 0.0));
+/// ```
+///
+/// # Panics
+///
+/// Panics if any slice has the wrong length, any Gamma or rate entry
+/// is not finite, or the coefficient is negative or not finite.
+pub fn q4_hourglass_forces(gamma: &[f64], rates: &[f64], coeff: f64, forces: &mut [f64]) {
+    assert_eq!(gamma.len(), 4, "q4 hourglass forces need one Gamma");
+    assert_eq!(rates.len(), 8, "q4 hourglass forces need 4 nodal rates");
+    assert_eq!(forces.len(), 8, "q4 hourglass forces need 4 nodal forces");
+    assert!(
+        gamma.iter().all(|v| v.is_finite()),
+        "q4 hourglass forces need finite Gamma"
+    );
+    assert!(
+        rates.iter().all(|v| v.is_finite()),
+        "q4 hourglass forces need finite rates"
+    );
+    assert!(
+        coeff.is_finite() && coeff >= 0.0,
+        "q4 hourglass forces need a non-negative finite coefficient"
+    );
+
+    for i in 0..2 {
+        let mut modal = 0.0;
+        for node in 0..4 {
+            modal += gamma[node] * rates[2 * node + i];
+        }
+        for node in 0..4 {
+            forces[2 * node + i] = coeff * gamma[node] * modal;
         }
     }
 }
@@ -639,5 +810,187 @@ mod tests {
     fn viscosity_batch_rejects_mismatched_lens() {
         let mut q = [0.0; 2];
         bulk_viscosity_q_batch(&[7800.0], &[4500.0], &[0.01], 1.1, 0.05, &[-100.0], &mut q);
+    }
+
+    /// Unit-square Q4 coordinates in lane node ordering.
+    fn unit_square() -> [f64; 8] {
+        [0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+    }
+
+    /// Maximum absolute Q4 Gamma residual against the linear fields.
+    fn max_q4_linear_residual(gamma: &[f64], coords: &[f64]) -> f64 {
+        let mut max = 0.0f64;
+        let mut dots = [0.0; 3];
+        for node in 0..4 {
+            let g = gamma[node];
+            dots[0] += g;
+            dots[1] += g * coords[2 * node];
+            dots[2] += g * coords[2 * node + 1];
+        }
+        for dot in dots {
+            max = max.max(dot.abs());
+        }
+        max
+    }
+
+    #[test]
+    fn q4_unit_square_gamma_matches_base_mode() {
+        let coords = unit_square();
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        assert_eq!(gamma, Q4_HOURGLASS_BASE);
+    }
+
+    #[test]
+    fn q4_unit_square_gamma_orthogonality_is_exact() {
+        let coords = unit_square();
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        assert_eq!(max_q4_linear_residual(&gamma, &coords), 0.0);
+    }
+
+    #[test]
+    fn q4_gamma_invariant_on_scaled_translated_square() {
+        // Affine maps preserve Gamma; here coords stay exactly
+        // representable so the output is still bit-exact.
+        let mut coords = [0.0; 8];
+        for (node, nat) in Q4_NATURAL_COORDS.iter().enumerate() {
+            coords[2 * node] = 2.0 + 3.0 * (nat[0] + 1.0) / 2.0;
+            coords[2 * node + 1] = -1.0 + 3.0 * (nat[1] + 1.0) / 2.0;
+        }
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        assert_eq!(gamma, Q4_HOURGLASS_BASE);
+    }
+
+    #[test]
+    fn q4_parallelogram_gamma_matches_base_mode() {
+        // Sheared parallelogram: still an affine image of the square.
+        let coords = [0.0, 0.0, 2.0, 0.0, 3.0, 1.0, 1.0, 1.0];
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        assert_eq!(gamma, Q4_HOURGLASS_BASE);
+    }
+
+    #[test]
+    fn q4_distorted_element_gamma_stays_orthogonal() {
+        let mut coords = unit_square();
+        coords[2 * 2] = 1.25;
+        coords[2 * 3 + 1] = 1.5;
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        // Orthogonality holds by construction for any valid shape.
+        assert!(max_q4_linear_residual(&gamma, &coords) < 1.0e-14);
+        // Distortion really moves Gamma off the base mode.
+        let moved = gamma
+            .iter()
+            .zip(Q4_HOURGLASS_BASE.iter())
+            .any(|(got, base)| (got - base).abs() > 1.0e-6);
+        assert!(moved, "distorted Gamma should differ from base mode");
+    }
+
+    #[test]
+    fn q4_hourglass_forces_vanish_on_rigid_modes() {
+        let coords = unit_square();
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        // Rigid translation plus rigid spin v = (-y/4, x/4).
+        let mut rates = [0.0; 8];
+        for node in 0..4 {
+            rates[2 * node] = 1.5 - coords[2 * node + 1] / 4.0;
+            rates[2 * node + 1] = -2.0 + coords[2 * node] / 4.0;
+        }
+        let mut forces = [7.0; 8];
+        q4_hourglass_forces(&gamma, &rates, 0.1, &mut forces);
+        assert!(forces.iter().all(|f| *f == 0.0));
+    }
+
+    #[test]
+    fn q4_hourglass_forces_vanish_on_linear_field() {
+        let coords = unit_square();
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        // Constant-strain state: vx = 2x - y, vy = x + 3y.
+        let mut rates = [0.0; 8];
+        for node in 0..4 {
+            let x = coords[2 * node];
+            let y = coords[2 * node + 1];
+            rates[2 * node] = 2.0 * x - y;
+            rates[2 * node + 1] = x + 3.0 * y;
+        }
+        let mut forces = [7.0; 8];
+        q4_hourglass_forces(&gamma, &rates, 0.1, &mut forces);
+        assert!(forces.iter().all(|f| *f == 0.0));
+    }
+
+    #[test]
+    fn q4_viscous_power_is_nonnegative_and_matches_modal_sum() {
+        let coords = unit_square();
+        let mut gamma = [0.0; 4];
+        q4_gamma(&coords, &mut gamma);
+        // Deterministic mixed velocity: hourglass plus rigid parts.
+        let mut rates = [0.0; 8];
+        for node in 0..4 {
+            let h = Q4_HOURGLASS_BASE[node];
+            rates[2 * node] = 0.5 * h + 1.0;
+            rates[2 * node + 1] = 0.25 * h - 0.5;
+        }
+        let coeff = 0.1;
+        let mut forces = [0.0; 8];
+        q4_hourglass_forces(&gamma, &rates, coeff, &mut forces);
+        let power: f64 = rates.iter().zip(forces.iter()).map(|(v, f)| v * f).sum();
+        assert!(power >= 0.0, "viscous power must dissipate");
+        assert!(power > 0.0, "hourglass content must dissipate");
+        // Independent modal identity P = coeff * sum(q^2).
+        let mut modal = 0.0;
+        for i in 0..2 {
+            let mut q = 0.0;
+            for node in 0..4 {
+                q += gamma[node] * rates[2 * node + i];
+            }
+            modal += q * q;
+        }
+        let expected = coeff * modal;
+        assert!(
+            (power - expected).abs() <= 1.0e-12 * expected.abs().max(1.0),
+            "power {power} vs modal {expected}"
+        );
+    }
+
+    #[test]
+    fn q4_stiffness_form_matches_hand_value() {
+        // Pure hourglass displacement in x: q = 4.
+        let mut rates = [0.0; 8];
+        for node in 0..4 {
+            rates[2 * node] = Q4_HOURGLASS_BASE[node];
+        }
+        let mut forces = [0.0; 8];
+        q4_hourglass_forces(&Q4_HOURGLASS_BASE, &rates, 2.0, &mut forces);
+        for node in 0..4 {
+            let expected = 8.0 * Q4_HOURGLASS_BASE[node];
+            assert_eq!(forces[2 * node], expected);
+            assert_eq!(forces[2 * node + 1], 0.0);
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "8")]
+    fn q4_gamma_rejects_short_coords() {
+        let mut gamma = [0.0; 4];
+        q4_gamma(&[0.0; 6], &mut gamma);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-degenerate")]
+    fn q4_gamma_rejects_degenerate_element() {
+        let mut gamma = [0.0; 4];
+        q4_gamma(&[0.0; 8], &mut gamma);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-negative finite coefficient")]
+    fn q4_forces_reject_negative_coeff() {
+        let mut forces = [0.0; 8];
+        q4_hourglass_forces(&[1.0; 4], &[0.0; 8], -0.1, &mut forces);
     }
 }

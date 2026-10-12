@@ -79,7 +79,7 @@ pub use saddle_point::{
     BlockPreconditionerConfig, LscBlocks, PcdBlocks, SADDLE_POINT_CHECKPOINT_FORMAT_VERSION,
     SaddlePointBlockAssumption, SaddlePointBlockAssumptions, SaddlePointBlockProvenance,
     SaddlePointBlockValidation, SaddlePointConfig, SaddlePointPreconditioner, SchurStrategy,
-    has_saddle_point_structure,
+    btdiagb_schur_from_monolithic, has_saddle_point_structure,
 };
 pub use schwarz::{
     AdditiveSchwarzPreconditioner, GeneoConfig, GeneoSetupError, SCHWARZ_CHECKPOINT_FORMAT_VERSION,

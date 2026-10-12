@@ -23,6 +23,7 @@ mod fbar;
 mod forms;
 mod hex;
 mod hex_explicit;
+mod hex_plastic;
 mod materials;
 mod tet_penta;
 
@@ -31,5 +32,6 @@ pub use fbar::*;
 pub use forms::*;
 pub use hex::*;
 pub use hex_explicit::*;
+pub use hex_plastic::*;
 pub use materials::*;
 pub use tet_penta::*;

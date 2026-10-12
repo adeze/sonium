@@ -14,6 +14,7 @@
 
 use crate::assembly::TripletMatrix;
 use crate::mesh::ElementType;
+use crate::parallelism::{POINTWISE_VALUES_PER_THREAD, collect_indexed};
 use std::cell::RefCell;
 
 /// Linear solver used by the most recent cached BDF step.
@@ -111,6 +112,50 @@ pub struct BdfWorkspace {
     previous_linear_rhs: RefCell<Option<Vec<f64>>>,
     last_linear_rhs: RefCell<Option<Vec<f64>>>,
     last_linear_system: RefCell<Option<(sonium_solvers::CsrMatrix<f64>, Vec<f64>)>>,
+    /// Velocity mass matrix in CSR form, converted once. The BDF right-hand
+    /// side needs `M * source` every step; reconverting the triplet each
+    /// step re-sorts millions of entries for an identical result.
+    pub mass_csr: sonium_solvers::CsrMatrix<f64>,
+    /// Fixed-pattern monolithic assembly cache (see
+    /// [`BdfMonoPatternCache`]). Built lazily from the first step's
+    /// triplets; per-step rebuilds then only recompute values.
+    pub(crate) mono_pattern_cache: RefCell<Option<BdfMonoPatternCache>>,
+    /// Memoized unsteady Schur product for backend (GPU) solves. The
+    /// `BtDiagB` assembly costs ~0.5s per fine-3D solve and is a pure
+    /// function of the assembled values, so consecutive same-matrix
+    /// solves (notably the coupled base/probe pair) share it. Keyed on
+    /// the fill's value fingerprints plus the per-step scales.
+    pub(crate) bdf_schur_cache: RefCell<Option<BdfSchurCacheEntry>>,
+}
+
+/// One memoized Schur product, keyed on the exact assembled values: the
+/// per-step scales plus the scattered triplets' value fingerprints.
+pub(crate) struct BdfSchurCacheEntry {
+    pub(crate) mass_coeff_bits: u64,
+    pub(crate) viscous_scale_bits: u64,
+    pub(crate) use_transported: bool,
+    pub(crate) value_fingerprints: ValueFingerprints,
+    /// Cached product, cloned out per use (pressure-block sized).
+    pub(crate) schur: sonium_solvers::CsrMatrix<f64>,
+    /// Cache hits served (observability for tests and telemetry).
+    pub(crate) hits: usize,
+}
+
+impl BdfSchurCacheEntry {
+    pub(crate) fn matches(
+        &self,
+        mass_coeff: f64,
+        viscous_scale: f64,
+        use_transported: bool,
+        fingerprints: ValueFingerprints,
+    ) -> bool {
+        self.mass_coeff_bits == mass_coeff.to_bits()
+            && self.viscous_scale_bits == viscous_scale.to_bits()
+            && self.use_transported == use_transported
+            && self.value_fingerprints.convection == fingerprints.convection
+            && self.value_fingerprints.body == fingerprints.body
+            && (!use_transported || self.value_fingerprints.transported == fingerprints.transported)
+    }
 }
 
 impl BdfWorkspace {
@@ -187,6 +232,8 @@ impl BdfWorkspace {
             quad_order,
         );
 
+        let mass_csr = mass_triplet.to_csr();
+
         Self {
             mass_triplet,
             viscous_unit_triplet,
@@ -204,6 +251,9 @@ impl BdfWorkspace {
             previous_linear_rhs: RefCell::new(None),
             last_linear_rhs: RefCell::new(None),
             last_linear_system: RefCell::new(None),
+            mass_csr,
+            mono_pattern_cache: RefCell::new(None),
+            bdf_schur_cache: RefCell::new(None),
         }
     }
 
@@ -230,6 +280,8 @@ impl BdfWorkspace {
         *self.previous_linear_rhs.get_mut() = None;
         *self.last_linear_rhs.get_mut() = None;
         *self.last_linear_system.get_mut() = None;
+        *self.mono_pattern_cache.get_mut() = None;
+        *self.bdf_schur_cache.get_mut() = None;
     }
 
     /// Return diagnostics from the most recent cached BDF linear solve.
@@ -260,15 +312,14 @@ impl BdfWorkspace {
     }
 
     /// Independently recompute the residual of an affine combination of the
-    /// two most recently solved right-hand sides against the cached matrix.
-    /// `factor=0` selects the previous RHS and `factor=1` the latest RHS.
+    /// two most recently solved right-hand sides against the most recently
+    /// published matrix. `factor=0` selects the previous RHS and `factor=1`
+    /// the latest RHS. The matrix comes from the published linear system
+    /// rather than the solver cache so backend (GPU) solves, which publish
+    /// no reusable host factorization, are covered exactly like CPU solves.
     pub fn affine_true_relative_residual(&self, x: &[f64], factor: f64) -> Option<f64> {
-        let cache = self.linear_solver_cache.borrow();
-        let matrix = match cache.as_ref()? {
-            BdfCachedLinearSolver::Direct { matrix, .. }
-            | BdfCachedLinearSolver::JacobiSchur { matrix, .. }
-            | BdfCachedLinearSolver::Ilu { matrix, .. } => matrix,
-        };
+        let system = self.last_linear_system.borrow();
+        let (matrix, _) = system.as_ref()?;
         let previous = self.previous_linear_rhs.borrow();
         let latest = self.last_linear_rhs.borrow();
         let previous = previous.as_ref()?;
@@ -289,6 +340,341 @@ impl BdfWorkspace {
             },
         );
         Some(residual_sq.sqrt() / rhs_sq.sqrt().max(f64::MIN_POSITIVE))
+    }
+}
+
+/// Fixed-pattern monolithic assembly cache for BDF steps.
+///
+/// Every per-step triplet (mass, viscous, coupling, convection, body-force)
+/// pushes unconditionally, and CSR conversion keeps explicit zeros, so the
+/// merged monolithic pattern depends only on the mesh, spaces, and forms —
+/// never on the solution values. This cache records that pattern once,
+/// together with pre-merged static parts and triplet-to-CSR scatter maps
+/// for the value-varying blocks. Per-step assembly then costs one fused
+/// `O(nnz)` combine plus three scatters instead of a 34M-entry merge and
+/// sort (about 22s per fine-3D step in debug builds).
+///
+/// Pattern safety is fail-closed: each value-varying triplet carries an
+/// FNV-1a fingerprint of its `(row, col)` positions, recomputed every step.
+/// A mismatch (or a transported-viscosity mode switch) rebuilds the cache
+/// from the current triplets instead of scattering into a stale pattern.
+pub(crate) struct BdfMonoPatternCache {
+    n_total: usize,
+    row_ptrs: Vec<usize>,
+    col_indices: Vec<usize>,
+    /// Merged unscaled mass values, length `nnz`.
+    mass_part: Vec<f64>,
+    /// Merged unit-viscosity values, length `nnz`. Unused on steps that
+    /// scatter a transported viscous block instead.
+    viscous_part: Vec<f64>,
+    /// Merged coupling values (`block_01` + `block_10`), length `nnz`.
+    static_part: Vec<f64>,
+    convection_map: Vec<usize>,
+    convection_fingerprint: u64,
+    body_map: Vec<usize>,
+    body_fingerprint: u64,
+    transported_map: Vec<usize>,
+    transported_fingerprint: u64,
+    has_transported: bool,
+}
+
+/// Value fingerprints of one fill's scattered triplets. Together with the
+/// per-step scales these identify the assembled values bitwise, so a
+/// downstream memo keyed on them can only serve an exact product.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ValueFingerprints {
+    pub(crate) convection: u64,
+    pub(crate) body: u64,
+    pub(crate) transported: u64,
+}
+
+/// FNV-1a fingerprint of triplet `(row, col)` positions (values excluded).
+fn triplet_position_fingerprint(rows: &[usize], cols: &[usize]) -> u64 {
+    const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+    const FNV_PRIME: u64 = 0x100000001b3;
+    let mut hash = FNV_OFFSET;
+    for chunk in [rows.len(), cols.len()] {
+        for byte in chunk.to_ne_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    for index in rows.iter().chain(cols.iter()) {
+        for byte in index.to_ne_bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+    hash
+}
+
+impl BdfMonoPatternCache {
+    /// Source tags for the one-pass union build.
+    const TAG_MASS: u8 = 0;
+    const TAG_VISCOUS: u8 = 1;
+    const TAG_STATIC: u8 = 2;
+    const TAG_CONVECTION: u8 = 3;
+    const TAG_BODY: u8 = 4;
+    const TAG_TRANSPORTED: u8 = 5;
+
+    /// Build the cache from one step's triplets. `block_01`/`block_10` are
+    /// the raw workspace coupling blocks (offsets applied here); `pin` is
+    /// the global pinned pressure DOF when a pressure block exists.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn build(
+        n_total: usize,
+        n_v: usize,
+        mass: &TripletMatrix<f64>,
+        viscous_unit: &TripletMatrix<f64>,
+        transported: Option<&TripletMatrix<f64>>,
+        block_01: &TripletMatrix<f64>,
+        block_10: &TripletMatrix<f64>,
+        convection: &TripletMatrix<f64>,
+        body: &TripletMatrix<f64>,
+        pin: Option<usize>,
+    ) -> Self {
+        // (packed key, tag, source index, value). Keys pack row/col into one
+        // u64 so a single sort yields row-major, column-ascending order —
+        // the same structure `to_csr` produces.
+        let mut entries: Vec<(u64, u8, usize, f64)> = Vec::new();
+        let mut push_source = |tag: u8,
+                               rows: &[usize],
+                               cols: &[usize],
+                               values: &[f64],
+                               row_offset: usize,
+                               col_offset: usize| {
+            entries.reserve(rows.len());
+            for k in 0..rows.len() {
+                let row = rows[k] + row_offset;
+                let col = cols[k] + col_offset;
+                debug_assert!(row < n_total && col < n_total);
+                entries.push((((row as u64) << 32) | col as u64, tag, k, values[k]));
+            }
+        };
+        push_source(Self::TAG_MASS, &mass.rows, &mass.cols, &mass.values, 0, 0);
+        push_source(
+            Self::TAG_VISCOUS,
+            &viscous_unit.rows,
+            &viscous_unit.cols,
+            &viscous_unit.values,
+            0,
+            0,
+        );
+        push_source(
+            Self::TAG_STATIC,
+            &block_01.rows,
+            &block_01.cols,
+            &block_01.values,
+            0,
+            n_v,
+        );
+        push_source(
+            Self::TAG_STATIC,
+            &block_10.rows,
+            &block_10.cols,
+            &block_10.values,
+            n_v,
+            0,
+        );
+        push_source(
+            Self::TAG_CONVECTION,
+            &convection.rows,
+            &convection.cols,
+            &convection.values,
+            0,
+            0,
+        );
+        push_source(Self::TAG_BODY, &body.rows, &body.cols, &body.values, 0, 0);
+        if let Some(triplet) = transported {
+            push_source(
+                Self::TAG_TRANSPORTED,
+                &triplet.rows,
+                &triplet.cols,
+                &triplet.values,
+                0,
+                0,
+            );
+        }
+        if let Some(dof) = pin {
+            entries.push((((dof as u64) << 32) | dof as u64, u8::MAX, 0, 0.0));
+        }
+        entries.sort_unstable_by_key(|entry| entry.0);
+
+        let mut row_ptrs = vec![0usize; n_total + 1];
+        let mut col_indices = Vec::with_capacity(entries.len());
+        let mut mass_part = Vec::with_capacity(entries.len());
+        let mut viscous_part = Vec::with_capacity(entries.len());
+        let mut static_part = Vec::with_capacity(entries.len());
+        let mut convection_map = vec![usize::MAX; convection.rows.len()];
+        let mut body_map = vec![usize::MAX; body.rows.len()];
+        let mut transported_map =
+            vec![usize::MAX; transported.map_or(0, |triplet| triplet.rows.len())];
+        let mut prev_key: Option<u64> = None;
+        let mut prev_row = usize::MAX;
+        for (key, tag, source_index, value) in entries {
+            if prev_key != Some(key) {
+                let row = (key >> 32) as usize;
+                let col = (key & 0xffff_ffff) as usize;
+                col_indices.push(col);
+                mass_part.push(0.0);
+                viscous_part.push(0.0);
+                static_part.push(0.0);
+                if prev_row == usize::MAX {
+                    for slot in &mut row_ptrs[..=row] {
+                        *slot = 0;
+                    }
+                } else {
+                    for slot in &mut row_ptrs[(prev_row + 1)..=row] {
+                        *slot = col_indices.len() - 1;
+                    }
+                }
+                prev_key = Some(key);
+                prev_row = row;
+            }
+            let position = col_indices.len() - 1;
+            match tag {
+                Self::TAG_MASS => mass_part[position] += value,
+                Self::TAG_VISCOUS => viscous_part[position] += value,
+                Self::TAG_STATIC => static_part[position] += value,
+                Self::TAG_CONVECTION => convection_map[source_index] = position,
+                Self::TAG_BODY => body_map[source_index] = position,
+                Self::TAG_TRANSPORTED => transported_map[source_index] = position,
+                _ => {}
+            }
+        }
+        if prev_row != usize::MAX {
+            let final_nnz = col_indices.len();
+            for slot in &mut row_ptrs[(prev_row + 1)..] {
+                *slot = final_nnz;
+            }
+        }
+        debug_assert!(convection_map.iter().all(|&index| index != usize::MAX));
+        debug_assert!(body_map.iter().all(|&index| index != usize::MAX));
+        debug_assert!(transported_map.iter().all(|&index| index != usize::MAX));
+
+        Self {
+            n_total,
+            row_ptrs,
+            col_indices,
+            mass_part,
+            viscous_part,
+            static_part,
+            convection_map,
+            convection_fingerprint: triplet_position_fingerprint(
+                &convection.rows,
+                &convection.cols,
+            ),
+            body_map,
+            body_fingerprint: triplet_position_fingerprint(&body.rows, &body.cols),
+            transported_map,
+            transported_fingerprint: transported.map_or(0, |triplet| {
+                triplet_position_fingerprint(&triplet.rows, &triplet.cols)
+            }),
+            has_transported: transported.is_some(),
+        }
+    }
+
+    /// Number of structural non-zeros in the cached pattern.
+    pub(crate) fn nnz(&self) -> usize {
+        self.col_indices.len()
+    }
+
+    /// FNV-1a fingerprint of triplet values in entry order.
+    fn values_fingerprint(values: &[f64]) -> u64 {
+        const FNV_OFFSET: u64 = 0xcbf29ce484222325;
+        const FNV_PRIME: u64 = 0x100000001b3;
+        let mut hash = FNV_OFFSET;
+        for chunk in values.len().to_ne_bytes() {
+            hash ^= u64::from(chunk);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        for value in values {
+            for byte in value.to_bits().to_ne_bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(FNV_PRIME);
+            }
+        }
+        hash
+    }
+
+    /// Fill fresh values for one step. Returns the values plus value
+    /// fingerprints of the scattered triplets, or `None` when a
+    /// value-varying triplet no longer matches the cached pattern, in
+    /// which case the caller must rebuild the cache from the current
+    /// triplets.
+    pub(crate) fn try_fill(
+        &self,
+        mass_coeff: f64,
+        viscous_scale: f64,
+        use_transported: bool,
+        transported: Option<&TripletMatrix<f64>>,
+        convection: &TripletMatrix<f64>,
+        body: &TripletMatrix<f64>,
+    ) -> Option<(Vec<f64>, ValueFingerprints)> {
+        if use_transported != self.has_transported {
+            return None;
+        }
+        if triplet_position_fingerprint(&convection.rows, &convection.cols)
+            != self.convection_fingerprint
+            || convection.rows.len() != self.convection_map.len()
+        {
+            return None;
+        }
+        if triplet_position_fingerprint(&body.rows, &body.cols) != self.body_fingerprint
+            || body.rows.len() != self.body_map.len()
+        {
+            return None;
+        }
+        if let Some(triplet) = transported {
+            if triplet_position_fingerprint(&triplet.rows, &triplet.cols)
+                != self.transported_fingerprint
+                || triplet.rows.len() != self.transported_map.len()
+            {
+                return None;
+            }
+        }
+        let nnz = self.nnz();
+        let use_unit_viscous = !use_transported;
+        let mut values = collect_indexed(nnz, POINTWISE_VALUES_PER_THREAD, |i| {
+            let unit = if use_unit_viscous {
+                viscous_scale * self.viscous_part[i]
+            } else {
+                0.0
+            };
+            mass_coeff * self.mass_part[i] + unit + self.static_part[i]
+        });
+        for k in 0..convection.rows.len() {
+            values[self.convection_map[k]] += convection.values[k];
+        }
+        for k in 0..body.rows.len() {
+            values[self.body_map[k]] += body.values[k];
+        }
+        if let Some(triplet) = transported {
+            for k in 0..triplet.rows.len() {
+                values[self.transported_map[k]] += triplet.values[k];
+            }
+        }
+        Some((
+            values,
+            ValueFingerprints {
+                convection: Self::values_fingerprint(&convection.values),
+                body: Self::values_fingerprint(&body.values),
+                transported: transported
+                    .map_or(0, |triplet| Self::values_fingerprint(&triplet.values)),
+            },
+        ))
+    }
+
+    /// Assemble the output CSR shell (structure cloned, values filled).
+    pub(crate) fn to_csr(&self, values: Vec<f64>) -> sonium_solvers::CsrMatrix<f64> {
+        debug_assert_eq!(values.len(), self.nnz());
+        sonium_solvers::CsrMatrix::from_raw_parts(
+            self.n_total,
+            self.n_total,
+            self.row_ptrs.clone(),
+            self.col_indices.clone(),
+            values,
+        )
     }
 }
 

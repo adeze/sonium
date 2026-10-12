@@ -245,8 +245,10 @@ fn main() {
              are 3D /BRICK)",
             AUDITED_CASES.len()
         );
+        println!("SUCCESS: qa-fem-axisym");
     } else {
         println!("VERDICT: FAIL ({failures} probe failures)");
+        println!("FAILED: qa-fem-axisym");
         std::process::exit(1);
     }
 }

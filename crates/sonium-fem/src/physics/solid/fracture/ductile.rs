@@ -584,7 +584,7 @@ impl ErosionSet {
 /// Considere's criterion gives diffuse necking at `d sigma / d eps = sigma`,
 /// which for `sigma = K eps^n` is exactly `eps = n`. The full necking bar
 /// has no closed form; this value plus the Wolfram incremental reference
-/// and the Radioss deck are the validation legs (see the necking QA).
+/// and the OpenCourant deck are the validation legs (see the necking QA).
 ///
 /// # Examples
 ///

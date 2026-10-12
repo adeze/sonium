@@ -22,7 +22,7 @@ if command -v numactl >/dev/null 2>&1; then numactl --hardware > "$output_root/n
 if command -v numastat >/dev/null 2>&1; then numastat -m > "$output_root/numastat-memory.txt"; else echo "numastat unavailable" > "$output_root/numastat-memory.txt"; fi
 
 SONIUM_OUTPUT_DIR="$output_root" CARGO_TARGET_DIR="$target_dir" \
-  cargo run -p sonium-qa --features qa-binaries --bin qa-solvers-numa-partitioning-report \
+  cargo run --release -p sonium-qa --features qa-binaries --bin qa-solvers-numa-partitioning-report \
   > "$output_root/producer.log" 2>&1
 
 (cd "$output_root" && sha256sum solvers_numa_partitioning_report.json > solvers_numa_partitioning_report.json.sha256)

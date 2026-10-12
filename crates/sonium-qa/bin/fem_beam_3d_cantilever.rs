@@ -2,7 +2,7 @@
 //!
 //! Covers the axial mode, both bending planes, and an oblique mesh
 //! orientation. The C3 comparison case lives in
-//! `fem_radioss_beam_3d_cantilever.rs`.
+//! `fem_opencourant_beam_3d_cantilever.rs`.
 
 // Rust guideline compliant 2026-02-21
 

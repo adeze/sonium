@@ -223,7 +223,7 @@ fn validate_solved_modes(room: ShoeboxRoom, mesh: &Mesh) -> Result<SolvedModeMet
     // roundoff by construction, so it is gated separately below with an
     // absolute residual, a frequency cap, and a constancy check.
     for j in 1..SOLVED_MODE_COUNT {
-        if result.residual_norms[j] > LOBPCG_TOLERANCE {
+        if !result.residual_norms[j].is_finite() || result.residual_norms[j] > LOBPCG_TOLERANCE {
             return Err(format!(
                 "LOBPCG pair {j} residual {:.3e} exceeds {LOBPCG_TOLERANCE:.1e} after {} iterations",
                 result.residual_norms[j], result.iterations
@@ -306,7 +306,7 @@ fn validate_solved_modes(room: ShoeboxRoom, mesh: &Mesh) -> Result<SolvedModeMet
             rank + 1,
             rel = rel * 100.0
         );
-        if rel > SOLVED_FREQUENCY_MAX_REL_ERROR {
+        if !rel.is_finite() || rel > SOLVED_FREQUENCY_MAX_REL_ERROR {
             return Err(format!(
                 "solved mode {} relative error {rel:.2}% exceeds {tol:.2}%",
                 rank + 1,
@@ -348,7 +348,7 @@ fn validate_solved_modes(room: ShoeboxRoom, mesh: &Mesh) -> Result<SolvedModeMet
         let scale = vector_norm(&stiffness_action) + eigenvalue.abs() * mass_norm;
         let rel = residual_norm / scale;
         max_residual = max_residual.max(rel);
-        if rel > EIGEN_RESIDUAL_TOLERANCE {
+        if !rel.is_finite() || rel > EIGEN_RESIDUAL_TOLERANCE {
             return Err(format!(
                 "solved mode {j} eigen-residual {rel:.3e} exceeds {EIGEN_RESIDUAL_TOLERANCE:.1e}"
             ));
@@ -369,7 +369,9 @@ fn validate_solved_modes(room: ShoeboxRoom, mesh: &Mesh) -> Result<SolvedModeMet
         }
         writer.add_point_scalar(&format!("solved_mode_{j}"), &mode);
     }
-    let _ = writer.write(dir.join("shoebox_solved_modes.vtu"));
+    writer
+        .write(dir.join("shoebox_solved_modes.vtu"))
+        .map_err(|error| format!("solved modal-field output failed: {error}"))?;
 
     Ok(SolvedModeMetrics {
         zero_mode_frequency_hz: frequencies[0],
@@ -404,7 +406,9 @@ fn run() -> Result<SolvedModeMetrics, String> {
     );
 
     let dir = binary_output_dir(env!("CARGO_PKG_NAME"), env!("CARGO_BIN_NAME"));
-    let _ = VtuWriter::new(&mesh).write(dir.join("shoebox_mesh.vtu"));
+    VtuWriter::new(&mesh)
+        .write(dir.join("shoebox_mesh.vtu"))
+        .map_err(|error| format!("room mesh output failed: {error}"))?;
     println!("Rayleigh operator-consistency leg:");
     validate_mode(
         room,

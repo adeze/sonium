@@ -1,8 +1,8 @@
-//! QA: clamped circular plate shells vs Radioss/OpenRadioss quasi-statics.
+//! QA: clamped circular plate shells vs OpenCourant quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `RADISS_EXE` or
-//! `OPENCOURANT_EXE` is set and compares the center deflection against
+//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
+//! (or legacy `RADISS_EXE`) is set and compares the center deflection against
 //! the Kirchhoff closed form. Without an engine it prints the
 //! documented skip message and exits 0.
 
@@ -68,7 +68,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -112,7 +112,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-shell-clamped-plate");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-shell-clamped-plate");
+    println!("PASS: qa-fem-opencourant-shell-clamped-plate");
+    println!("SUCCESS: qa-fem-opencourant-shell-clamped-plate");
 }

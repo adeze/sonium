@@ -1,4 +1,4 @@
-//! Universal Radioss deck reader with typed card decoders.
+//! Universal OpenCourant deck reader with typed card decoders.
 //!
 //! This module parses starter and engine (`.rad`) decks into a [`RadDeck`]:
 //! a flat card list with frozen [`DeckCard`] shapes (family, identifier,
@@ -624,14 +624,14 @@ impl std::error::Error for ParseError {
 /// the cycle detector, at negligible cost to legitimate decks.
 const MAX_INCLUDE_DEPTH: usize = 16;
 
-/// Fixed width of Radioss real fields in characters.
+/// Fixed width of OpenCourant real fields in characters.
 ///
 /// The Reference Guide block format lays out ten 10-character fields per
 /// row; reals span two fields. The 20-column fallback repair and the
 /// column-aware cards rely on this width.
 const REAL_FIELD_WIDTH: usize = 20;
 
-/// Fixed width of Radioss integer fields in characters.
+/// Fixed width of OpenCourant integer fields in characters.
 ///
 /// Boundary and wall header rows pack codes and identifiers into
 /// consecutive 10-character fields; omitted leading fields keep their
@@ -1014,7 +1014,7 @@ fn push_include(
 
 /// Reports comment lines dropped outside `/FUNCT_PYTHON`.
 ///
-/// `#` marks Radioss comments and `$` marks converter comments (a
+/// `#` marks OpenCourant comments and `$` marks converter comments (a
 /// tstpeel `/TH/RBODY` case); bare `Copyright>` lines are license debris
 /// from unpatched vendor `qadiags.inc` files (see miniqa `PATCHES.md`).
 /// The caller passes the trimmed-start line.

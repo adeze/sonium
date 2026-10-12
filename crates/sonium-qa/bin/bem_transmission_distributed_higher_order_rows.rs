@@ -17,6 +17,13 @@ const CASE_ID: &str = "bem.transmission-distributed-higher-order-rows.v1";
 /// trace row is owned exactly once; loosening it weakens the gate.
 const LOCAL_ACTION_TOLERANCE: f64 = 1.0e-10;
 
+fn valid_action(values: &[Complex64], expected_len: usize) -> bool {
+    values.len() == expected_len
+        && values
+            .iter()
+            .all(|value| value.re.is_finite() && value.im.is_finite())
+}
+
 fn run() -> Result<(usize, usize, f64, usize, usize, usize), String> {
     let mut mesh = generate_cubed_sphere_quad_mesh(0.2, 1);
     let dof_map = mesh
@@ -58,6 +65,13 @@ fn run() -> Result<(usize, usize, f64, usize, usize, usize), String> {
     let transpose = compressed
         .apply_transpose_checked(&input)
         .map_err(|error| error.to_string())?;
+    for values in [&global, &transpose] {
+        if !valid_action(values, system.total_dofs()) {
+            return Err(
+                "global transmission action has non-finite entries or an invalid length".into(),
+            );
+        }
+    }
     let plan = plan_distributed_rows_with_dof_count(&mesh.elements, 3, dof_map.num_dofs())
         .map_err(|error| error.to_string())?;
     let rows_by_rank = plan
@@ -72,6 +86,13 @@ fn run() -> Result<(usize, usize, f64, usize, usize, usize), String> {
         let local_transpose = compressed
             .apply_transpose_rows_checked(&input, rows)
             .map_err(|error| error.to_string())?;
+        for values in [&local, &local_transpose] {
+            if !valid_action(values, rows.len()) {
+                return Err(
+                    "local transmission action has non-finite entries or an invalid length".into(),
+                );
+            }
+        }
         covered.extend(rows.iter().copied());
         for (slot, &row) in rows.iter().enumerate() {
             maximum_error = maximum_error.max((local[slot] - global[row]).norm());
@@ -146,5 +167,22 @@ fn main() {
     } else {
         println!("FAILED");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actions_reject_nonfinite_components_and_missing_entries() {
+        let finite = Complex64::new(1.0, -2.0);
+        assert!(valid_action(&[finite], 1));
+        assert!(!valid_action(&[], 1));
+        assert!(!valid_action(&[finite, finite], 1));
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(!valid_action(&[finite, Complex64::new(invalid, 0.0)], 2));
+            assert!(!valid_action(&[finite, Complex64::new(0.0, invalid)], 2));
+        }
     }
 }

@@ -1,6 +1,6 @@
 //! Piecewise-linear function and table interpolation for crash laws.
 //!
-//! Contains the frozen Phase-3 readers for Radioss `/FUNCT` (1-D) and
+//! Contains the frozen Phase-3 readers for OpenCourant `/FUNCT` (1-D) and
 //! `/TABLE` (2-D) curves: strict validation at construction, monotone
 //! abscissae, clamped ends, and bilinear evaluation. Material lanes
 //! consume this module read-only; deck-text parsing lives in the
@@ -11,7 +11,7 @@
 //! - SI units flow through untouched; this module is unit-agnostic.
 //! - Abscissae must be finite and strictly increasing.
 //! - Evaluation outside the tabulated range holds the endpoint value
-//!   (constant extension, the Radioss default).
+//!   (constant extension, the OpenCourant default).
 
 // Rust guideline compliant 2026-02-21
 

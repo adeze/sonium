@@ -443,8 +443,10 @@ fn main() {
 
     if passed == total {
         println!("PASS: qa-fem-rupture ({passed}/{total})");
+        println!("SUCCESS: qa-fem-rupture");
     } else {
         println!("FAIL: qa-fem-rupture ({passed}/{total})");
+        println!("FAILED: qa-fem-rupture");
         std::process::exit(1);
     }
 }

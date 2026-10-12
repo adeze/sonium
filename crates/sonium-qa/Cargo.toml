@@ -1,6 +1,6 @@
 [package]
 name = "sonium-qa"
-version = "0.1.5"
+version = "0.1.6"
 description = "Quality assurance suite: accuracy validation binaries for sonium"
 edition = { workspace = true }
 authors = { workspace = true }
@@ -56,6 +56,9 @@ half = { workspace = true }
 # Error handling
 thiserror = { workspace = true }
 anyhow = { workspace = true }
+
+# Embedded Python for /FUNCT_PYTHON (Phase 7, feature-gated)
+pyo3 = { workspace = true, optional = true }
 
 # Serialization
 serde = { workspace = true }
@@ -3517,14 +3520,15 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-plasticity-thick-cylinder"
-path = "bin/fem_radioss_plasticity_thick_cylinder.rs"
+name = "qa-fem-opencourant-plasticity-thick-cylinder"
+path = "bin/fem_opencourant_plasticity_thick_cylinder.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [features]
 default = []
 qa-binaries = []
+funct-python = ["dep:pyo3"]
 meshlang = []
 meshlang-wasm = ["dep:sonium-roomsim"]
 # Binary-local unit tests are opt-in. Ordinary `cargo test -p sonium-qa`
@@ -5749,14 +5753,14 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-cantilever"
-path = "bin/fem_radioss_cantilever.rs"
+name = "qa-fem-opencourant-cantilever"
+path = "bin/fem_opencourant_cantilever.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-hertz-sphere"
-path = "bin/fem_radioss_hertz_sphere.rs"
+name = "qa-fem-opencourant-hertz-sphere"
+path = "bin/fem_opencourant_hertz_sphere.rs"
 test = false
 required-features = ["qa-binaries"]
 
@@ -5803,26 +5807,26 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-beam-3d-cantilever"
-path = "bin/fem_radioss_beam_3d_cantilever.rs"
+name = "qa-fem-opencourant-beam-3d-cantilever"
+path = "bin/fem_opencourant_beam_3d_cantilever.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-beam-torsion"
-path = "bin/fem_radioss_beam_torsion.rs"
+name = "qa-fem-opencourant-beam-torsion"
+path = "bin/fem_opencourant_beam_torsion.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-shell-scordelis-lo"
-path = "bin/fem_radioss_shell_scordelis_lo.rs"
+name = "qa-fem-opencourant-shell-scordelis-lo"
+path = "bin/fem_opencourant_shell_scordelis_lo.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-shell-clamped-plate"
-path = "bin/fem_radioss_shell_clamped_plate.rs"
+name = "qa-fem-opencourant-shell-clamped-plate"
+path = "bin/fem_opencourant_shell_clamped_plate.rs"
 test = false
 required-features = ["qa-binaries"]
 
@@ -5863,26 +5867,26 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-taylor-bar"
-path = "bin/fem_radioss_taylor_bar.rs"
+name = "qa-fem-opencourant-taylor-bar"
+path = "bin/fem_opencourant_taylor_bar.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-rail-crush"
-path = "bin/fem_radioss_rail_crush.rs"
+name = "qa-fem-opencourant-rail-crush"
+path = "bin/fem_opencourant_rail_crush.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-bending-3pt"
-path = "bin/fem_radioss_bending_3pt.rs"
+name = "qa-fem-opencourant-bending-3pt"
+path = "bin/fem_opencourant_bending_3pt.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-necking-bar"
-path = "bin/fem_radioss_necking_bar.rs"
+name = "qa-fem-opencourant-necking-bar"
+path = "bin/fem_opencourant_necking_bar.rs"
 test = false
 required-features = ["qa-binaries"]
 
@@ -5911,14 +5915,14 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-beam-curved-arch"
-path = "bin/fem_radioss_beam_curved_arch.rs"
+name = "qa-fem-opencourant-beam-curved-arch"
+path = "bin/fem_opencourant_beam_curved_arch.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-beam-warping"
-path = "bin/fem_radioss_beam_warping.rs"
+name = "qa-fem-opencourant-beam-warping"
+path = "bin/fem_opencourant_beam_warping.rs"
 test = false
 required-features = ["qa-binaries"]
 
@@ -5941,14 +5945,14 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-shell-twisted-beam"
-path = "bin/fem_radioss_shell_twisted_beam.rs"
+name = "qa-fem-opencourant-shell-twisted-beam"
+path = "bin/fem_opencourant_shell_twisted_beam.rs"
 test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
-name = "qa-fem-radioss-shell-oht-elastic"
-path = "bin/fem_radioss_shell_oht_elastic.rs"
+name = "qa-fem-opencourant-shell-oht-elastic"
+path = "bin/fem_opencourant_shell_oht_elastic.rs"
 test = false
 required-features = ["qa-binaries"]
 
@@ -5967,5 +5971,35 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-oc-bench"
 path = "bin/oc_bench.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-explicit-taylor-plastic"
+path = "bin/fem_explicit_taylor_plastic.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-shell-explicit"
+path = "bin/fem_shell_explicit.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-foam-native"
+path = "bin/fem_foam_native.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-fem-rupture-native"
+path = "bin/fem_rupture_native.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-funct-python"
+path = "bin/fem_funct_python.rs"
 test = false
 required-features = ["qa-binaries"]

@@ -1,6 +1,6 @@
 //! Tabulated triaxiality failure with damage accumulation (`/FAIL/TAB1`).
 //!
-//! Implements the Radioss tabulated failure model: the plastic failure
+//! Implements the OpenCourant tabulated failure model: the plastic failure
 //! strain comes from user tables over stress triaxiality, strain rate,
 //! and Lode angle, scaled by element-size and temperature factors, and
 //! damage accumulates per step until it exceeds the critical value.
@@ -14,7 +14,7 @@
 //!   rate the value extrapolates linearly from the last two rows
 //!   (Reference Guide `/FAIL/TAB1` comment 3). Triaxiality ends clamp
 //!   through the frozen [`Funct1D`](super::super::plasticity::funct::Funct1D)
-//!   reader, the Radioss default.
+//!   reader, the OpenCourant default.
 //! - Damage with parameter input is `dD = (dep/ef) . n . Dp^(1-1/n)`
 //!   (Reference Guide (959)); with curve input `dD = (dep/ef) . fd(ep)`
 //!   ((960)). Rupture trips when accumulated damage exceeds `Dcrit` ((956)).
@@ -392,6 +392,191 @@ impl FailTab {
     }
 }
 
+/// Fading-exponent softening after diffuse necking (`Fad_exp`).
+///
+/// Mirrors the `/FAIL/TAB1` instability treatment (Reference Guide eq
+/// 962 and `fail_tab_c.F`): past the necking onset the reported stress
+/// scales by `1 - ((u - dd)/(1 - dd))^fad`, where `u` runs from the
+/// onset fraction `dd` at necking to 1 at fracture. Only shells neck
+/// in the vendor model; the native step applies wherever the caller
+/// drives it and documents the scope.
+///
+/// # Examples
+///
+/// ```rust
+/// use sonium_fem::physics::solid::fracture::fail_tab::{FadeSoftening, FadeState};
+///
+/// let fade = FadeSoftening::new(5.0, 0.2);
+/// let state = FadeState { neck: 1.0, soft: 0.5 };
+/// let scale = fade.scale_only(&state);
+/// assert!(scale < 1.0 && scale > 0.0);
+/// ```
+#[derive(Debug, Clone)]
+pub struct FadeSoftening {
+    /// Fading exponent (card `Fad_exp`; guide recommends 5-10).
+    ///
+    /// Zero disables softening (scale stays 1). A negative value
+    /// reads the exponent from [`exponent_curve`](Self::exponent_curve)
+    /// at the element-size ratio, else falls back to its magnitude.
+    pub exponent: f64,
+    /// Instability strain (card `inst_start`; default is `Dp`).
+    ///
+    /// Constant necking strain over triaxiality when
+    /// [`neck_curve`](Self::neck_curve) is unset.
+    pub neck_strain: f64,
+    /// Softening-start fraction (card `D`, starter maps 1 to 0.999).
+    pub onset_fraction: f64,
+    /// Instability strain vs triaxiality (`table2_ID`), optional.
+    pub neck_curve: Option<Funct1D>,
+    /// Exponent vs size ratio (negative `Fad_exp`), optional.
+    pub exponent_curve: Option<Funct1D>,
+}
+
+/// Post-instability progress (engine UVAR slots 3-4).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FadeState {
+    /// Necking accumulation `sum w dep/ef_neck` (UVAR3).
+    ///
+    /// Softening starts once this reaches 1.
+    pub neck: f64,
+    /// Post-onset fraction `sum w dep/(ef - ef_neck)` (UVAR4).
+    pub soft: f64,
+}
+
+impl FadeSoftening {
+    /// Builds fading softening from exponent and necking strain.
+    ///
+    /// Sets the onset fraction to 0.999, the starter-mapped value of
+    /// the card default `D = 1` (`hm_read_fail_tab1.F`), and leaves
+    /// both optional curves unset.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::fracture::fail_tab::FadeSoftening;
+    ///
+    /// let fade = FadeSoftening::new(5.0, 0.2);
+    /// assert!((fade.onset_fraction - 0.999).abs() < 1e-15);
+    /// ```
+    pub fn new(exponent: f64, neck_strain: f64) -> Self {
+        Self {
+            exponent,
+            neck_strain,
+            onset_fraction: 0.999,
+            neck_curve: None,
+            exponent_curve: None,
+        }
+    }
+
+    /// Resolves the fading exponent at a size ratio.
+    ///
+    /// Positive card values pass through; negative values evaluate
+    /// the exponent curve at `lambda` (element size over reference),
+    /// falling back to the magnitude without a curve.
+    pub fn resolved_exponent(&self, lambda: f64) -> f64 {
+        if self.exponent >= 0.0 {
+            return self.exponent;
+        }
+        self.exponent_curve
+            .as_ref()
+            .map_or(-self.exponent, |curve| curve.eval(lambda))
+    }
+
+    /// Resolves the necking strain at a triaxiality.
+    ///
+    /// Evaluates the instability table when set, else the constant.
+    pub fn necking_strain(&self, triaxiality: f64) -> f64 {
+        self.neck_curve
+            .as_ref()
+            .map_or(self.neck_strain, |curve| curve.eval(triaxiality))
+    }
+
+    /// Stress scale for a post-onset state without stepping.
+    ///
+    /// Returns `1 - ((soft - dd)/(1 - dd))^fad` above the onset
+    /// fraction and 1 below it, clamped to `[0, 1]`. Pure helper for
+    /// closed-form checks; stepping lives in
+    /// [`FailTab::fade_step`].
+    pub fn scale_only(&self, state: &FadeState) -> f64 {
+        fade_scale(self.exponent, self.onset_fraction, state.soft)
+    }
+}
+
+/// Fading scale from exponent, onset fraction, progress.
+///
+/// Shared by [`FadeSoftening::scale_only`] and the stepper so the
+/// closed form stays single-sourced.
+fn fade_scale(exponent: f64, onset: f64, soft: f64) -> f64 {
+    if exponent == 0.0 || soft <= onset {
+        return 1.0;
+    }
+    let span = (1.0 - onset).max(FAILURE_STRAIN_FLOOR);
+    let scale = 1.0 - ((soft - onset) / span).powf(exponent.max(0.0));
+    scale.clamp(0.0, 1.0)
+}
+
+impl FailTab {
+    /// Advances fading softening one step, returning the stress scale.
+    ///
+    /// Mirrors `fail_tab_c.F`: `d_damage` (this step's damage increment
+    /// from [`increment_at_rate`](Self::increment_at_rate), either
+    /// weight branch) rescales onto the necking strain while the mean
+    /// stress stays tensile, then onto the neck-to-fracture span past
+    /// onset. The returned `DMG_SCALE` multiplies the reported stress;
+    /// law history commits unscaled, matching the engine order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use sonium_fem::physics::solid::fracture::fail_tab::{
+    ///     FadeSoftening, FadeState, FailTab,
+    /// };
+    /// use sonium_fem::physics::solid::plasticity::funct::Funct1D;
+    ///
+    /// let curve = Funct1D::new(vec![-1.0, 1.0], vec![0.36, 0.36]).unwrap();
+    /// let tab = FailTab::new(vec![0.0], vec![0.0], vec![curve]).unwrap();
+    /// let mut fade = FadeSoftening::new(2.0, 0.2);
+    /// fade.onset_fraction = 0.0;
+    /// let mut state = FadeState::default();
+    /// // Damage 0.5 at ef 0.36 reaches necking (0.5 x 0.36/0.2 = 0.9).
+    /// let scale = tab.fade_step(&fade, &mut state, 0.5, 0.36, 0.0, 1.0, 1.0);
+    /// assert!((scale - 1.0).abs() < 1e-15);
+    /// assert!((state.neck - 0.9).abs() < 1e-12);
+    /// ```
+    pub fn fade_step(
+        &self,
+        fade: &FadeSoftening,
+        state: &mut FadeState,
+        d_damage: f64,
+        failure_strain: f64,
+        triaxiality: f64,
+        mean_stress: f64,
+        size_lambda: f64,
+    ) -> f64 {
+        let _ = self;
+        if d_damage > 0.0 {
+            let ef_neck = fade.necking_strain(triaxiality);
+            // Necking accumulates while tensile (engine UVAR3); the
+            // onset check below runs in the same step, so softening
+            // starts immediately once necking trips.
+            if mean_stress >= 0.0 && ef_neck > 0.0 {
+                state.neck += d_damage * failure_strain / ef_neck;
+            }
+            if state.neck >= 1.0 {
+                let span = failure_strain - ef_neck;
+                if span <= 0.0 {
+                    // Necked past the fracture strain: fully soft.
+                    state.soft = 1.0;
+                } else {
+                    state.soft += d_damage * failure_strain / span;
+                }
+            }
+        }
+        let exponent = fade.resolved_exponent(size_lambda);
+        fade_scale(exponent, fade.onset_fraction, state.soft)
+    }
+}
+
 /// Brackets an input on a validated grid with clamped ends.
 ///
 /// Returns the lower and upper node indices plus the linear fraction;
@@ -549,5 +734,93 @@ mod tests {
         // Zero step time stays finite through the rate floor.
         let got = tab.increment(&mk(0.01), 0.0, 0.0, 0.0, 0.0);
         assert!(got.is_finite());
+    }
+
+    #[test]
+    fn fade_scale_matches_closed_form() {
+        let mut fade = FadeSoftening::new(2.0, 0.2);
+        fade.onset_fraction = 0.25;
+        // Below onset the scale is exactly one.
+        let pre = FadeState {
+            neck: 0.5,
+            soft: 0.2,
+        };
+        assert!((fade.scale_only(&pre) - 1.0).abs() < 1e-15);
+        // Midpoint: 1 - ((0.625-0.25)/0.75)^2 = 0.75.
+        let mid = FadeState {
+            neck: 1.5,
+            soft: 0.625,
+        };
+        assert!((fade.scale_only(&mid) - 0.75).abs() < 1e-12);
+        // Fracture maps to zero; overshoot clamps there.
+        let end = FadeState {
+            neck: 2.0,
+            soft: 1.0,
+        };
+        assert!((fade.scale_only(&end)).abs() < 1e-15);
+        let over = FadeState {
+            neck: 3.0,
+            soft: 1.4,
+        };
+        assert!((fade.scale_only(&over)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn fade_step_necks_then_softens() {
+        let tab = flat_shell(0.5, 0.5);
+        let mut fade = FadeSoftening::new(5.0, 0.2);
+        fade.onset_fraction = 0.0;
+        let mut state = FadeState::default();
+        // Constant locus ef 0.5, necking strain 0.2: necking trips
+        // once damage passes 0.4 (0.4 x 0.5/0.2 = 1).
+        let s1 = tab.fade_step(&fade, &mut state, 0.3, 0.5, 0.0, 10.0, 1.0);
+        assert!((s1 - 1.0).abs() < 1e-15);
+        assert!((state.neck - 0.75).abs() < 1e-12);
+        assert_eq!(state.soft, 0.0);
+        let s2 = tab.fade_step(&fade, &mut state, 0.3, 0.5, 0.0, 10.0, 1.0);
+        assert!(state.neck >= 1.0);
+        // Same-step onset also books soft: 0.3 x 0.5/0.3 = 0.5.
+        assert!((state.soft - 0.5).abs() < 1e-12);
+        assert!((s2 - (1.0 - 0.5f64.powi(5))).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fade_step_gates_compression_and_degenerate_cards() {
+        let tab = flat_shell(0.5, 0.5);
+        let fade = FadeSoftening::new(5.0, 0.2);
+        let mut state = FadeState::default();
+        // Compressive mean stress freezes necking.
+        let s = tab.fade_step(&fade, &mut state, 0.5, 0.5, 0.0, -3.0, 1.0);
+        assert!((s - 1.0).abs() < 1e-15);
+        assert_eq!(state.neck, 0.0);
+        // Necking past the fracture strain fully softens.
+        let mut past = FadeState {
+            neck: 1.0,
+            soft: 0.0,
+        };
+        let zero = tab.fade_step(&fade, &mut past, 0.1, 0.15, 0.0, 3.0, 1.0);
+        assert!((zero).abs() < 1e-15);
+        // Zero exponent disables softening regardless of progress.
+        let off = FadeSoftening::new(0.0, 0.2);
+        let mut late = FadeState {
+            neck: 2.0,
+            soft: 0.9,
+        };
+        let one = tab.fade_step(&off, &mut late, 0.1, 0.5, 0.0, 3.0, 1.0);
+        assert!((one - 1.0).abs() < 1e-15);
+    }
+
+    #[test]
+    fn fade_negative_exponent_reads_size_curve() {
+        let tab = flat_shell(0.5, 0.5);
+        let mut fade = FadeSoftening::new(-1.0, 0.2);
+        fade.onset_fraction = 0.0;
+        fade.exponent_curve = Some(Funct1D::new(vec![0.5, 2.0], vec![2.0, 8.0]).unwrap());
+        assert!((fade.resolved_exponent(0.5) - 2.0).abs() < 1e-15);
+        assert!((fade.resolved_exponent(2.0) - 8.0).abs() < 1e-15);
+        // Without a curve the magnitude applies.
+        let bare = FadeSoftening::new(-4.0, 0.2);
+        assert!((bare.resolved_exponent(1.0) - 4.0).abs() < 1e-15);
+        let _ = tab;
     }
 }

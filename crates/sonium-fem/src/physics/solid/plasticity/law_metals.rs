@@ -1,6 +1,6 @@
 //! Crash metal laws behind the frozen C1 contract.
 //!
-//! Implements the Radioss metal plasticity laws owned by Phase-3 lane 3B:
+//! Implements the OpenCourant metal plasticity laws owned by Phase-3 lane 3B:
 //! [LAW2](Law2) (Johnson-Cook, full form with temperature, caps, rupture,
 //! combined hardening, and the Zerilli-Armstrong variant), [LAW22](Law22)
 //! (ductile damage), [LAW27](Law27) (brittle damage), [LAW36](Law36)
@@ -272,7 +272,7 @@ fn cs_rate_factor(rate: f64, c: f64, p: f64) -> f64 {
     }
 }
 
-/// Advances the Radioss strain-rate filter one step.
+/// Advances the OpenCourant strain-rate filter one step.
 ///
 /// Implements Theory Manual Eq. 921, `ef(t) = a e(t) + (1 - a) ef(t-1)`
 /// with `a = 2 pi dt Fcut`, clamped to 1 so coarse steps stay stable.
@@ -1870,7 +1870,7 @@ impl Law36 {
         s_lo + w * (s_hi - s_lo)
     }
 
-    /// Pressure factor at Radioss pressure (positive in compression).
+    /// Pressure factor at OpenCourant pressure (positive in compression).
     pub fn pressure_scale(&self, pressure: f64) -> f64 {
         match &self.pressure_factor {
             Some((f, scale)) => f.eval(pressure) * scale,
@@ -3277,7 +3277,7 @@ impl Law66 {
         )
     }
 
-    /// Tension weight `al` at Radioss pressure (positive compression).
+    /// Tension weight `al` at OpenCourant pressure (positive compression).
     pub fn blend(&self, pressure: f64) -> f64 {
         if self.pc + self.pt <= 0.0 {
             return if pressure <= 0.0 { 1.0 } else { 0.0 };
@@ -3309,7 +3309,7 @@ impl Law66 {
 
     /// Flow stress at plastic strain, rate, and pressure.
     ///
-    /// Takes equivalent plastic strain, strain rate (1/s), and Radioss
+    /// Takes equivalent plastic strain, strain rate (1/s), and OpenCourant
     /// pressure (Pa, positive in compression); returns Pa.
     pub fn flow_stress(&self, ep: f64, rate: f64, pressure: f64) -> f64 {
         let al = self.blend(pressure);
@@ -3570,6 +3570,123 @@ impl Law66 {
                 |ep| self.hardening_slope(ep, rate, pressure),
             )
         }
+    }
+}
+
+/// LAW66 shell (plane-stress) material point after `sigeps66c.F`.
+///
+/// Ports the `IFLAG(1) == 0` radial-projection branch with no kinematic
+/// hardening (`FISOKIN = 0`), no rate scaling (`IRATE != 3`), a single
+/// modulus (`EC = 0`), and no nonlocal update (`INLOC = 0`): plane-stress
+/// elastic trial, tension/compression blended yield from the wrapped
+/// [`Law66`], radial return, and the `DEZZ` thickness increment. The
+/// caller owns the in-plane strain path; `dezz` feeds thickness/volume
+/// bookkeeping only, never the trial. Units follow the wrapped law.
+/// // Rust guideline compliant 2026-02-21
+#[derive(Debug, Clone)]
+pub struct Law66Shell {
+    /// Tension/compression curves, moduli, and limit pressures.
+    pub law: Law66,
+}
+
+/// History state of one LAW66 shell material point.
+#[derive(Debug, Clone)]
+pub struct Law66ShellState {
+    /// In-plane Cauchy stress `[xx, yy, xy]`, same units as the law.
+    pub stress: [f64; 3],
+    /// Accumulated plastic strain (`PLA`).
+    pub pla: f64,
+    /// Whether the last committed step was yielding.
+    pub yielding: bool,
+}
+
+impl Law66ShellState {
+    /// Creates a virgin state.
+    pub fn new() -> Self {
+        Self {
+            stress: [0.0; 3],
+            pla: 0.0,
+            yielding: false,
+        }
+    }
+}
+
+impl Default for Law66ShellState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Per-step outputs of [`Law66Shell::step`] beyond the new state.
+#[derive(Debug, Clone, Copy)]
+pub struct Law66ShellStep {
+    /// Plastic increment `DPLA` of this step.
+    pub dpla: f64,
+    /// Thickness increment `DEZZ` of this step.
+    pub dezz: f64,
+    /// Blended yield `YLD` used by the return.
+    pub yld: f64,
+}
+
+impl Law66Shell {
+    /// Wraps a configured [`Law66`] (curves, moduli, limit pressures).
+    pub fn new(law: Law66) -> Self {
+        Self { law }
+    }
+
+    /// Advances one plane-stress step (exact `sigeps66c` radial branch).
+    ///
+    /// Takes in-plane logarithmic strain increments; returns the new
+    /// state plus `DPLA`/`DEZZ`/`YLD`. The rate passed to the yield is
+    /// zero (static replay path).
+    pub fn step(
+        &self,
+        state: &Law66ShellState,
+        deps_xx: f64,
+        deps_yy: f64,
+        deps_xy: f64,
+    ) -> (Law66ShellState, Law66ShellStep) {
+        let e = self.law.youngs_modulus;
+        let nu = self.law.poisson_ratio;
+        let a11 = e / (1.0 - nu * nu);
+        let a21 = nu * a11;
+        let g = e / (2.0 * (1.0 + nu));
+        let g3 = 3.0 * g;
+        let sign_xx = state.stress[0] + a11 * deps_xx + a21 * deps_yy;
+        let sign_yy = state.stress[1] + a21 * deps_xx + a11 * deps_yy;
+        let sign_xy = state.stress[2] + g * deps_xy;
+        let p = -(sign_xx + sign_yy) / 3.0;
+        let yld = self
+            .law
+            .flow_stress(state.pla.max(0.0), 0.0, p)
+            .max(1.0e-20);
+        let h = self.law.hardening_slope(state.pla.max(0.0), 0.0, p);
+        let svm = (sign_xx * sign_xx + sign_yy * sign_yy - sign_xx * sign_yy
+            + 3.0 * sign_xy * sign_xy)
+            .max(0.0)
+            .sqrt();
+        let r = (yld / svm.max(1.0e-20)).min(1.0);
+        let sig_xx = sign_xx * r;
+        let sig_yy = sign_yy * r;
+        let sig_xy = sign_xy * r;
+        let yielding = r < 1.0;
+        let dpla = if yielding {
+            svm * (1.0 - r) / (g3 + h)
+        } else {
+            0.0
+        };
+        let nnu11 = nu / (1.0 - nu);
+        let nu31 = 1.0 - nnu11;
+        let dezz_plastic = dpla * (sig_xx + sig_yy) / 2.0 / yld;
+        let dezz = -(deps_xx + deps_yy) * nnu11 - nu31 * dezz_plastic;
+        (
+            Law66ShellState {
+                stress: [sig_xx, sig_yy, sig_xy],
+                pla: state.pla + dpla,
+                yielding,
+            },
+            Law66ShellStep { dpla, dezz, yld },
+        )
     }
 }
 
@@ -4199,6 +4316,106 @@ mod tests {
             "compressive {}",
             first.stress_xx
         );
+    }
+
+    fn law66_shell_flat(yield_pa: f64) -> Law66Shell {
+        let flat = Funct1D::new(vec![0.0, 1.0], vec![yield_pa, yield_pa]).unwrap();
+        Law66Shell::new(Law66::new(
+            60.4e9,
+            0.33,
+            0.0,
+            500.0e6,
+            600.0e6,
+            (flat.clone(), 1.0),
+            (flat, 1.0),
+            Law66Rate::Static,
+            false,
+            0.0,
+        ))
+    }
+
+    #[test]
+    fn law66_shell_elastic_matches_trial() {
+        let shell = law66_shell_flat(100.0e6);
+        let state = Law66ShellState::new();
+        let (next, info) = shell.step(&state, -1.0e-5, 0.33e-5, 0.0);
+        let e = 60.4e9;
+        let nu = 0.33;
+        let a11 = e / (1.0 - nu * nu);
+        let a21 = nu * a11;
+        let want_xx = a11 * -1.0e-5 + a21 * 0.33e-5;
+        let want_yy = a21 * -1.0e-5 + a11 * 0.33e-5;
+        assert!((next.stress[0] - want_xx).abs() < 1.0);
+        assert!((next.stress[1] - want_yy).abs() < 1.0);
+        assert_eq!(info.dpla, 0.0);
+        assert!(!next.yielding);
+        assert!((info.yld - 100.0e6).abs() < 1.0);
+        let nnu11 = nu / (1.0 - nu);
+        assert!((info.dezz - 0.67e-5 * nnu11).abs() < 1e-12);
+    }
+
+    #[test]
+    fn law66_shell_radial_scales_trial() {
+        let shell = law66_shell_flat(100.0e6);
+        let state = Law66ShellState::new();
+        let (next, info) = shell.step(&state, -0.01, 0.005, 0.0);
+        assert!(next.yielding);
+        assert!(info.dpla > 0.0);
+        let e = 60.4e9;
+        let nu = 0.33;
+        let a11 = e / (1.0 - nu * nu);
+        let a21 = nu * a11;
+        let tx: f64 = a11 * -0.01 + a21 * 0.005;
+        let ty = a21 * -0.01 + a11 * 0.005;
+        let svm = (tx * tx + ty * ty - tx * ty).sqrt();
+        let r = 100.0e6 / svm;
+        assert!(r < 1.0);
+        assert!((next.stress[0] - tx * r).abs() < 1.0e3);
+        assert!((next.stress[1] - ty * r).abs() < 1.0e3);
+        let g3 = 3.0 * e / (2.0 * (1.0 + nu));
+        assert!((info.dpla - svm * (1.0 - r) / g3).abs() / info.dpla < 1e-12);
+        assert!((next.pla - info.dpla).abs() == 0.0);
+        // Plastic term thins the DEZZ correction under compression.
+        let nnu11 = nu / (1.0 - nu);
+        let elastic = 0.005 * nnu11;
+        assert!(info.dezz > elastic);
+    }
+
+    #[test]
+    fn law66_shell_uniaxial_stress_holds_yield() {
+        let shell = law66_shell_flat(100.0e6);
+        let mut state = Law66ShellState::new();
+        let mut e22 = 0.0;
+        let n = 40;
+        for k in 1..=n {
+            let de11 = -0.02 / n as f64;
+            let mut de22 = if k == 1 {
+                -0.33 * de11
+            } else {
+                e22 / (-0.02 * (k - 1) as f64 / n as f64) * de11
+            };
+            for _ in 0..24 {
+                let (trial, _) = shell.step(&state, de11, de22, 0.0);
+                if trial.stress[1].abs() < 1e-9 * trial.stress[0].abs().max(1.0) {
+                    break;
+                }
+                let h = 1e-9;
+                let (trial_h, _) = shell.step(&state, de11, de22 + h, 0.0);
+                let slope = (trial_h.stress[1] - trial.stress[1]) / h;
+                if slope.abs() < 1e-9 {
+                    break;
+                }
+                de22 -= trial.stress[1] / slope;
+            }
+            let (next, _) = shell.step(&state, de11, de22, 0.0);
+            state = next;
+            e22 += de22;
+            assert!(state.stress[1].abs() < 1e-6 * state.stress[0].abs().max(1.0));
+        }
+        assert!((state.stress[0] + 100.0e6).abs() / 100.0e6 < 0.01);
+        // DPLA is the radial multiplier SVM*(1-R)/G3, not the equivalent
+        // increment: it lands ~11% under 0.02 - YLD/E at this step size.
+        assert!((state.pla - 0.0163).abs() < 0.001);
     }
 
     #[test]

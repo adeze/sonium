@@ -1,7 +1,7 @@
-//! QA: curved arch cantilever vs Radioss/OpenRadioss explicit quasi-statics.
+//! QA: curved arch cantilever vs OpenCourant explicit quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the brick-mesh tip displacement against the Castigliano curved
 //! cantilever closed form. Without an engine it prints the documented skip
 //! message and exits 0. Case contributed by the beams lane; Worker 1 owns
@@ -16,7 +16,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
     RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case, write_engine,
     write_starter,
 };
@@ -76,7 +76,7 @@ fn arch_brick_mesh(
 }
 
 /// Single-sourced curved-arch comparison case (SI units).
-pub fn beam_curved_arch_case() -> RadCase {
+pub fn beam_curved_arch_case() -> OpenCourantCase {
     let (mesh, root_set, tip_set, tip_node) = arch_brick_mesh(20, 2, 1.0, 0.05);
     mesh.validate().unwrap();
     // Castigliano quarter-cantilever tip deflection (tangential tip load):
@@ -92,7 +92,7 @@ pub fn beam_curved_arch_case() -> RadCase {
     // /CLOAD applies the scale to EACH node of the set; the tip tangent
     // runs along -X, so the scale is negative.
     let tip_scale = -p / tip_set.len() as f64;
-    RadCase {
+    OpenCourantCase {
         name: "beam_curved_arch".to_string(),
         title: "sonium_qa rad beam_curved_arch quasi-static tip load".to_string(),
         mesh,
@@ -186,7 +186,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 

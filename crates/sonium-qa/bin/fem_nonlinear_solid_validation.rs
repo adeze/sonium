@@ -6,6 +6,7 @@
 //! - NeoHookean strain energy, stress, and tangent consistency
 //! - Uniaxial compression against the linear reference field
 //! - Traction loading with force balance and equilibrium checks
+//! - Finite-strain affine patch with independent solved stress/energy references
 
 use sonium_fem::basis::PolynomialDegree;
 use sonium_fem::forms::NonlinearForm;
@@ -126,6 +127,172 @@ struct Metrics {
     model_checks: usize,
     tangent_error: f64,
     energy_consistency_error: f64,
+    affine_patch: AffinePatchMetrics,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct AffinePatchMetrics {
+    displacement_error: f64,
+    stress_error: f64,
+    energy_error: f64,
+    reaction_error: f64,
+    residual: f64,
+    iterations: usize,
+    free_dofs: usize,
+}
+
+// A finite-strain affine patch supplies independent closed-form displacement,
+// first-Piola stress and stored-energy references for an actually solved field.
+fn solve_affine_patch() -> Result<AffinePatchMetrics, String> {
+    use sonium_fem::spaces::H1Space;
+    let mesh = bar_mesh();
+    let scalar = H1Space::new(PolynomialDegree::P1);
+    let vector = VectorH1Space::new(PolynomialDegree::P1, 2);
+    let material = NeoHookean::from_young(YOUNGS_MODULUS, POISSON_RATIO, 2);
+    let form = HyperelasticForm::new(material);
+    let stretches: [f64; 2] = [0.92, 1.03];
+    let mu = YOUNGS_MODULUS / (2.0 * (1.0 + POISSON_RATIO));
+    let lambda =
+        YOUNGS_MODULUS * POISSON_RATIO / ((1.0 + POISSON_RATIO) * (1.0 - 2.0 * POISSON_RATIO));
+    let log_j = (stretches[0] * stretches[1]).ln();
+    let exact_stress = [
+        mu * (stretches[0] - 1.0 / stretches[0]) + lambda * log_j / stretches[0],
+        0.0,
+        0.0,
+        mu * (stretches[1] - 1.0 / stretches[1]) + lambda * log_j / stretches[1],
+    ];
+    let exact_energy_density = mu / 2.0 * (stretches[0].powi(2) + stretches[1].powi(2) - 2.0)
+        - mu * log_j
+        + lambda / 2.0 * log_j * log_j;
+    let mut bcs = Vec::new();
+    let count = vector.num_global_dofs(&mesh);
+    let mut prescribed = vec![false; count];
+    for (node, p) in mesh.nodes.iter().enumerate() {
+        if p.x.abs() < 1e-12
+            || (p.x - BAR_LENGTH).abs() < 1e-12
+            || p.y.abs() < 1e-12
+            || (p.y - BAR_HEIGHT).abs() < 1e-12
+        {
+            for (component, coordinate) in [p.x, p.y].into_iter().enumerate() {
+                bcs.push((
+                    2 * node + component,
+                    (stretches[component] - 1.0) * coordinate,
+                ));
+                prescribed[2 * node + component] = true;
+            }
+        }
+    }
+    let free_dofs = prescribed.iter().filter(|v| !**v).count();
+    check(
+        free_dofs > 0,
+        "affine hyperelastic patch has no free unknowns".into(),
+    )?;
+    let solution = fem_newton_solve_with_bcs_and_load(
+        &form,
+        &vector,
+        &mesh,
+        &bcs,
+        &vec![0.0; count],
+        &[],
+        &newton_config(),
+    )
+    .map_err(|e| format!("affine hyperelastic patch Newton: {e:?}"))?;
+    check(
+        solution.converged && solution.iterations > 0,
+        "affine hyperelastic patch did not solve from nonequilibrium".into(),
+    )?;
+    let mut displacement_error = 0.0_f64;
+    let mut stress_error = 0.0;
+    let mut energy = 0.0;
+    for element in 0..mesh.num_elements() {
+        let nodes = scalar.local_to_global(&mesh, element);
+        for qp in sonium_fem::quadrature::QuadratureRule::new(ElementType::Triangle, 2).iter() {
+            let tab = scalar.tabulate(&mesh, element, qp.xi(), qp.eta(), 0.0);
+            let mut displacement = [0.0; 2];
+            let mut f = [1.0, 0.0, 0.0, 1.0];
+            for (local, &node) in nodes.iter().enumerate() {
+                for component in 0..2 {
+                    displacement[component] += solution.x[2 * node + component] * tab.value(local);
+                    for dimension in 0..2 {
+                        f[2 * component + dimension] +=
+                            solution.x[2 * node + component] * tab.grad(local, dimension);
+                    }
+                }
+            }
+            let expected = [
+                (stretches[0] - 1.0) * tab.physical_coords[0],
+                (stretches[1] - 1.0) * tab.physical_coords[1],
+            ];
+            displacement_error = displacement_error.max(
+                (0..2)
+                    .map(|d| (displacement[d] - expected[d]).abs())
+                    .fold(0.0_f64, f64::max)
+                    / ((stretches[0] - 1.0) * BAR_LENGTH).abs(),
+            );
+            let stress = material.stress(&f);
+            let weight = qp.weight * tab.det_j;
+            stress_error += weight
+                * (0..4)
+                    .map(|d| (stress[d] - exact_stress[d]).powi(2))
+                    .sum::<f64>();
+            energy += weight * material.energy(&f);
+        }
+    }
+    let area = BAR_LENGTH * BAR_HEIGHT;
+    stress_error = (stress_error / (area * exact_stress.iter().map(|v| v * v).sum::<f64>())).sqrt();
+    let energy_error = (energy / (area * exact_energy_density) - 1.0).abs();
+    let internal = assemble_residual(&form, &vector, &mesh, &solution.x);
+    let mut reaction_error = 0.0_f64;
+    for axis in 0..2 {
+        let side = [BAR_LENGTH, BAR_HEIGHT][axis];
+        let face_length = [BAR_HEIGHT, BAR_LENGTH][axis];
+        for (position, sign) in [(0.0, -1.0), (side, 1.0)] {
+            let reaction = mesh
+                .nodes
+                .iter()
+                .enumerate()
+                .filter(|(_, p)| ([p.x, p.y][axis] - position).abs() < 1e-12)
+                .map(|(node, _)| internal[2 * node + axis])
+                .sum::<f64>();
+            let expected = sign * exact_stress[3 * axis] * face_length;
+            reaction_error = reaction_error.max((reaction - expected).abs() / expected.abs());
+        }
+    }
+    let residual = internal
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !prescribed[*i])
+        .map(|(_, v)| v * v)
+        .sum::<f64>()
+        .sqrt()
+        / internal
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| prescribed[*i])
+            .map(|(_, v)| v * v)
+            .sum::<f64>()
+            .sqrt();
+    for (name, value) in [
+        ("displacement", displacement_error),
+        ("stress", stress_error),
+        ("stored energy", energy_error),
+        ("reaction", reaction_error),
+        ("residual", residual),
+    ] {
+        check(
+            value.is_finite() && value < 1e-8,
+            format!("affine patch {name} error {value:.3e} exceeds 1e-8"),
+        )?;
+    }
+    Ok(AffinePatchMetrics {
+        displacement_error,
+        stress_error,
+        energy_error,
+        reaction_error,
+        residual,
+        iterations: solution.iterations,
+        free_dofs,
+    })
 }
 
 fn run() -> Result<Metrics, String> {
@@ -427,6 +594,7 @@ fn run() -> Result<Metrics, String> {
         model_checks,
         tangent_error,
         energy_consistency_error,
+        affine_patch: solve_affine_patch()?,
     })
 }
 
@@ -471,12 +639,19 @@ fn main() {
             .maximum("tangent_error", TOL_FINITE_DIFFERENCE)
             .metric("energy_consistency_error", metrics.energy_consistency_error)
             .maximum("energy_consistency_error", TOL_FINITE_DIFFERENCE)
-            .reference("uniform compression field, traction force balance, NeoHookean identities")
-            .reference_checksum("analytic/deterministic-fixture:fem-nonlinear-solid-validation-v1")
+            .metric("affine_displacement_error",metrics.affine_patch.displacement_error).maximum("affine_displacement_error",1e-8)
+            .metric("affine_stress_error",metrics.affine_patch.stress_error).maximum("affine_stress_error",1e-8)
+            .metric("affine_energy_error",metrics.affine_patch.energy_error).maximum("affine_energy_error",1e-8)
+            .metric("affine_reaction_error",metrics.affine_patch.reaction_error).maximum("affine_reaction_error",1e-8)
+            .metric("affine_physical_residual",metrics.affine_patch.residual).maximum("affine_physical_residual",1e-8)
+            .metric("affine_newton_iterations",metrics.affine_patch.iterations as f64).minimum("affine_newton_iterations",1.0)
+            .metric("affine_free_dofs",metrics.affine_patch.free_dofs as f64).minimum("affine_free_dofs",1.0)
+            .reference("uniform compression, traction balance, and finite-strain affine patch with independent NeoHookean stress/energy and face reactions")
+            .reference_checksum("analytic/deterministic-fixture:fem-nonlinear-solid-validation-v2")
             .dimension("1.0 by 0.5 bar, 5 by 4 cells, P1 triangles")
             .formulation("NeoHookean Newton solve with Dirichlet BCs from u=0 under load")
-            .tolerance("interior 5%; tip 30%; balance 1e-8; tangent FD 1e-6")
-            .input_checksum("mesh:bar-5x4:neohookean-compression-traction:v1"),
+            .tolerance("interior 5%; tip 30%; balance 1e-8; tangent FD 1e-6; affine displacement/stress/energy/reaction/residual <= 1e-8")
+            .input_checksum("mesh:bar-5x4:neohookean-compression-traction-affine:v2"),
         Err(error) => QaResult::failed(CASE_ID, error)
             .requested_backend("cpu")
             .actual_backend("cpu"),

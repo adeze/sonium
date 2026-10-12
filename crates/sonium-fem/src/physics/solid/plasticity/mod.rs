@@ -17,6 +17,7 @@
 pub mod crash;
 pub mod eos;
 pub mod finite_strain;
+pub mod foam_explicit;
 pub mod funct;
 pub mod funct_deck;
 pub mod law_foams;

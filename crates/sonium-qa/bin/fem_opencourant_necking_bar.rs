@@ -1,7 +1,7 @@
-//! QA: necking bar vs Radioss/OpenRadioss (elastic prove-out leg).
+//! QA: necking bar vs OpenCourant (elastic prove-out leg).
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the tip elongation against the elastic bar closed form (FL/EA)
 //! at a sub-yield load. Without an engine it prints the documented skip
 //! message and exits 0.
@@ -14,7 +14,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
     RadNodeSet, RadProbe, assert_probe_close, cantilever_brick_mesh, engine_exe, probes_json,
     run_case, write_engine, write_starter,
 };
@@ -23,7 +23,7 @@ use std::path::PathBuf;
 const NAME: &str = "necking_bar";
 
 /// Builds the necking bar case on the real `sonium_qa::rad` API.
-fn necking_bar_case() -> RadCase {
+fn necking_bar_case() -> OpenCourantCase {
     let length = 0.1;
     let section = 0.01;
     let youngs = 200.0e9;
@@ -34,7 +34,7 @@ fn necking_bar_case() -> RadCase {
         cantilever_brick_mesh(10, 2, 2, length, section, section);
     let expected = force * length / (youngs * section * section);
     let tip_scale = force / tip_set.len() as f64;
-    RadCase {
+    OpenCourantCase {
         name: NAME.to_string(),
         title: "sonium_qa rad necking bar elastic tension".to_string(),
         mesh,
@@ -127,7 +127,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -168,7 +168,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-necking-bar");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-necking-bar");
+    println!("PASS: qa-fem-opencourant-necking-bar");
+    println!("SUCCESS: qa-fem-opencourant-necking-bar");
 }

@@ -1,7 +1,11 @@
 //! Eddy-current skin-effect validation
 //!
 //! Compares the analytical exponential amplitude decay against the
-//! material skin-depth formula.
+//! material skin-depth formula. Also solves the production complex H(curl)
+//! conductor field and checks phase, skin depth, impedance, and refinement.
+
+#[path = "support/eddy_current_slab.rs"]
+mod eddy_current_slab;
 
 use sonium_fem::physics::electromagnetics::eddy_current::ConductorMaterial;
 use sonium_qa::analytical::{eddy_current_amplitude_decay, eddy_current_skin_depth};
@@ -70,7 +74,26 @@ fn main() {
         test_steel_vs_copper_at_same_frequency();
     });
     match result {
-        Ok(()) => println!("SUCCESS"),
+        Ok(()) => match eddy_current_slab::numerical_gate(false) {
+            Ok(record) => {
+                match record.to_json_line() {
+                    Ok(json) => println!("QA_RESULT: {json}"),
+                    Err(error) => {
+                        eprintln!("FAILED: {error}");
+                        std::process::exit(1);
+                    }
+                }
+                println!("SUCCESS");
+            }
+            Err(error) => {
+                let id = "fem.eddy-current-1d-skin-effect.v1";
+                if let Ok(json) = sonium_qa::QaResult::failed(id, error.clone()).to_json_line() {
+                    println!("QA_RESULT: {json}");
+                }
+                eprintln!("FAILED: {error}");
+                std::process::exit(1);
+            }
+        },
         Err(_) => {
             println!("FAILED");
             std::process::exit(1);

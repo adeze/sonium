@@ -555,8 +555,10 @@ fn main() -> ExitCode {
         failed
     );
     if failed == 0 {
+        println!("SUCCESS: qa-fem-crash-shells");
         ExitCode::SUCCESS
     } else {
+        println!("FAILED: qa-fem-crash-shells");
         ExitCode::FAILURE
     }
 }

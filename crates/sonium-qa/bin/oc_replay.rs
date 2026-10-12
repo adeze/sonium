@@ -166,6 +166,8 @@ fn main() {
         println!("  FAIL {failure}");
     }
     if !report.passed() {
+        println!("FAILED: qa-oc-replay");
         std::process::exit(1);
     }
+    println!("SUCCESS: qa-oc-replay");
 }

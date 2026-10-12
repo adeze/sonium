@@ -14,6 +14,13 @@ const CASE_ID: &str = "bem.transmission-kernel-native-parity.v1";
 /// loosening it weakens the physics-gate parity claim.
 const ACTION_ERROR_TOLERANCE: f64 = 2.0e-7;
 
+fn valid_action(values: &[Complex64], expected_len: usize) -> bool {
+    values.len() == expected_len
+        && values
+            .iter()
+            .all(|value| value.re.is_finite() && value.im.is_finite())
+}
+
 fn run() -> Result<(usize, f64, f64), String> {
     let mesh = generate_icosphere_mesh(0.2, 0);
     let mut elements = mesh.elements;
@@ -53,6 +60,16 @@ fn run() -> Result<(usize, f64, f64), String> {
     let native_transpose = compressed
         .apply_transpose_checked(&input)
         .map_err(|error| error.to_string())?;
+    for values in [
+        &dense_forward,
+        &native_forward,
+        &dense_transpose,
+        &native_transpose,
+    ] {
+        if !valid_action(values, system.total_dofs()) {
+            return Err("transmission action has non-finite entries or an invalid length".into());
+        }
+    }
     let relative = |actual: &[Complex64], expected: &[Complex64]| {
         actual
             .iter()
@@ -111,5 +128,22 @@ fn main() {
     } else {
         println!("FAILED");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn actions_reject_nonfinite_components_and_missing_entries() {
+        let finite = Complex64::new(1.0, -2.0);
+        assert!(valid_action(&[finite], 1));
+        assert!(!valid_action(&[], 1));
+        assert!(!valid_action(&[finite, finite], 1));
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert!(!valid_action(&[finite, Complex64::new(invalid, 0.0)], 2));
+            assert!(!valid_action(&[finite, Complex64::new(0.0, invalid)], 2));
+        }
     }
 }

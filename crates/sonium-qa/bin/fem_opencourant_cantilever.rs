@@ -1,7 +1,7 @@
-//! QA: FEM cantilever vs Radioss/OpenRadioss explicit quasi-statics.
+//! QA: FEM cantilever vs OpenCourant explicit quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the tip displacement against Euler-Bernoulli. Without an engine
 //! it prints the documented skip message and exits 0.
 
@@ -58,7 +58,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -99,7 +99,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-cantilever");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-cantilever");
+    println!("PASS: qa-fem-opencourant-cantilever");
+    println!("SUCCESS: qa-fem-opencourant-cantilever");
 }

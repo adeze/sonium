@@ -21,7 +21,7 @@
 
 // Rust guideline compliant 2026-02-21
 
-use super::super::plasticity::update::StressUpdateModel;
+use super::super::plasticity::update::{StressUpdateModel, voigt_equivalent_increment_c1};
 use super::hex::{HexMesh, hex_jacobian, hex_shape_derivatives, physical_gradients};
 use sonium_compute::explicit_hourglass::{
     BULK_VISCOSITY_LINEAR_DEFAULT, BULK_VISCOSITY_QUADRATIC_DEFAULT, bulk_viscosity_q, hexa8_gamma,
@@ -278,6 +278,18 @@ pub struct HexForceOut {
     pub dep: f64,
     /// True when the centroid point yielded.
     pub yielding: bool,
+    /// Committed centroid Cauchy stress in C1 Voigt order (Pa).
+    ///
+    /// Carries the material response only; the shock pressure `bulk_q`
+    /// enters the forces but not this tensor. Damage drivers read the
+    /// triaxiality off this field.
+    pub stress: [f64; 6],
+    /// Equivalent total-strain-rate estimate in 1/s.
+    ///
+    /// Rate-dependent materials evaluated this step at this rate
+    /// (`voigt_equivalent_increment_c1(d_eps) / dt`); damage drivers
+    /// reuse it so flow and fracture see one consistent rate.
+    pub strain_rate: f64,
 }
 
 /// Explicit internal forces of one H8 element.
@@ -285,7 +297,9 @@ pub struct HexForceOut {
 /// Advances the centroid C1 material by the uniform-strain increment
 /// from the nodal velocities over `dt`, commits it, and returns `V B^T
 /// (sigma + q I)` plus viscous hourglass forces. Rate-dependent
-/// materials evaluate at the estimated step rate. Hourglass energy
+/// materials evaluate at the estimated step rate, reported back in
+/// [`HexForceOut::strain_rate`] alongside the committed
+/// [`HexForceOut::stress`] for damage drivers. Hourglass energy
 /// accumulates into the state with explicit Euler (`P dt`).
 ///
 /// # Errors
@@ -323,6 +337,10 @@ where
         d_eps[5] += grad[0] * v[2] + grad[2] * v[0];
     }
     let vol_rate = (d_eps[0] + d_eps[1] + d_eps[2]) / dt;
+    // The increment is C1 ordered ([xx, yy, zz, xy, yz, zx] with
+    // engineering shears, matching update.rs), so the shared helper
+    // applies directly and agrees exactly with Law2::update_with_rate.
+    let strain_rate = voigt_equivalent_increment_c1(&d_eps) / dt;
     let bulk_q = bulk_viscosity_q(
         params.density,
         params.sound_speed,
@@ -364,6 +382,8 @@ where
         bulk_q,
         dep: update.delta_equiv_plastic_strain,
         yielding: update.yielding,
+        stress: update.stress,
+        strain_rate,
     })
 }
 

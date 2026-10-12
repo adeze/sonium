@@ -1,4 +1,4 @@
-//! Parses Radioss function and table deck cards.
+//! Parses OpenCourant function and table deck cards.
 //!
 //! Reads `/FUNCT`, `/TABLE/0`, and `/TABLE/1` deck text into the frozen
 //! [`Funct1D`](super::funct::Funct1D) and [`Table2D`](super::funct::Table2D)

@@ -27,9 +27,11 @@ fn main() {
     match run(metrics_only, keep_scratch) {
         Ok(()) => {
             println!("PASS: qa-rad-mesh-build");
+            println!("SUCCESS: qa-rad-mesh-build");
         }
         Err(message) => {
             eprintln!("FAIL: {message}");
+            println!("FAILED: qa-rad-mesh-build");
             std::process::exit(1);
         }
     }
@@ -98,7 +100,7 @@ fn run(metrics_only: bool, keep_scratch: bool) -> Result<(), String> {
         }
     }
 
-    // Case-level metrics on the delivered RadCase builders.
+    // Case-level metrics on the delivered OpenCourantCase builders.
     let taylor = taylor_bar_case();
     taylor
         .mesh
@@ -127,7 +129,7 @@ fn run(metrics_only: bool, keep_scratch: bool) -> Result<(), String> {
         return Ok(());
     }
     let exe = resolve_engine().ok_or_else(|| {
-        "no starter found: set RADISS_EXE or OPENCOURANT_EXE, or keep the vendor tree at ~/src_3rdparties/OpenCourant".to_string()
+        "no starter found: set OPENCOURANT_EXE (or legacy RADISS_EXE), or keep the vendor tree at ~/src_3rdparties/OpenCourant".to_string()
     })?;
     let scratch_root = scratch_parent();
     let decks = [

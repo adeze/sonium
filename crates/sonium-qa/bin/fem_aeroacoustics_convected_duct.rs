@@ -1,7 +1,10 @@
-//! Analytical reference check.
+//! Analytical reference-only check; no numerical FEM accuracy claim.
 //!
 //! This binary validates a closed-form benchmark or helper without assembling a `sonium_fem` finite-element system.
 //! Keep FEM solver and assembly validations in binaries that import `sonium_fem`.
+
+#[path = "support/reference_result.rs"]
+mod reference_result;
 
 use sonium_qa::analytical::aero_convected_duct_wavenumbers;
 
@@ -19,6 +22,7 @@ fn main() {
             k_plus, k_minus
         );
     });
+    reference_result::emit("reference.fem-aeroacoustics-convected-duct.v1", result.is_ok());
     if result.is_ok() {
         println!("SUCCESS");
     } else {

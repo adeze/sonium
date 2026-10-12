@@ -3,6 +3,9 @@
 //! This binary validates a closed-form benchmark or helper without assembling a `sonium_fem` finite-element system.
 //! Keep FEM solver and assembly validations in binaries that import `sonium_fem`.
 
+#[path = "support/reference_result.rs"]
+mod reference_result;
+
 use sonium_qa::analytical::plasticity_1d_isotropic_hardening_stress;
 
 fn main() {
@@ -16,6 +19,7 @@ fn main() {
             ux, stress
         );
     });
+    reference_result::emit("reference.fem-plasticity-mms.v1", result.is_ok());
     if result.is_ok() {
         println!("SUCCESS");
     } else {

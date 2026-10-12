@@ -1,7 +1,7 @@
-//! QA: Taylor bar vs Radioss/OpenRadioss (elastic prove-out leg).
+//! QA: Taylor bar vs OpenCourant (elastic prove-out leg).
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the wall force plateau (rho c A V) and the impact-face motion
 //! against the 1D elastic impact closed form. Without an engine it prints
 //! the documented skip message and exits 0.
@@ -16,7 +16,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadCase, RadElasticMaterial, RadFunction, RadMesh, RadNodeSet, RadProbe, RadWall,
+    OpenCourantCase, RadElasticMaterial, RadFunction, RadMesh, RadNodeSet, RadProbe, RadWall,
     assert_probe_close, engine_exe, probes_json, run_case, write_engine, write_starter,
 };
 use std::path::PathBuf;
@@ -30,7 +30,7 @@ const POISSON: f64 = 0.35;
 const DENSITY: f64 = 8930.0;
 
 /// Builds the Taylor bar case on the real `sonium_qa::rad` API.
-fn taylor_bar_case() -> RadCase {
+fn taylor_bar_case() -> OpenCourantCase {
     let (mut mesh, face_set, face_center) = cylinder_mesh(8, 6);
     let area = std::f64::consts::PI * RADIUS * RADIUS;
     let c = (YOUNGS / DENSITY).sqrt();
@@ -45,7 +45,7 @@ fn taylor_bar_case() -> RadCase {
     let bar_nodes: Vec<usize> = (1..=mesh.num_nodes()).collect();
     let anvil_point = [0.0, 0.0, 0.0];
     let driver = mesh.add_node(anvil_point);
-    RadCase {
+    OpenCourantCase {
         name: NAME.to_string(),
         title: "sonium_qa rad taylor bar elastic impact".to_string(),
         mesh,
@@ -251,7 +251,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -294,7 +294,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-taylor-bar");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-taylor-bar");
+    println!("PASS: qa-fem-opencourant-taylor-bar");
+    println!("SUCCESS: qa-fem-opencourant-taylor-bar");
 }

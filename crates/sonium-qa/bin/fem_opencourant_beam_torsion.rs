@@ -1,7 +1,7 @@
-//! QA: FEM square-bar torsion vs Radioss/OpenRadioss explicit quasi-statics.
+//! QA: FEM square-bar torsion vs OpenCourant explicit quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the mid-span corner displacement against the Saint-Venant twist
 //! with the exact square-section torsion constant. Without an engine it
 //! prints the documented skip message and exits 0. Case contributed by the
@@ -10,7 +10,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
     RadNodeSet, RadProbe, assert_probe_close, cantilever_brick_mesh, engine_exe, probes_json,
     run_case, write_engine, write_starter,
 };
@@ -35,7 +35,7 @@ pub fn square_torsion_constant(a: f64) -> f64 {
 /// A tip force couple applies torque about +X; the probe reads the corner
 /// transverse displacement at mid-span, far from root warping restraint and
 /// tip load-introduction effects.
-pub fn beam_torsion_case() -> RadCase {
+pub fn beam_torsion_case() -> OpenCourantCase {
     let nx = 24;
     let ny = 6;
     let nz = 6;
@@ -55,7 +55,7 @@ pub fn beam_torsion_case() -> RadCase {
     // Mid-span corner (y=-a/2, z=-a/2): Duy = -phi*z = +phi*a/2.
     let corner = id(nx / 2, 0, 0);
     let expected = (twist / 2.0) * side / 2.0;
-    RadCase {
+    OpenCourantCase {
         name: "beam_torsion".to_string(),
         title: "sonium_qa rad beam_torsion quasi-static torque".to_string(),
         mesh,
@@ -166,7 +166,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 

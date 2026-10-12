@@ -383,8 +383,10 @@ impl PointChargeSource {
 
 /// Assemble a point-charge RHS over the element containing the source.
 ///
-/// Currently supports affine P1/P2 triangle meshes. Returns a zero vector when
-/// the charge lies outside the mesh.
+/// Supports affine triangle and tetrahedron meshes with nodal scalar spaces.
+/// Evaluates the test basis at the source, including higher-order basis values.
+/// A source on a shared facet contributes once, in the first containing element.
+/// Returns a zero vector when the source lies outside the supported elements.
 pub fn assemble_point_charge_source<S>(
     source: &PointChargeSource,
     mesh: &Mesh,
@@ -397,15 +399,55 @@ where
 
     for elem_idx in 0..mesh.elements.len() {
         let elem = &mesh.elements[elem_idx];
-        if elem.element_type != crate::mesh::ElementType::Triangle {
-            continue;
-        }
         let nodes = elem.vertices();
-        let p0 = mesh.nodes[nodes[0]];
-        let p1 = mesh.nodes[nodes[1]];
-        let p2 = mesh.nodes[nodes[2]];
-        if let Some((xi, eta)) = reference_coords_in_triangle(source.position, p0, p1, p2) {
-            let tab = space.tabulate(mesh, elem_idx, xi, eta, 0.0);
+        let reference = match elem.element_type {
+            crate::mesh::ElementType::Triangle => reference_coords_in_triangle(
+                source.position,
+                mesh.nodes[nodes[0]],
+                mesh.nodes[nodes[1]],
+                mesh.nodes[nodes[2]],
+            )
+            .map(|(xi, eta)| [xi, eta, 0.0]),
+            crate::mesh::ElementType::Tetrahedron => {
+                let coordinates: Vec<[f64; 3]> = nodes
+                    .iter()
+                    .map(|&node| {
+                        let p = mesh.nodes[node];
+                        [p.x, p.y, p.z]
+                    })
+                    .collect();
+                let shape = crate::basis::evaluate_shape(
+                    crate::mesh::ElementType::Tetrahedron,
+                    crate::basis::PolynomialDegree::P1,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
+                let jacobian = crate::basis::Jacobian::from_3d(&shape.gradients, 3, &coordinates);
+                let offset: [f64; 3] =
+                    std::array::from_fn(|d| source.position[d] - coordinates[0][d]);
+                let reference: [f64; 3] = std::array::from_fn(|d| {
+                    (0..3)
+                        .map(|j| jacobian.inverse[3 * d + j] * offset[j])
+                        .sum()
+                });
+                // Permit roundoff at shared facets, but never admit a
+                // degenerate tetrahedron or a point beyond its barycentric hull.
+                const CONTAINMENT_TOLERANCE: f64 = 1e-12;
+                if reference
+                    .iter()
+                    .all(|x| x.is_finite() && *x >= -CONTAINMENT_TOLERANCE)
+                    && reference.iter().sum::<f64>() <= 1.0 + CONTAINMENT_TOLERANCE
+                {
+                    Some(reference)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+        if let Some([xi, eta, zeta]) = reference {
+            let tab = space.tabulate(mesh, elem_idx, xi, eta, zeta);
             let dofs = space.local_to_global(mesh, elem_idx);
             for (local, &dof) in dofs.iter().enumerate() {
                 rhs[dof] += source.charge * tab.value(local);
@@ -621,6 +663,65 @@ mod tests {
         mesh::unit_square_triangles, spaces::H1Space,
     };
     use std::f64::consts::PI;
+
+    #[test]
+    fn tetrahedral_point_charge_reproduces_test_polynomials() {
+        use crate::mesh::unit_cube_tetrahedra;
+        // A sheared/translated mesh prevents an axis-aligned inverse from
+        // accidentally satisfying the source-location contract.
+        let transform = |p: [f64; 3]| {
+            [
+                3.0 + 2.0 * p[0] + 0.2 * p[1] + 0.1 * p[2],
+                -2.0 + 0.1 * p[0] + 1.4 * p[1] + 0.3 * p[2],
+                0.4 + 0.2 * p[0] + 0.1 * p[1] + 0.9 * p[2],
+            ]
+        };
+        let mut mesh = unit_cube_tetrahedra(2);
+        for node in &mut mesh.nodes {
+            let p = transform([node.x, node.y, node.z]);
+            node.x = p[0];
+            node.y = p[1];
+            node.z = p[2];
+        }
+        for degree in [PolynomialDegree::P1, PolynomialDegree::P2] {
+            let space = H1Space::new(degree);
+            for position in [transform([0.23, 0.27, 0.31]), transform([0.5, 0.5, 0.5])] {
+                let charge = 2.5;
+                let rhs = assemble_point_charge_source(
+                    &PointChargeSource::new(position, charge),
+                    &mesh,
+                    &space,
+                );
+                assert!(
+                    (rhs.iter().sum::<f64>() - charge).abs() < 1e-12,
+                    "shared source must contribute once"
+                );
+                let coordinates = space.dof_coordinates(&mesh).unwrap();
+                for dimension in 0..3 {
+                    let moment: f64 = rhs
+                        .iter()
+                        .zip(&coordinates)
+                        .map(|(load, p)| load * p[dimension])
+                        .sum();
+                    assert!((moment - charge * position[dimension]).abs() < 1e-11);
+                    if degree == PolynomialDegree::P2 {
+                        let moment: f64 = rhs
+                            .iter()
+                            .zip(&coordinates)
+                            .map(|(load, p)| load * p[dimension].powi(2))
+                            .sum();
+                        assert!((moment - charge * position[dimension].powi(2)).abs() < 1e-10);
+                    }
+                }
+            }
+            let outside = assemble_point_charge_source(
+                &PointChargeSource::new(transform([2.0, 2.0, 2.0]), 1.0),
+                &mesh,
+                &space,
+            );
+            assert!(outside.iter().all(|x| *x == 0.0));
+        }
+    }
 
     #[test]
     fn solved_field_recovers_linear_gradient_and_energy() {

@@ -1,10 +1,10 @@
 //! Hourglass-control and bulk-viscosity throughput benches.
 //!
 //! Phase 1 lane 1C kernel benches over the production
-//! `sonium_compute::explicit_hourglass` API: Gamma assembly, hourglass
-//! force evaluation, and batched bulk viscosity. Each group sweeps
-//! element counts spanning L1-resident to DRAM-bound regimes and
-//! reports elements/second via Criterion throughput.
+//! `sonium_compute::explicit_hourglass` API: HEXA8 and Q4 Gamma
+//! assembly, hourglass force evaluation, and batched bulk viscosity.
+//! Each group sweeps element counts spanning L1-resident to DRAM-bound
+//! regimes and reports elements/second via Criterion throughput.
 //!
 //! Run with:
 //!
@@ -18,7 +18,8 @@
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use sonium_compute::explicit_hourglass::{
-    bulk_viscosity_q, bulk_viscosity_q_batch, hexa8_gamma, hexa8_hourglass_forces,
+    Q4_HOURGLASS_BASE, bulk_viscosity_q, bulk_viscosity_q_batch, hexa8_gamma,
+    hexa8_hourglass_forces, q4_gamma, q4_hourglass_forces,
 };
 use std::hint::black_box;
 
@@ -41,6 +42,38 @@ fn cube_stack(n: usize) -> Vec<f64> {
         }
     }
     coords
+}
+
+/// Stack of translated unit squares: element `e` spans `[e, e+1]x[0, 1]`.
+fn square_stack(n: usize) -> Vec<f64> {
+    let mut coords = vec![0.0; 8 * n];
+    for e in 0..n {
+        let base = e as f64;
+        // Lane ordering: (-1,-1), (+1,-1), (+1,+1), (-1,+1).
+        coords[8 * e] = base;
+        coords[8 * e + 1] = 0.0;
+        coords[8 * e + 2] = base + 1.0;
+        coords[8 * e + 3] = 0.0;
+        coords[8 * e + 4] = base + 1.0;
+        coords[8 * e + 5] = 1.0;
+        coords[8 * e + 6] = base;
+        coords[8 * e + 7] = 1.0;
+    }
+    coords
+}
+
+/// Deterministic Q4 modal velocity field with hourglass content.
+fn q4_modal_rates(n: usize) -> Vec<f64> {
+    let mut rates = vec![0.0; 8 * n];
+    for e in 0..n {
+        let scale = 1.0 + 0.125 * (e % 7) as f64;
+        for node in 0..4 {
+            let h = Q4_HOURGLASS_BASE[node];
+            rates[8 * e + 2 * node] = scale * (0.5 * h + 1.0);
+            rates[8 * e + 2 * node + 1] = scale * (0.25 * node as f64 - 0.5);
+        }
+    }
+    rates
 }
 
 /// Deterministic modal velocity field with hourglass content.
@@ -131,6 +164,40 @@ fn validate_hourglass_correctness(_: &mut Criterion) {
         bulk_viscosity_q(7800.0, 4500.0, 0.01, 1.1, 0.05, 500.0),
         0.0
     );
+
+    // Q4 Gamma of the unit square equals the exact base mode.
+    let square = square_stack(1);
+    let mut q4 = vec![0.0; 4];
+    q4_gamma(&square, &mut q4);
+    let max_abs = q4
+        .iter()
+        .zip(Q4_HOURGLASS_BASE.iter())
+        .map(|(got, exact)| (got - exact).abs())
+        .fold(0.0f64, f64::max);
+    report_precision_check("q4_gamma", "unit-square", max_abs, max_abs, 0.0);
+
+    // Q4 viscous power identity P = kappa * sum(q^2) on a mixed field.
+    let q4_rates = q4_modal_rates(1);
+    let mut q4_forces = vec![0.0; 8];
+    q4_hourglass_forces(&q4, &q4_rates, 0.1, &mut q4_forces);
+    let power: f64 = q4_rates
+        .iter()
+        .zip(q4_forces.iter())
+        .map(|(v, f)| v * f)
+        .sum();
+    let mut modal = 0.0;
+    for i in 0..2 {
+        let mut q = 0.0;
+        for node in 0..4 {
+            q += q4[node] * q4_rates[2 * node + i];
+        }
+        modal += q * q;
+    }
+    let expected = 0.1 * modal;
+    assert!(power > 0.0, "mixed field must dissipate");
+    let abs = (power - expected).abs();
+    let rel = abs / expected.abs().max(1.0e-300);
+    report_precision_check("q4_hourglass_forces", "mixed-field", abs, rel, 1.0e-12);
 }
 
 fn bench_hexa8_gamma(c: &mut Criterion) {
@@ -228,11 +295,62 @@ fn bench_bulk_viscosity_q(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_q4_gamma(c: &mut Criterion) {
+    let mut group = c.benchmark_group("q4_gamma");
+    for &n in SIZES {
+        let coords = square_stack(n);
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("sonium", n), &n, |b, _| {
+            let mut gamma = vec![0.0; 4 * n];
+            b.iter(|| {
+                for e in 0..n {
+                    q4_gamma(
+                        black_box(&coords[8 * e..8 * e + 8]),
+                        black_box(&mut gamma[4 * e..4 * e + 4]),
+                    );
+                }
+                black_box(&gamma);
+            });
+        });
+    }
+    group.finish();
+}
+
+fn bench_q4_hourglass_forces(c: &mut Criterion) {
+    let mut group = c.benchmark_group("q4_hourglass_forces");
+    for &n in SIZES {
+        let coords = square_stack(n);
+        let rates = q4_modal_rates(n);
+        let mut gamma = vec![0.0; 4 * n];
+        for e in 0..n {
+            q4_gamma(&coords[8 * e..8 * e + 8], &mut gamma[4 * e..4 * e + 4]);
+        }
+        group.throughput(Throughput::Elements(n as u64));
+        group.bench_with_input(BenchmarkId::new("sonium", n), &n, |b, _| {
+            let mut forces = vec![0.0; 8 * n];
+            b.iter(|| {
+                for e in 0..n {
+                    q4_hourglass_forces(
+                        black_box(&gamma[4 * e..4 * e + 4]),
+                        black_box(&rates[8 * e..8 * e + 8]),
+                        black_box(0.1),
+                        black_box(&mut forces[8 * e..8 * e + 8]),
+                    );
+                }
+                black_box(&forces);
+            });
+        });
+    }
+    group.finish();
+}
+
 criterion_group!(
     explicit_hourglass_bench,
     validate_hourglass_correctness,
     bench_hexa8_gamma,
     bench_hexa8_hourglass_forces,
+    bench_q4_gamma,
+    bench_q4_hourglass_forces,
     bench_bulk_viscosity_q,
 );
 criterion_main!(explicit_hourglass_bench);

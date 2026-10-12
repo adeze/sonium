@@ -152,6 +152,8 @@ fn main() {
     }
     println!("{}", summary.summary());
     if !summary.passed() {
+        println!("FAILED: qa-oc-regen");
         std::process::exit(1);
     }
+    println!("SUCCESS: qa-oc-regen");
 }

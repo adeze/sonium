@@ -1,7 +1,7 @@
-//! QA: I-beam warping torsion vs Radioss/OpenRadioss explicit quasi-statics.
+//! QA: I-beam warping torsion vs OpenCourant explicit quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares brick-mesh twist angles against the Vlasov warping closed form.
 //! Without an engine it prints the documented skip message and exits 0. Case
 //! contributed by the beams lane; Worker 1 owns the runner.
@@ -15,7 +15,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction, RadMesh,
     RadNodeSet, RadProbe, assert_probe_close, engine_exe, probes_json, run_case, write_engine,
     write_starter,
 };
@@ -162,7 +162,7 @@ fn i_beam_mesh(
 }
 
 /// Single-sourced warping-torsion comparison case (SI units).
-pub fn beam_warping_case() -> RadCase {
+pub fn beam_warping_case() -> OpenCourantCase {
     let length = 2.0;
     let flange_b = 0.1;
     let half_h = 0.11;
@@ -192,7 +192,7 @@ pub fn beam_warping_case() -> RadCase {
     let dz_pair = |twist: f64| twist * flange_b;
     // Torque couple: +/- F at the +/- y flange tips (arm = flange width).
     let couple_f = torque / flange_b;
-    RadCase {
+    OpenCourantCase {
         name: "beam_warping".to_string(),
         title: "sonium_qa rad beam_warping quasi-static tip torque".to_string(),
         mesh,
@@ -318,7 +318,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 

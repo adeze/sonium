@@ -57,7 +57,7 @@ cargo test -p sonium-bem --features cuda --lib \
   -- --nocapture --test-threads=1
 
 SONIUM_OUTPUT_DIR="$output_dir" \
-  cargo run -p sonium-qa --features 'qa-binaries cuda' --bin qa-bem-cuda-matrix
+  cargo run --release -p sonium-qa --features 'qa-binaries cuda' --bin qa-bem-cuda-matrix
 
 # The dedicated B1 producer records the scalar, pair-channel, quadrature,
 # field-residency, admission, and transactional-failure rows.  It is separate

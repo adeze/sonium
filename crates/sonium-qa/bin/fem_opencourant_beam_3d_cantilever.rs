@@ -1,7 +1,7 @@
-//! QA: FEM 3-D beam cantilever vs Radioss/OpenRadioss explicit quasi-statics.
+//! QA: FEM 3-D beam cantilever vs OpenCourant explicit quasi-statics.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `RADISS_EXE` or `OPENCOURANT_EXE` is set and
+//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
 //! compares the brick-mesh tip displacement against Euler-Bernoulli beam
 //! theory. Without an engine it prints the documented skip message and
 //! exits 0. Case contributed by the beams lane; Worker 1 owns the runner.
@@ -9,14 +9,14 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadFunction,
     RadNodeSet, RadProbe, assert_probe_close, cantilever_brick_mesh, engine_exe, probes_json,
     run_case, write_engine, write_starter,
 };
 use std::path::PathBuf;
 
 /// Single-sourced 3-D cantilever comparison case (Y tip load, SI units).
-pub fn beam_3d_cantilever_case() -> RadCase {
+pub fn beam_3d_cantilever_case() -> OpenCourantCase {
     let (mesh, root_set, tip_set, tip_node) = cantilever_brick_mesh(10, 2, 2, 1.0, 0.05, 0.05);
     let expected = sonium_qa::beam_euler_cantilever_point(
         1.0,
@@ -27,7 +27,7 @@ pub fn beam_3d_cantilever_case() -> RadCase {
     );
     // /CLOAD applies the scale to EACH node of the set.
     let tip_scale = 1000.0 / tip_set.len() as f64;
-    RadCase {
+    OpenCourantCase {
         name: "beam_3d_cantilever".to_string(),
         title: "sonium_qa rad beam_3d_cantilever quasi-static tip load".to_string(),
         mesh,
@@ -125,7 +125,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 

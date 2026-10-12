@@ -2,7 +2,7 @@
 //!
 //! Engine-free tests run everywhere; the engine-arm test runs only
 //! when a vendor engine is configured and otherwise skips loudly
-//! (the `fem_radioss_*` legs follow the same precedent).
+//! (the `fem_opencourant_*` legs follow the same precedent).
 
 #![cfg(feature = "qa-binaries")]
 

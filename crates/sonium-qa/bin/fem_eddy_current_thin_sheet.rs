@@ -1,7 +1,11 @@
 //! Eddy-current thin-sheet shielding validation
 //!
 //! Validates the exponential attenuation / shielding effectiveness
-//! of a conductive sheet against analytical formulas.
+//! of a conductive sheet against analytical formulas, then solves the
+//! production complex H(curl) finite-sheet field and integrated current impedance.
+
+#[path = "support/eddy_current_slab.rs"]
+mod eddy_current_slab;
 
 use sonium_fem::physics::electromagnetics::eddy_current::ConductorMaterial;
 use sonium_qa::analytical::eddy_current_shielding_db;
@@ -82,7 +86,26 @@ fn main() {
         test_field_ratio_from_db();
     });
     match result {
-        Ok(()) => println!("SUCCESS"),
+        Ok(()) => match eddy_current_slab::numerical_gate(true) {
+            Ok(record) => {
+                match record.to_json_line() {
+                    Ok(json) => println!("QA_RESULT: {json}"),
+                    Err(error) => {
+                        eprintln!("FAILED: {error}");
+                        std::process::exit(1);
+                    }
+                }
+                println!("SUCCESS");
+            }
+            Err(error) => {
+                let id = "fem.eddy-current-thin-sheet.v1";
+                if let Ok(json) = sonium_qa::QaResult::failed(id, error.clone()).to_json_line() {
+                    println!("QA_RESULT: {json}");
+                }
+                eprintln!("FAILED: {error}");
+                std::process::exit(1);
+            }
+        },
         Err(_) => {
             println!("FAILED");
             std::process::exit(1);

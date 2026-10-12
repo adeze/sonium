@@ -11,6 +11,9 @@
 //! (solved frequencies, eigen-residuals, modal fields) are covered by
 //! `qa-room-shoebox-fem-benchmark`; do not cite this binary for that claim.
 
+#[path = "support/reference_result.rs"]
+mod reference_result;
+
 // Named acceptance tolerances for the analytical reference checks below.
 const MODE_FREQUENCY_TOLERANCE_HZ: f64 = 5.0e-7;
 
@@ -303,7 +306,9 @@ fn run() -> Result<(), String> {
 }
 
 fn main() {
-    if let Err(error) = run() {
+    let result = run();
+    reference_result::emit("reference.room-modal-validation.v1", result.is_ok());
+    if let Err(error) = result {
         eprintln!("FAILED: {error}");
         println!("FAILED");
         std::process::exit(1);

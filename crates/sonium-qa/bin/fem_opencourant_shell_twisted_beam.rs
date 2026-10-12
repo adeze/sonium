@@ -1,4 +1,4 @@
-//! QA: twisted-beam shells vs Radioss/OpenRadioss quasi-statics.
+//! QA: twisted-beam shells vs OpenCourant quasi-statics.
 //!
 //! MacNeal-Harder thin twisted beam (L = 12 in, width 1.1 in, t = 0.32 in,
 //! E = 29e6 psi, nu = 0.22, 90-degree twist, 1 lbf tip load) as a QEPH
@@ -13,15 +13,15 @@
 //! set of problems to test finite element accuracy", FEAD 1.
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `RADISS_EXE` or
-//! `OPENCOURANT_EXE` is set and compares the tip deflection against the
+//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
+//! (or legacy `RADISS_EXE`) is set and compares the tip deflection against the
 //! MacNeal target. Without an engine it prints the documented skip message
 //! and exits 0. Decks regenerate with `REGEN_DECKS=1`.
 
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
     RadFunction, RadMesh, RadNodeSet, RadProbe, RadShellMesh, RadShellProperty, RadThRequest,
     assert_probe_close, assert_probes_payload_eq, engine_exe, extended_probes_json,
     run_extended_case, shel_channel, write_extended_engine, write_extended_starter,
@@ -98,7 +98,7 @@ fn twisted_beam_mesh(n_x: usize, n_y: usize) -> TwistedMesh {
 /// clamped-plate C3 precedent for QEPH-vs-theory twin gaps.
 fn shell_twisted_beam_case() -> RadExtendedCase {
     let mesh = twisted_beam_mesh(32, 6);
-    let base = RadCase {
+    let base = OpenCourantCase {
         name: "shell_twisted_beam".to_string(),
         title: "sonium_qa rad twisted beam quasi-static tip load".to_string(),
         mesh: RadMesh {
@@ -222,7 +222,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -289,7 +289,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-shell-twisted-beam");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-shell-twisted-beam");
+    println!("PASS: qa-fem-opencourant-shell-twisted-beam");
+    println!("SUCCESS: qa-fem-opencourant-shell-twisted-beam");
 }

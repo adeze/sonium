@@ -30,6 +30,16 @@ fn check(name: &str, actual: f64, expected: f64, rel: f64) {
 }
 
 fn main() {
+    match run() {
+        Ok(()) => println!("SUCCESS: qa-fem-crash-materials"),
+        Err(error) => {
+            eprintln!("FAILED: qa-fem-crash-materials: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     // Johnson-Cook quasi-static uniaxial follows its closed form.
     let jc = JohnsonCookMaterial::c4340_steel();
     let mut jc_state = JohnsonCookState::new(293.0);
@@ -141,4 +151,5 @@ fn main() {
         1e-9,
     );
     println!("PASS: qa-fem-crash-materials");
+    Ok(())
 }

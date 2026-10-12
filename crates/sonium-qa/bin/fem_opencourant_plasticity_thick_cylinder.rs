@@ -1,9 +1,9 @@
-//! QA: thick-cylinder autofrettage vs Radioss/OpenRadioss (Worker 4 C3 case).
+//! QA: thick-cylinder autofrettage vs OpenCourant (Worker 4 C3 case).
 //!
-//! Builds the `plasticity_thick_cylinder` Radioss case (ring mesh, bore
+//! Builds the `plasticity_thick_cylinder` OpenCourant case (ring mesh, bore
 //! pressure load-unload history, analytic probes), verifies the checked-in
 //! decks match the `sonium_qa::rad` writer, then runs the starter and engine
-//! when `RADISS_EXE` or `OPENCOURANT_EXE` is set. Without an engine it prints
+//! when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set. Without an engine it prints
 //! the documented skip message and exits 0.
 //!
 //! ACTIVATION STATUS (Sync 2): fully activated on the extended writer.
@@ -16,7 +16,7 @@
 // Rust guideline compliant 2026-02-21
 
 use sonium_qa::rad::{
-    RadBoundaryCondition, RadCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
+    RadBoundaryCondition, OpenCourantCase, RadConcentratedLoad, RadElasticMaterial, RadExtendedCase,
     RadFunction, RadMaterial, RadMesh, RadNodeSet, RadProbe, RadThRequest, assert_probe_close,
     assert_probes_payload_eq, bric_channel, engine_exe, extended_probes_json,
     perfectly_plastic_steel_law36, run_extended_case, write_extended_engine,
@@ -243,7 +243,7 @@ fn brick_volume_signed(mesh: &RadMesh, brick: &[usize; 8]) -> f64 {
         + tet(n[1], n[4], n[5], n[6])
 }
 
-/// Builds the thick-cylinder autofrettage Radioss case.
+/// Builds the thick-cylinder autofrettage OpenCourant case.
 ///
 /// Ring mesh with z-locked caps (plane-strain-like), bore pressure applied
 /// as radial `/CLOAD` nodal forces on a smooth raised-cosine load-unload
@@ -313,7 +313,7 @@ fn plasticity_thick_cylinder_case() -> RadExtendedCase {
         "residual signs must be compressive at bore, tensile outside"
     );
 
-    let base = RadCase {
+    let base = OpenCourantCase {
         name: "plasticity_thick_cylinder".to_string(),
         title: "sonium_qa rad thick-cylinder autofrettage load-unload".to_string(),
         mesh,
@@ -440,7 +440,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set RADISS_EXE or OPENCOURANT_EXE");
+        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
         return;
     };
 
@@ -535,7 +535,9 @@ fn main() {
     }
     std::fs::remove_dir_all(&work).ok();
     if failed {
+        println!("FAILED: qa-fem-opencourant-plasticity-thick-cylinder");
         std::process::exit(1);
     }
-    println!("PASS: qa-fem-radioss-plasticity-thick-cylinder");
+    println!("PASS: qa-fem-opencourant-plasticity-thick-cylinder");
+    println!("SUCCESS: qa-fem-opencourant-plasticity-thick-cylinder");
 }

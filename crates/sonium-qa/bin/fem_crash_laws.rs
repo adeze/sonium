@@ -1044,8 +1044,10 @@ fn main() {
     println!("G-leg qa-fem-crash-laws: {passed}/{total} probes passed");
     if passed == total {
         println!("G-LEG RESULT: PASS");
+        println!("SUCCESS: qa-fem-crash-laws");
     } else {
         println!("G-LEG RESULT: FAIL");
+        println!("FAILED: qa-fem-crash-laws");
         std::process::exit(1);
     }
 }

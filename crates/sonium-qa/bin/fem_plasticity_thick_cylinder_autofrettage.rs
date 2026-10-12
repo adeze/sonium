@@ -11,7 +11,7 @@
 //! - a finite-strain J2 material point driven along the bore overstrain
 //!   path, against the small-strain model.
 //!
-//! The C3 Radioss comparison case lives in `bin/fem_radioss_plasticity_thick_cylinder.rs`.
+//! The C3 Radioss comparison case lives in `bin/fem_opencourant_plasticity_thick_cylinder.rs`.
 
 use sonium_fem::physics::solid::plasticity::{
     FiniteStrainJ2Material, FiniteStrainState, HardeningLaw, J2Material, PlasticState,

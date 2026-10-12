@@ -13,6 +13,16 @@ use sonium_fem::physics::solid::fracture::cohesive::{
 };
 
 fn main() {
+    match run() {
+        Ok(()) => println!("SUCCESS: qa-fem-cohesive-patch"),
+        Err(error) => {
+            eprintln!("FAILED: qa-fem-cohesive-patch: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+fn run() -> Result<(), String> {
     // Bilinear epoxy: peak traction and dissipated energy.
     let law = BilinearCohesiveLaw::epoxy();
     let mut state = CohesiveState::new();
@@ -57,4 +67,5 @@ fn main() {
     let t = mixed.traction_3d([mixed.normal.onset_opening(), 0.0, 0.0], &mut pure);
     assert!((t[0] - 30.0e6).abs() / 30.0e6 < 1e-9);
     println!("PASS: qa-fem-cohesive-patch");
+    Ok(())
 }

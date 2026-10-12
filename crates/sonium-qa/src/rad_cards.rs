@@ -1,7 +1,7 @@
-//! Radioss deck card families and header normalization.
+//! OpenCourant deck card families and header normalization.
 //!
 //! This module owns the [`CardKind`] enum covering the 319 normalized card
-//! headers in `sonium/miniqa_cards.txt` plus five structural extras needed
+//! headers in `sonium/miniqa_cards.txt` plus seven structural extras needed
 //! for a complete corpus parse, and the [`parse_header`] normalization that
 //! maps raw deck header lines onto `(CardKind, id)` pairs.
 //!
@@ -41,7 +41,7 @@ pub const INVENTORY_COUNT: usize = 319;
 /// exactly one line. Variant docs name the deck header each variant covers.
 macro_rules! define_kinds {
     ($($variant:ident => $text:literal),* $(,)?) => {
-        /// Radioss deck card family.
+        /// OpenCourant deck card family.
         ///
         /// Each variant names one normalized deck header (see
         /// `sonium/miniqa_cards.txt`). The seven [`CardKind::is_extra`]

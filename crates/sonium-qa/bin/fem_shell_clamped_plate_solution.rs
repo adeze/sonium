@@ -8,9 +8,9 @@
 //! and Shells", 2nd ed., Article 24 (axisymmetrical bending of circular
 //! plates).
 //!
-//! The C3 Radioss case uses the shared `sonium_qa::rad` extended API
+//! The C3 OpenCourant case uses the shared `sonium_qa::rad` extended API
 //! (`shell_clamped_plate_case`); engine-gated runs live in
-//! `qa-fem-radioss-shell-clamped-plate`.
+//! `qa-fem-opencourant-shell-clamped-plate`.
 
 // Rust guideline compliant 2026-02-21
 
@@ -89,7 +89,7 @@ fn main() {
             "refinement must not increase the error"
         );
         // C3: static deck verification through the real API (no file writes;
-        // engine-gated runs live in qa-fem-radioss-shell-clamped-plate).
+        // engine-gated runs live in qa-fem-opencourant-shell-clamped-plate).
         let case = shell_clamped_plate_case();
         case.validate().expect("shell case must validate");
         let starter = write_extended_starter(&case);

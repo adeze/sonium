@@ -649,6 +649,35 @@ fn main() {
                     .maximum("velocity_relative_error", 1.0e-6)
                     .maximum("pressure_relative_error", 1.0e-4);
             }
+            // Report each subcase independently, including omitted cases.
+            // A filtered run certifies only the selected numerical cases.
+            for name in &KNOWN_STOKES_CASES[1..] {
+                let case_id = format!("fem.stokes-validation.{name}.v1");
+                let mut subcase = if executed.contains(name) {
+                    sonium_qa::QaResult::passed(case_id)
+                } else {
+                    sonium_qa::QaResult::skipped(case_id, "omitted by SONIUM_STOKES_CASE")
+                };
+                if *name == "poiseuille"
+                    && let Some((velocity_error, pressure_error, converged)) = poiseuille
+                {
+                    subcase = subcase
+                        .metric("velocity_relative_error", velocity_error)
+                        .metric("pressure_relative_error", pressure_error)
+                        .metric("converged", if converged { 1.0 } else { 0.0 })
+                        .minimum("converged", 1.0)
+                        .maximum("velocity_relative_error", 1.0e-6)
+                        .maximum("pressure_relative_error", 1.0e-4);
+                }
+                match subcase.to_json_line() {
+                    Ok(line) => println!("QA_RESULT: {line}"),
+                    Err(error) => {
+                        eprintln!("failed to serialize Stokes subcase: {error}");
+                        println!("FAILED");
+                        std::process::exit(1);
+                    }
+                }
+            }
             match result.to_json_line() {
                 Ok(line) => println!("QA_RESULT: {line}"),
                 Err(error) => {
