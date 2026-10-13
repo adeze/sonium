@@ -3498,17 +3498,94 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     )
                 }
                 BackendPreconditionerKind::JacobiSchur => {
-                    eprintln!(
-                        "WARNING: backend Jacobi/Schur is currently f64-only; falling back to CPU"
+                    let Some(pressure_schur) = pressure_schur else {
+                        eprintln!(
+                            "WARNING: backend Jacobi/Schur requested without Schur matrix; falling back to CPU"
+                        );
+                        return solve_iterative_cpu(
+                            config,
+                            csr,
+                            b,
+                            x0,
+                            velocity_block_size,
+                            pressure_schur,
+                        );
+                    };
+                    let pressure_kind = match config.linear_solver_schur_preconditioner {
+                        BackendPressureSchurPreconditionerKind::Polynomial => {
+                            PressureSchurBackendKind::Polynomial
+                        }
+                        BackendPressureSchurPreconditionerKind::Chebyshev => {
+                            PressureSchurBackendKind::Chebyshev
+                        }
+                        BackendPressureSchurPreconditionerKind::Amg => {
+                            eprintln!(
+                                "WARNING: mixed-precision backend Schur/AMG is not available; falling back to CPU"
+                            );
+                            return solve_iterative_cpu(
+                                config,
+                                csr,
+                                b,
+                                x0,
+                                velocity_block_size,
+                                Some(pressure_schur),
+                            );
+                        }
+                    };
+                    let schur_values_f32: Vec<f32> =
+                        pressure_schur.values.iter().map(|&v| v as f32).collect();
+                    let pressure_schur_ref = HostCsrRef::new(
+                        pressure_schur.num_rows,
+                        pressure_schur.num_cols,
+                        &pressure_schur.row_ptrs,
+                        &pressure_schur.col_indices,
+                        &schur_values_f32,
                     );
-                    return solve_iterative_cpu(
-                        config,
-                        csr,
-                        b,
-                        x0,
-                        velocity_block_size,
-                        pressure_schur,
-                    );
+                    let pc_f32 = match SaddlePointJacobiSchurBackend::try_from_csr_host_parts_f32(
+                        backend,
+                        &a_f32,
+                        &row_ptr_host,
+                        &col_idx_host,
+                        &values_f32,
+                        pressure_schur_ref,
+                        SaddlePointJacobiSchurBackendConfig {
+                            velocity_block_size,
+                            velocity_degree: config.linear_solver_polynomial_degree.max(1),
+                            velocity_damping: config.linear_solver_polynomial_damping,
+                            pressure_degree: config.linear_solver_schur_polynomial_degree.max(1),
+                            pressure_damping: config.linear_solver_schur_polynomial_damping,
+                            pressure_kind,
+                            pressure_chebyshev_degree: config
+                                .linear_solver_schur_chebyshev_degree
+                                .max(1),
+                            pressure_chebyshev_eigenvalue_ratio: config
+                                .linear_solver_schur_chebyshev_eigenvalue_ratio
+                                .max(1.0),
+                        },
+                    ) {
+                        Ok(preconditioner) => preconditioner,
+                        Err(err) => {
+                            eprintln!("WARNING: mixed-precision backend saddle-point preconditioner setup failed ({err}); falling back to CPU");
+                            return solve_iterative_cpu(
+                                config,
+                                csr,
+                                b,
+                                x0,
+                                velocity_block_size,
+                                Some(pressure_schur),
+                            );
+                        }
+                    };
+                    gmres_ir_backend_preconditioned(
+                        backend,
+                        &device_csr,
+                        &a_f32,
+                        &pc_f32,
+                        &b_dev,
+                        x0_dev.as_ref(),
+                        &mut out_dev,
+                        &ir_cfg,
+                    )
                 }
             };
             let status = match status_result {
