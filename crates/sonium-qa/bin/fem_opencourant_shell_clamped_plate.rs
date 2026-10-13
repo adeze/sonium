@@ -1,10 +1,13 @@
-//! QA: clamped circular plate shells vs OpenCourant quasi-statics.
+//! External reference health and native parity gate for shell-clamped-plate.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
-//! (or legacy `RADISS_EXE`) is set and compares the center deflection against
-//! the Kirchhoff closed form. Without an engine it prints the
-//! documented skip message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` extended writer, then runs the
+//! starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the
+//! center deflection, thickness, and hoop moment against independent references.
+//! Native shell mesh/timestep studies and full-system force balance must also pass.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -14,9 +17,18 @@ use sonium_qa::rad::{
 };
 use std::path::PathBuf;
 
+#[path = "support/plate_native.rs"]
+#[expect(
+    dead_code,
+    reason = "LU and scaled-coordinate variants are standalone diagnostics, not production gate choices"
+)]
+mod plate_native;
+
 fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/shell_clamped_plate")
 }
+
+const CASE_ID: &str = "fem.opencourant.shell-clamped-plate.native-parity.v1";
 
 fn main() {
     let case = shell_clamped_plate_case();
@@ -68,8 +80,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -81,14 +92,18 @@ fn main() {
     std::fs::write(work.join("shell_clamped_plate_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("shell_clamped_plate_0001.rad"), &engine).unwrap();
     let output = run_extended_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad shell_clamped_plate run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
+    let mut external = Vec::new();
     for probe in &case.base.probes {
         match output.history.final_value(&probe.channel) {
             Ok(actual) => {
+                external.push(actual);
                 println!(
                     "probe {}: actual {actual:.6e}, expected {:.6e}",
                     probe.label, probe.expected
@@ -111,10 +126,16 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-shell-clamped-plate");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-shell-clamped-plate");
-    println!("SUCCESS: qa-fem-opencourant-shell-clamped-plate");
+    let result = plate_native::parity_result(&case, CASE_ID, &output.engine, &external, !failed)
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(
+                CASE_ID,
+                format!("native full plate validation failed: {error}"),
+            )
+            .requested_backend("cpu+opencourant")
+            .actual_backend("cpu+opencourant")
+            .metric("external_reference_executed", 1.0)
+            .metric("native_parity_executed", 0.0)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

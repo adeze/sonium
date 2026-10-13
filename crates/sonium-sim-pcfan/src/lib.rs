@@ -7,6 +7,8 @@
 //!
 //! Alternative geometry can be described via MeshLang DSL - see `meshlang_geometry`.
 
+// Rust guideline compliant 2026-02-21
+
 mod accelerator_parity;
 mod annular_fwh;
 mod cfd;
@@ -37,6 +39,8 @@ pub use annular_fwh::{
     AnnularFwhError, AnnularTone, AnnularToneSpec, annular_loading_tones,
     blade_passing_frequency_hz, modal_loading_amplitude_pa,
 };
+#[doc(inline)]
+pub use cfd::evaluate_pc_fan_cfd_newton_state_linearization;
 pub use cfd::{
     PC_FAN_TRANSPORTED_BDF_NEWTON_PROVENANCE, PcFanCfdBodyFittedRemeshLevel,
     PcFanCfdTransientBdfState, PcFanCfdTransientConvergence, PcFanCfdTransientConvergenceConfig,

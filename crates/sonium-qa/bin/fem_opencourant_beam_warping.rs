@@ -1,16 +1,18 @@
-//! QA: I-beam warping torsion vs OpenCourant explicit quasi-statics.
+//! External reference health and native parity gate for beam-warping.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares brick-mesh twist angles against the Vlasov warping closed form.
-//! Without an engine it prints the documented skip message and exits 0. Case
-//! contributed by the beams lane; Worker 1 owns the runner.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares brick-mesh twist
+//! angles against the Vlasov warping closed form. Case contributed by the beams lane; Worker 1
+//! owns the runner.
 //!
-//! The rad API ships brick meshes only (no beam cards), so the I-beam is a
-//! brick twin: flanges plus web extruded along X, tip torque applied as a
-//! force couple, twist recovered from flange DZ pairs. Gaps for Worker 1:
-//! no /PROP/BEAM cards, no I-section mesher in rad.rs (built in-bin here),
-//! no twist-angle or bimoment probe channels (twist is differenced DZ).
+//! The rad API ships brick meshes only (no beam cards), so the I-beam is a brick twin: flanges
+//! plus web extruded along X, tip torque applied as a force couple, twist recovered from flange
+//! DZ pairs. Gaps for Worker 1: no /PROP/BEAM cards, no I-section mesher in rad.rs (built in-
+//! bin here), no twist-angle or bimoment probe channels (twist is differenced DZ).
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -20,6 +22,9 @@ use sonium_qa::rad::{
     write_engine, write_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/warping_native.rs"]
+pub mod warping_native;
 
 /// Brick twin of an I-beam cantilever along X.
 ///
@@ -266,6 +271,105 @@ pub fn beam_warping_case() -> OpenCourantCase {
     }
 }
 
+/// Refine the external I-section mesh while preserving the original transient.
+///
+/// The root, tip force couple, and two displacement pairs retain their original
+/// physical coordinates. Materials, load history, and probe budgets are unchanged.
+///
+/// # Errors
+///
+/// Returns an error for fewer than two or odd axial cells, zero section
+/// refinement, overflowing mesh counts, or invalid mesh connectivity.
+pub fn refined_reference_case(
+    axial_cells: usize,
+    section_factor: usize,
+) -> Result<OpenCourantCase, Box<dyn std::error::Error>> {
+    if axial_cells < 2 || !axial_cells.is_multiple_of(2) || section_factor == 0 {
+        return Err("even axial cells >=2 and positive section refinement required".into());
+    }
+    let twice = section_factor.checked_mul(2).ok_or("mesh count overflow")?;
+    let four = section_factor.checked_mul(4).ok_or("mesh count overflow")?;
+    let (mesh, root, plus, minus, (mid_plus, mid_minus, tip_plus, tip_minus)) = i_beam_mesh(
+        axial_cells,
+        2.0,
+        0.1,
+        0.11,
+        0.01,
+        0.01,
+        twice,
+        twice,
+        section_factor,
+        four,
+    );
+    mesh.validate()?;
+    let mut case = beam_warping_case();
+    case.mesh = mesh;
+    case.node_sets[0].nodes = root;
+    case.node_sets[1].nodes = plus;
+    case.node_sets[2].nodes = minus;
+    case.th_nodes = vec![mid_plus, mid_minus, tip_plus, tip_minus];
+    case.probes[0].channel = format!("DZ/{mid_plus}-DZ/{mid_minus}");
+    case.probes[1].channel = format!("DZ/{tip_plus}-DZ/{tip_minus}");
+    Ok(case)
+}
+
+#[test]
+fn refined_reference_preserves_original_warping_physics() {
+    let original = beam_warping_case();
+    let refined = refined_reference_case(40, 2).unwrap();
+    assert_eq!(write_engine(&original), write_engine(&refined));
+    assert_eq!(
+        original.material.youngs_modulus_pa,
+        refined.material.youngs_modulus_pa
+    );
+    assert_eq!(
+        original.material.poisson_ratio,
+        refined.material.poisson_ratio
+    );
+    assert_eq!(
+        original.material.density_kg_per_m3,
+        refined.material.density_kg_per_m3
+    );
+    for (old, new) in original.cloads.iter().zip(&refined.cloads) {
+        assert_eq!(old.force_scale_n, new.force_scale_n);
+        assert_eq!(old.direction, new.direction);
+        assert_eq!(old.function, new.function);
+        let point =
+            |case: &OpenCourantCase, set: usize| case.mesh.nodes[case.node_sets[set].nodes[0] - 1];
+        assert_eq!(point(&original, old.set), point(&refined, new.set));
+    }
+    for (old, new) in original.probes.iter().zip(&refined.probes) {
+        assert_eq!(old.expected, new.expected);
+        assert_eq!(old.rel_tol, new.rel_tol);
+        assert_eq!(old.abs_tol, new.abs_tol);
+        let points = |case: &OpenCourantCase, channel: &str| {
+            channel
+                .split('-')
+                .map(|component| {
+                    let node: usize = component.split_once('/').unwrap().1.parse().unwrap();
+                    case.mesh.nodes[node - 1]
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            points(&original, &old.channel),
+            points(&refined, &new.channel)
+        );
+    }
+    let root = &refined.node_sets[refined.bcs[0].set].nodes;
+    assert_eq!(refined.bcs[0].lock, original.bcs[0].lock);
+    assert!(
+        root.iter()
+            .all(|&node| refined.mesh.nodes[node - 1][0] == 0.0)
+    );
+    assert_eq!(
+        root.len(),
+        refined.mesh.nodes.iter().filter(|p| p[0] == 0.0).count()
+    );
+    assert!(refined_reference_case(1, 2).is_err());
+    assert!(refined_reference_case(40, 0).is_err());
+}
+
 fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/beam_warping")
 }
@@ -277,6 +381,8 @@ fn diff_channel(history: &sonium_qa::rad::TimeHistory, channel: &str) -> Option<
     let vb = history.final_value(b.trim()).ok()?;
     Some(va - vb)
 }
+
+const CASE_ID: &str = "fem.opencourant.beam-warping.native-parity.v1";
 
 fn main() {
     let case = beam_warping_case();
@@ -318,8 +424,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -328,8 +433,10 @@ fn main() {
     std::fs::write(work.join("beam_warping_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("beam_warping_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad beam_warping run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -358,9 +465,26 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED");
-        std::process::exit(1);
-    }
-    println!("SUCCESS");
+    let values = case
+        .probes
+        .iter()
+        .map(|probe| diff_channel(&output.history, &probe.channel))
+        .collect::<Option<Vec<_>>>();
+    let result = values
+        .ok_or_else(|| "external paired displacement unavailable".to_string())
+        .and_then(|values| {
+            warping_native::parity_result(&case, CASE_ID, &output.engine, &values, !failed)
+                .map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(
+                CASE_ID,
+                format!("native warping validation failed: {error}"),
+            )
+            .requested_backend("cpu+opencourant")
+            .actual_backend("cpu+opencourant")
+            .metric("external_reference_executed", 1.0)
+            .metric("native_parity_executed", 0.0)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

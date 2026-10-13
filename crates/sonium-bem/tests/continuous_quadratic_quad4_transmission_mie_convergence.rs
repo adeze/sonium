@@ -1,10 +1,12 @@
 //! Independent Mie convergence for continuous quadratic Quad4 transmission.
 
+// Rust guideline compliant 2026-02-21
+
 use num_complex::Complex64;
-use sonium_bem::core::assembly::build_transmission_tbem_system_with_continuous_quadratic;
+use sonium_bem::BasisOrder;
+use sonium_bem::core::assembly::assemble_galerkin_muller_transmission_with_global_dofs;
 use sonium_bem::core::incident::IncidentField;
 use sonium_bem::core::mesh::generate_cubed_sphere_quad_mesh;
-use sonium_bem::core::solver::transmission::solve_incident_transmission;
 use sonium_bem::core::types::PhysicsParams;
 use sonium_wave::analytical::FluidSphereTransmission3d;
 use std::f64::consts::PI;
@@ -20,6 +22,12 @@ const EVALUATION_RADIUS: f64 = 0.8;
 #[derive(Debug, Clone, Copy)]
 pub struct ContinuousQuadraticQuad4TransmissionMetrics {
     pub coarse_error: f64,
+    /// Exterior complex-pressure error on the middle refinement level.
+    pub medium_error: f64,
+    /// Independently certified middle-level algebraic residual.
+    pub medium_residual: f64,
+    /// Middle-level numerical solution difference from direct factorization.
+    pub medium_solution_error: f64,
     pub fine_error: f64,
     pub coarse_residual: f64,
     pub fine_residual: f64,
@@ -55,18 +63,33 @@ fn relative_error(actual: &[Complex64], reference: &[Complex64]) -> f64 {
 }
 
 fn solve_level(face_resolution: usize, reference: &[Complex64]) -> (f64, f64, f64, usize, usize) {
-    let mesh = generate_cubed_sphere_quad_mesh(RADIUS, face_resolution);
+    println!("Galerkin Quad4 resolution {face_resolution}: starting full native assembly");
+    let mut mesh = generate_cubed_sphere_quad_mesh(RADIUS, face_resolution);
+    let mapping = mesh
+        .continuous_quadratic_dof_map()
+        .expect("native Q2 topology");
+    let dofs = mapping.num_dofs();
+    for (index, element) in mesh.elements.iter_mut().enumerate() {
+        element.dof_addresses = mapping.element_dofs(index).unwrap().to_vec();
+    }
     let (exterior, interior) = media();
-    let system = build_transmission_tbem_system_with_continuous_quadratic(
+    let system = assemble_galerkin_muller_transmission_with_global_dofs(
         &mesh.elements,
         &mesh.nodes,
-        exterior,
-        interior,
+        &exterior,
+        &interior,
+        BasisOrder::Quadratic,
+        3,
+        dofs,
     )
-    .expect("continuous Quad4 transmission assembly");
+    .expect("full Quad4 Galerkin assembly");
     let incident = IncidentField::plane_wave_z();
-    let solution = solve_incident_transmission(&system, &incident, 1.0e-8)
-        .expect("continuous Quad4 transmission solve");
+    let rhs = system
+        .incident_rhs_from_field(&mesh.elements, &mesh.nodes, &incident, &exterior, 3)
+        .expect("independently projected incident trace");
+    let solution = system
+        .solve(&rhs, 1e-8)
+        .expect("native Galerkin equation budget");
     let points = [
         [
             EVALUATION_RADIUS * 0.2_f64.sin(),
@@ -109,21 +132,38 @@ fn solve_level(face_resolution: usize, reference: &[Complex64]) -> (f64, f64, f6
             EVALUATION_RADIUS * 2.8_f64.cos(),
         ],
     ];
-    let fields = solution
-        .evaluate_exterior_field_checked(&system, &points, &incident)
+    let fields = system
+        .evaluate_exterior_field_checked(
+            &mesh.elements,
+            &mesh.nodes,
+            &solution,
+            &points,
+            &incident,
+            &exterior,
+            3,
+        )
         .expect("continuous Quad4 exterior field");
     let actual = fields.iter().map(|field| field.p_total).collect::<Vec<_>>();
     let field_error = relative_error(&actual, reference);
 
-    let rhs = system
-        .incident_rhs(&incident)
-        .expect("continuous Quad4 incident RHS");
     let direct = sonium_solvers::direct::lu_solve(system.matrix(), &rhs)
-        .expect("independent continuous Quad4 direct solve");
-    let solution_error = relative_error(solution.values(), &direct);
+        .expect("continuous Quad4 direct coefficient cross-check");
+    let solution_error = relative_error(&solution, &direct);
+    let error_squared = (0..system.total_dofs())
+        .map(|row| {
+            let action = (0..system.total_dofs())
+                .map(|col| system.matrix()[[row, col]] * solution[col])
+                .sum::<Complex64>();
+            (action - rhs[row]).norm_sqr()
+        })
+        .sum::<f64>();
+    let residual = (error_squared / rhs.iter().map(|v| v.norm_sqr()).sum::<f64>()).sqrt();
+    println!(
+        "Galerkin resolution={face_resolution}, field_error={field_error:.12e}, true_residual={residual:.12e}"
+    );
     (
         field_error,
-        solution.relative_residual,
+        residual,
         solution_error,
         system.interface_dofs(),
         mesh.elements.len(),
@@ -153,18 +193,18 @@ pub fn run_continuous_quadratic_quad4_transmission_mie_convergence()
         .collect::<Vec<_>>();
 
     let (coarse_error, coarse_residual, coarse_solution_error, coarse_dofs, coarse_panels) =
-        solve_level(1, &reference);
-    let (fine_error, fine_residual, fine_solution_error, fine_dofs, fine_panels) =
         solve_level(2, &reference);
-    assert!(fine_error < coarse_error);
-    assert!(fine_error <= 0.2);
-    assert!(fine_residual <= 1.0e-8);
-    assert!(fine_solution_error <= 1.0e-8);
-    assert!(fine_dofs > coarse_dofs);
-    assert!(fine_panels > coarse_panels);
-
+    let (medium_error, medium_residual, medium_solution_error, _, _) = solve_level(4, &reference);
+    let (fine_error, fine_residual, fine_solution_error, fine_dofs, fine_panels) =
+        solve_level(8, &reference);
+    println!(
+        "Quad4 Mie complex-field L2: {coarse_error:.3e} -> {medium_error:.3e} -> {fine_error:.3e}"
+    );
     ContinuousQuadraticQuad4TransmissionMetrics {
         coarse_error,
+        medium_error,
+        medium_residual,
+        medium_solution_error,
         fine_error,
         coarse_residual,
         fine_residual,
@@ -180,7 +220,21 @@ pub fn run_continuous_quadratic_quad4_transmission_mie_convergence()
 #[test]
 fn continuous_quadratic_quad4_transmission_converges_to_mie() {
     let metrics = run_continuous_quadratic_quad4_transmission_mie_convergence();
-    assert!(metrics.fine_error <= 0.2);
+    assert!(
+        metrics.medium_error <= 0.65 * metrics.coarse_error
+            && metrics.fine_error <= 0.65 * metrics.medium_error,
+        "Quad4 Mie error does not contract: {:.3e} -> {:.3e} -> {:.3e}",
+        metrics.coarse_error,
+        metrics.medium_error,
+        metrics.fine_error,
+    );
+    assert!(metrics.fine_error <= 0.01);
+    assert!(metrics.coarse_residual <= 1.0e-8);
+    assert!(metrics.medium_residual <= 1.0e-8);
     assert!(metrics.fine_residual <= 1.0e-8);
+    assert!(metrics.coarse_solution_error <= 1.0e-8);
+    assert!(metrics.medium_solution_error <= 1.0e-8);
     assert!(metrics.fine_solution_error <= 1.0e-8);
+    assert!(metrics.fine_dofs > metrics.coarse_dofs);
+    assert!(metrics.fine_panels > metrics.coarse_panels);
 }

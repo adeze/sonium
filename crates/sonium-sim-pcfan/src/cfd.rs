@@ -1,3 +1,5 @@
+// Rust guideline compliant 2026-02-21
+
 use crate::geometry::{ShroudNotch, shroud_in_notch, shroud_strut_notches};
 use crate::mesh_motion::{apply_pc_fan_mesh_motion, pc_fan_mesh_motion_design_jacobian};
 use crate::model::*;
@@ -8000,6 +8002,37 @@ pub fn evaluate_pc_fan_cfd_newton_linearization(
     design: &PcFanDesignVariables,
     initial_state: &[f64],
 ) -> Result<PcFanResolvedFlowNewtonLinearization, PcFanResolvedAdjointError> {
+    evaluate_pc_fan_cfd_newton_linearization_with_policy(config, design, initial_state, true)
+}
+
+/// Evaluate the native flow residual and tangent without design derivatives.
+///
+/// Uses the same constrained Navier--Stokes assembly as
+/// [`evaluate_pc_fan_cfd_newton_linearization`], at the supplied state. Mesh
+/// motion is still applied, but its design Jacobian and the residual's design
+/// Jacobian are omitted. The returned `residual_design_jacobian` is `None`.
+/// This path assembles the equations without performing a Picard linear solve.
+/// Assembly runs on the CPU and dispatches no linear solver backend.
+/// It is suitable for primal residual checks and nonlinear iteration.
+///
+/// # Errors
+///
+/// Returns an error for a non-CFD model, invalid geometry, a non-finite or
+/// incorrectly sized state, or an unavailable production Newton tangent.
+pub fn evaluate_pc_fan_cfd_newton_state_linearization(
+    config: &PcFanConfig,
+    design: &PcFanDesignVariables,
+    initial_state: &[f64],
+) -> Result<PcFanResolvedFlowNewtonLinearization, PcFanResolvedAdjointError> {
+    evaluate_pc_fan_cfd_newton_linearization_with_policy(config, design, initial_state, false)
+}
+
+fn evaluate_pc_fan_cfd_newton_linearization_with_policy(
+    config: &PcFanConfig,
+    design: &PcFanDesignVariables,
+    initial_state: &[f64],
+    publish_design_derivatives: bool,
+) -> Result<PcFanResolvedFlowNewtonLinearization, PcFanResolvedAdjointError> {
     if !config.cfd.flow_model.is_cfd() {
         return Err(PcFanResolvedAdjointError::UnsupportedFlowModel(
             config.cfd.flow_model,
@@ -8053,7 +8086,7 @@ pub fn evaluate_pc_fan_cfd_newton_linearization(
         ));
     }
 
-    let solution = solve_cfd_domain(
+    let solution = solve_cfd_domain_with_derivative_policy(
         config,
         design,
         &geometry,
@@ -8062,6 +8095,7 @@ pub fn evaluate_pc_fan_cfd_newton_linearization(
             &initial_state[..velocity_dimension],
             &initial_state[velocity_dimension..],
         )),
+        publish_design_derivatives,
     );
     solution
         .newton_linearization
@@ -10683,6 +10717,17 @@ fn solve_cfd_domain(
     domain: &PcFanCfdDomain,
     initial_state: Option<(&[f64], &[f64])>,
 ) -> PcFanCfdFlowSolution {
+    solve_cfd_domain_with_derivative_policy(config, design, geometry, domain, initial_state, true)
+}
+
+fn solve_cfd_domain_with_derivative_policy(
+    config: &PcFanConfig,
+    design: &PcFanDesignVariables,
+    geometry: &PcFanGeometry,
+    domain: &PcFanCfdDomain,
+    initial_state: Option<(&[f64], &[f64])>,
+    publish_design_derivatives: bool,
+) -> PcFanCfdFlowSolution {
     let nx = config.cfd.cells_x.max(1);
     let ny = config.cfd.cells_y.max(1);
     let nz = config.cfd.cells_z.max(1);
@@ -10710,8 +10755,11 @@ fn solve_cfd_domain(
             nz,
         ),
     };
-    let mesh_motion_design_jacobian =
-        pc_fan_mesh_motion_design_jacobian(&mesh, config, design).ok();
+    let mesh_motion_design_jacobian = if publish_design_derivatives {
+        pc_fan_mesh_motion_design_jacobian(&mesh, config, design).ok()
+    } else {
+        None
+    };
     if apply_pc_fan_mesh_motion(&mut mesh, config, geometry, design).is_err() {
         return rejected_mesh_motion_solution(domain, &config.cfd);
     }
@@ -10803,45 +10851,78 @@ fn solve_cfd_domain(
     let immersed_solid_penalty_for_solver = immersed_solid_penalty.clone();
     let actuator_forcing_for_jacobian = actuator_forcing_for_diagnostics.clone();
     let immersed_solid_penalty_for_jacobian = immersed_solid_penalty.clone();
-    let result = solve_picard_with_velocity_force_and_jacobian_from_initial(
-        &mesh,
-        &v_space,
-        &p_space,
-        &ns_config,
-        &bc_fn,
-        &bc_dofs,
-        move |coords, local_velocity| {
-            let mut force = match &blade_forcing {
-                Some(f) => f.force_at(coords, local_velocity),
-                None => vec![0.0, 0.0, 0.0],
-            };
-            let penalty = immersed_solid_penalty_for_solver
-                .force_at(Point3::new(coords[0], coords[1], coords[2]), local_velocity);
-            for component in 0..3 {
-                force[component] += penalty[component];
-            }
-            force
-        },
-        move |coords, local_velocity| {
-            let mut jacobian = [[0.0; 3]; 3];
-            if let Some(forcing) = &actuator_forcing_for_jacobian {
-                add_force_jacobian(
-                    &mut jacobian,
-                    forcing.force_jacobian_at(coords, local_velocity),
-                );
-            }
+    let force_fn = move |coords, local_velocity| {
+        let mut force = match &blade_forcing {
+            Some(f) => f.force_at(coords, local_velocity),
+            None => vec![0.0, 0.0, 0.0],
+        };
+        let penalty = immersed_solid_penalty_for_solver
+            .force_at(Point3::new(coords[0], coords[1], coords[2]), local_velocity);
+        for component in 0..3 {
+            force[component] += penalty[component];
+        }
+        force
+    };
+    let force_jacobian_fn = move |coords, local_velocity| {
+        let mut jacobian = [[0.0; 3]; 3];
+        if let Some(forcing) = &actuator_forcing_for_jacobian {
             add_force_jacobian(
                 &mut jacobian,
-                immersed_solid_penalty_for_jacobian.force_jacobian_at(
-                    Point3::new(coords[0], coords[1], coords[2]),
-                    local_velocity,
-                ),
+                forcing.force_jacobian_at(coords, local_velocity),
             );
-            jacobian
-        },
-        initial_state.map(|(velocity, _)| velocity),
-        initial_state.map(|(_, pressure)| pressure),
-    );
+        }
+        add_force_jacobian(
+            &mut jacobian,
+            immersed_solid_penalty_for_jacobian
+                .force_jacobian_at(Point3::new(coords[0], coords[1], coords[2]), local_velocity),
+        );
+        jacobian
+    };
+    let result = if !publish_design_derivatives && let Some((velocity, pressure)) = initial_state {
+        let linearization =
+            sonium_fem::physics::fluid::stokes::navier_stokes::assemble_steady_newton_linearization(
+                &mesh,
+                &v_space,
+                &p_space,
+                &ns_config,
+                &bc_fn,
+                &bc_dofs,
+                force_fn,
+                force_jacobian_fn,
+                velocity,
+                pressure,
+            );
+        sonium_fem::physics::fluid::stokes::navier_stokes::NavierStokesResult {
+            velocity: linearization.as_ref().map_or_else(
+                || velocity.to_vec(),
+                |observation| observation.state[..velocity.len()].to_vec(),
+            ),
+            pressure: linearization.as_ref().map_or_else(
+                || pressure.to_vec(),
+                |observation| observation.state[velocity.len()..].to_vec(),
+            ),
+            iterations: 0,
+            residual: f64::INFINITY,
+            converged: false,
+            resolved_linear_solver_backend:
+                sonium_fem::physics::fluid::stokes::navier_stokes::LinearSolverBackend::Cpu,
+            picard_linearization: None,
+            newton_linearization: linearization,
+        }
+    } else {
+        solve_picard_with_velocity_force_and_jacobian_from_initial(
+            &mesh,
+            &v_space,
+            &p_space,
+            &ns_config,
+            &bc_fn,
+            &bc_dofs,
+            force_fn,
+            force_jacobian_fn,
+            initial_state.map(|(velocity, _)| velocity),
+            initial_state.map(|(_, pressure)| pressure),
+        )
+    };
     let actual_backend = PcFanCfdBackend::from_fem(result.resolved_linear_solver_backend);
     let backend_provenance =
         PcFanCfdBackendProvenance::from_dispatch(config.cfd.backend, actual_backend);
@@ -10877,7 +10958,8 @@ fn solve_cfd_domain(
     // publishes analytic mesh-scaled blade, smooth shroud occupancy, and
     // topology-preserving mesh-motion derivatives; topology-changing remeshing
     // remains outside this contract.
-    let residual_design_jacobian = if let Some(linearization) = result.newton_linearization.as_ref()
+    let residual_design_jacobian = if publish_design_derivatives
+        && let Some(linearization) = result.newton_linearization.as_ref()
         && design
             .shroud_radius_offsets_m
             .iter()
@@ -14532,6 +14614,74 @@ mod tests {
                 .all(|row| row.len() == DESIGN_VARIABLE_COUNT
                     && row.iter().all(|value| value.is_finite()))
         );
+    }
+
+    #[test]
+    fn state_only_newton_preserves_primal_assembly_with_mesh_motion() {
+        let mut config = PcFanConfig::default_120mm();
+        config.cfd.flow_model = PcFanFlowModel::IncompressibleCfd;
+        config.cfd.backend = PcFanCfdBackend::Cpu;
+        config.cfd.cells_x = 2;
+        config.cfd.cells_y = 2;
+        config.cfd.cells_z = 2;
+        config.cfd.max_picard_iterations = 1;
+        config.cfd.use_direct_solver = true;
+        let mut design = config.default_design_variables();
+        design.shroud_radius_offsets_m[0] = 1.0e-6;
+        let seed = solve_pc_fan_cfd_mean_flow(&config, &design);
+        let mut state = seed
+            .velocity_m_s
+            .iter()
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>();
+        state.extend_from_slice(&seed.pressure_pa);
+        let full = evaluate_pc_fan_cfd_newton_linearization(&config, &design, &state).unwrap();
+        let primal =
+            evaluate_pc_fan_cfd_newton_state_linearization(&config, &design, &state).unwrap();
+        full.validate().unwrap();
+        primal.validate().unwrap();
+        assert!(full.residual_design_jacobian.is_some());
+        assert!(primal.residual_design_jacobian.is_none());
+        assert_eq!(full.state, primal.state);
+        assert_eq!(full.provenance, primal.provenance);
+        assert_eq!(full.backend, primal.backend);
+        assert_eq!(
+            full.state_jacobian.dimension,
+            primal.state_jacobian.dimension
+        );
+        assert_eq!(full.state_jacobian.row_ptrs, primal.state_jacobian.row_ptrs);
+        assert_eq!(
+            full.state_jacobian.column_indices,
+            primal.state_jacobian.column_indices
+        );
+        for (left, right) in full
+            .state_residual
+            .iter()
+            .zip(&primal.state_residual)
+            .chain(
+                full.state_jacobian
+                    .values
+                    .iter()
+                    .zip(&primal.state_jacobian.values),
+            )
+        {
+            assert!((left - right).abs() <= 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn state_only_newton_rejects_invalid_state_before_publication() {
+        let mut config = PcFanConfig::default_120mm();
+        config.cfd.flow_model = PcFanFlowModel::IncompressibleCfd;
+        config.cfd.cells_x = 2;
+        config.cfd.cells_y = 2;
+        config.cfd.cells_z = 2;
+        let design = config.default_design_variables();
+        assert!(
+            evaluate_pc_fan_cfd_newton_state_linearization(&config, &design, &[f64::NAN]).is_err()
+        );
+        assert!(evaluate_pc_fan_cfd_newton_state_linearization(&config, &design, &[]).is_err());
     }
 
     #[test]

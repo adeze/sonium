@@ -1,15 +1,16 @@
-//! QA: necking bar vs OpenCourant (elastic prove-out leg).
+//! External reference health and native parity gate for necking-bar.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the tip elongation against the elastic bar closed form (FL/EA)
-//! at a sub-yield load. Without an engine it prints the documented skip
-//! message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the tip
+//! elongation against the elastic bar closed form (FL/EA) at a sub-yield load.
 //!
-//! The full necking bar has no closed form: this deck plus the Wolfram
-//! incremental reference and the Consider/Bridgman checks in
-//! `qa-fem-necking-bar` are the validation legs. Considere-strain and
-//! post-necking probes need the plastic LAW cards tracked for Worker 1.
+//! The full necking bar has no closed form: this deck plus the Wolfram incremental reference
+//! and the Consider/Bridgman checks in `qa-fem-necking-bar` are the validation legs. Considere-
+//! strain and post-necking probes need the plastic LAW cards tracked for Worker 1.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -88,6 +89,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/necking_bar")
 }
 
+const CASE_ID: &str = "fem.opencourant.necking-bar.native-parity.v1";
+
 fn main() {
     let case = necking_bar_case();
     let dir = decks_dir();
@@ -127,8 +130,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -137,8 +139,10 @@ fn main() {
     std::fs::write(work.join("necking_bar_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("necking_bar_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad necking_bar run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -167,10 +171,9 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-necking-bar");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-necking-bar");
-    println!("SUCCESS: qa-fem-opencourant-necking-bar");
+    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
+        CASE_ID,
+        &output.engine,
+        !failed,
+    ));
 }

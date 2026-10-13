@@ -7,6 +7,10 @@
 //!
 //! For Stokes (Re → 0), the primary vortex center is at approximately
 //! (x, y) ≈ (0.5, 0.76) and the flow is symmetric about x = 0.5.
+//! Centerline velocities are checked against independently refined clamped-
+//! biharmonic finite differences; bulk divergence is checked against zero.
+
+// Rust guideline compliant 2026-02-21
 
 use sonium_fem::assembly;
 use sonium_fem::assembly::TripletMatrix;
@@ -26,12 +30,10 @@ use sonium_solvers::{
 use sonium_xem::io::binary_output_dir;
 use std::collections::HashMap;
 
-fn test_stokes_lid_driven_cavity() {
-    env_logger::init();
+fn solve_cavity(n: usize) -> Result<CavityMetrics, String> {
     println!("=== Stokes Lid-Driven Cavity (Taylor-Hood P2-P1) ===\n");
 
     let mu = 1.0;
-    let n = 16;
 
     // --- 1. Mesh ---
     let mesh = unit_square_triangles(n);
@@ -152,118 +154,173 @@ fn test_stokes_lid_driven_cavity() {
         result.residual,
     );
 
-    assert!(
-        result.converged,
-        "Lid-driven cavity FGMRES did not converge (iters: {}, residual: {:.2e})",
-        result.iterations, result.residual,
-    );
-
-    // --- 7. Post-process ---
-    let u_sol: Vec<f64> = result.x.iter().take(n_v).copied().collect();
-    let p_sol: Vec<f64> = result.x.iter().skip(n_v).copied().collect();
-
-    // Check max velocity is bounded
-    let max_vel = u_sol
-        .chunks(2)
-        .map(|c| (c[0] * c[0] + c[1] * c[1]).sqrt())
-        .fold(0.0_f64, f64::max);
-    println!("Max velocity magnitude: {:.6}", max_vel);
-    assert!(
-        max_vel > 0.0,
-        "Lid-driven cavity max velocity is zero — solution is trivial"
-    );
-    assert!(
-        max_vel < 2.0,
-        "Lid-driven cavity max velocity too large: {max_vel:.6} (threshold: 2.0 for unit lid velocity)"
-    );
-
-    // Find vortex center y-coordinate: zero-crossing of u_x on vertical centerline x=0.5
-    let h = 1.0 / (n as f64);
-    let mut centerline_pts: Vec<(f64, f64)> = Vec::new();
-    for sd in 0..n_scalar {
-        if (dof_x[sd] - 0.5).abs() < h / 2.0 + tol {
-            centerline_pts.push((dof_y[sd], u_sol[sd * 2]));
+    let true_residual = sonium_qa::relative_residual_norm(&a_csr, &result.x, &rhs);
+    if !result.converged || !true_residual.is_finite() || true_residual > 1e-8 {
+        return Err(format!(
+            "cavity n={n} did not converge: true residual={true_residual:.3e}, converged={}",
+            result.converged
+        ));
+    }
+    let mut centerlines = Vec::new();
+    for horizontal in [false, true] {
+        for i in 1..8 {
+            let t = i as f64 / 8.0;
+            let (x, y, component) = if horizontal { (t, 0.5, 1) } else { (0.5, t, 0) };
+            let sd = (0..n_scalar)
+                .find(|&i| (dof_x[i] - x).abs() < 1e-12 && (dof_y[i] - y).abs() < 1e-12)
+                .ok_or_else(|| format!("missing exact centerline sample ({x},{y})"))?;
+            centerlines.push(result.x[2 * sd + component]);
         }
     }
-    centerline_pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    centerline_pts.dedup_by(|a, b| (a.0 - b.0).abs() < 1e-12);
-
-    // Find zero-crossing where u_x goes from negative to positive
-    let mut vortex_y_approx = 0.5;
-    for w in centerline_pts.windows(2) {
-        if w[0].1 < 0.0 && w[1].1 > 0.0 {
-            // Linear interpolation
-            let t = -w[0].1 / (w[1].1 - w[0].1);
-            vortex_y_approx = w[0].0 + t * (w[1].0 - w[0].0);
-            break;
+    // The discontinuous lid at the corners gives singular velocity gradients.
+    // Integrate divergence on the fixed bulk square [1/8,7/8]^2, independent of
+    // refinement. The full-domain weak continuity equations remain in Ax-b.
+    let scalar_space = H1Space::new(PolynomialDegree::P2);
+    let quadrature =
+        sonium_fem::quadrature::QuadratureRule::new(sonium_fem::mesh::ElementType::Triangle, 2);
+    let mut divergence_energy = 0.0;
+    let mut bulk_area = 0.0;
+    for (ei, element) in mesh.elements.iter().enumerate() {
+        if element.vertices().iter().any(|&i| {
+            let p = mesh.nodes[i];
+            p.x < 0.125 - 1e-12 || p.x > 0.875 + 1e-12 || p.y < 0.125 - 1e-12 || p.y > 0.875 + 1e-12
+        }) {
+            continue;
         }
-    }
-
-    println!("\n--- Results ---");
-    println!(
-        "Vortex center y (u_x zero-crossing at x=0.5): {:.4}",
-        vortex_y_approx
-    );
-    println!("  (Stokes reference: ~0.76)");
-
-    println!("\nVelocity u_x along x=0.5 (vertical centerline):");
-    let mut centerline: Vec<(f64, f64)> = Vec::new();
-    for sd in 0..n_scalar {
-        if (dof_x[sd] - 0.5).abs() < 1.0 / (2.0 * n as f64) + tol {
-            centerline.push((dof_y[sd], u_sol[sd * 2]));
-        }
-    }
-    centerline.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-    for &(y, ux) in &centerline {
-        println!("  y={:.4}  u_x={:.6}", y, ux);
-    }
-
-    // Check x-symmetry: u_x(0.5-dx, y) ≈ u_x(0.5+dx, y)
-    let mut max_asym = 0.0_f64;
-    for sd in 0..n_nodes {
-        let x = dof_x[sd];
-        let y = dof_y[sd];
-        if x < 0.5 && y > tol && y < 1.0 - tol {
-            // Find symmetric point
-            let mirror_x = 1.0 - x;
-            for sd2 in 0..n_nodes {
-                if (dof_x[sd2] - mirror_x).abs() < tol && (dof_y[sd2] - y).abs() < tol {
-                    let diff = (u_sol[sd * 2] - u_sol[sd2 * 2]).abs();
-                    max_asym = max_asym.max(diff);
-                }
+        let dofs = scalar_space.local_to_global(&mesh, ei);
+        for point in quadrature.iter() {
+            let tab = scalar_space.tabulate(&mesh, ei, point.coords[0], point.coords[1], 0.0);
+            let mut divergence = 0.0;
+            for (i, &dof) in dofs.iter().enumerate() {
+                divergence +=
+                    tab.grad(i, 0) * result.x[2 * dof] + tab.grad(i, 1) * result.x[2 * dof + 1];
             }
+            let weight = tab.det_j * point.weight;
+            divergence_energy += weight * divergence * divergence;
+            bulk_area += weight;
         }
     }
-    println!(
-        "\nSymmetry check: max |u_x(x,y) - u_x(1-x,y)| = {:.2e}",
-        max_asym
-    );
-
-    // VTK output
-    let mut node_ux = vec![0.0; n_nodes];
-    let mut node_uy = vec![0.0; n_nodes];
-    let mut node_p = vec![0.0; n_nodes];
-    for i in 0..n_nodes {
-        node_ux[i] = u_sol[i * 2];
-        node_uy[i] = u_sol[i * 2 + 1];
-        node_p[i] = p_sol[i];
-    }
-
+    let bulk_divergence_rms = (divergence_energy / bulk_area).sqrt();
+    let u_sol = &result.x[..n_v];
     let mut writer = sonium_fem::io::vtk::VtuWriter::new(&mesh);
-    writer.add_point_scalar("ux", &node_ux);
-    writer.add_point_scalar("uy", &node_uy);
-    writer.add_point_scalar("pressure", &node_p);
-    let speed: Vec<f64> = (0..n_nodes)
-        .map(|i| (node_ux[i] * node_ux[i] + node_uy[i] * node_uy[i]).sqrt())
-        .collect();
-    writer.add_point_scalar("speed", &speed);
+    let ux = (0..n_nodes).map(|i| u_sol[2 * i]).collect::<Vec<_>>();
+    let uy = (0..n_nodes).map(|i| u_sol[2 * i + 1]).collect::<Vec<_>>();
+    writer.add_point_scalar("ux", &ux);
+    writer.add_point_scalar("uy", &uy);
+    writer.add_point_scalar("pressure", &result.x[n_v..]);
+    let output_path = binary_output_dir(env!("CARGO_PKG_NAME"), env!("CARGO_BIN_NAME"))
+        .join(format!("stokes_cavity_n{n}.vtu"));
+    writer
+        .write(&output_path)
+        .map_err(|error| format!("write cavity VTU: {error}"))?;
+    println!(
+        "n={n}: centerlines={centerlines:?}; bulk divergence={bulk_divergence_rms:.3e}; true residual={true_residual:.3e}"
+    );
+    Ok(CavityMetrics {
+        centerlines,
+        bulk_divergence_rms,
+        true_residual,
+    })
+}
 
-    let output_path =
-        binary_output_dir(env!("CARGO_PKG_NAME"), env!("CARGO_BIN_NAME")).join("stokes_cavity.vtu");
-    writer.write(&output_path).expect("write Stokes cavity VTU");
-    println!("\nWrote {}", output_path.display());
+#[derive(Debug)]
+struct CavityMetrics {
+    centerlines: Vec<f64>,
+    bulk_divergence_rms: f64,
+    true_residual: f64,
+}
 
-    println!("\n=== Done ===");
+const CASE_ID: &str = "fem.stokes-cavity-independent-centerlines.v1";
+const REFERENCE_BYTES: &[u8] = include_bytes!("../src/fixtures/stokes/cavity_centerlines.json");
+
+fn centerline_errors(actual: &[f64], reference: &[f64]) -> Result<(f64, f64), String> {
+    if actual.len() != 14
+        || reference.len() != 14
+        || actual.iter().chain(reference).any(|v| !v.is_finite())
+    {
+        return Err("invalid cavity centerline samples".into());
+    }
+    let error = actual
+        .iter()
+        .zip(reference)
+        .map(|(a, b)| (a - b).powi(2))
+        .sum::<f64>();
+    let scale = reference.iter().map(|v| v * v).sum::<f64>();
+    let maximum = actual
+        .iter()
+        .zip(reference)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f64, f64::max);
+    Ok(((error / scale).sqrt(), maximum))
+}
+
+fn run() -> Result<sonium_qa::QaResult, String> {
+    use sha2::{Digest, Sha256};
+    let reference: serde_json::Value =
+        serde_json::from_slice(REFERENCE_BYTES).map_err(|e| e.to_string())?;
+    let levels = reference["levels"]
+        .as_array()
+        .ok_or("missing independent reference levels")?;
+    let fine_reference = levels.last().ok_or("empty independent reference levels")?;
+    if fine_reference["subdivisions"] != 512
+        || reference["mms_refinement_rate"].as_f64().unwrap_or(0.0) < 1.8
+    {
+        return Err("unresolved independent cavity reference".into());
+    }
+    let reference_change = reference["maximum_adjacent_centerline_changes"][1]
+        .as_f64()
+        .ok_or("missing reference refinement")?;
+    if !reference_change.is_finite() || reference_change > 0.0002 {
+        return Err("independent cavity reference uncertainty exceeds budget".into());
+    }
+    let reference_samples = reference["extrapolated_centerlines"]
+        .as_array()
+        .ok_or("missing extrapolated reference")?
+        .iter()
+        .map(|v| v.as_f64().ok_or("invalid extrapolated reference sample"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let extrapolation_change = reference["maximum_extrapolation_change"]
+        .as_f64()
+        .ok_or("missing extrapolation refinement")?;
+    if !extrapolation_change.is_finite() || extrapolation_change > 2e-6 {
+        return Err("independent cavity extrapolation exceeds uncertainty budget".into());
+    }
+    let mut errors = Vec::new();
+    let mut maxima = Vec::new();
+    let mut divergences = Vec::new();
+    let mut residuals = Vec::new();
+    for n in [16, 32, 64] {
+        let metrics = solve_cavity(n)?;
+        let (error, maximum) = centerline_errors(&metrics.centerlines, &reference_samples)?;
+        println!(
+            "n={n}: independent centerline relative L2={error:.3e}, maximum absolute error={maximum:.3e}"
+        );
+        errors.push(error);
+        maxima.push(maximum);
+        divergences.push(metrics.bulk_divergence_rms);
+        residuals.push(metrics.true_residual);
+    }
+    let contraction = (errors[1] / errors[0]).max(errors[2] / errors[1]);
+    let divergence_contraction =
+        (divergences[1] / divergences[0]).max(divergences[2] / divergences[1]);
+    let checksum = format!("sha256:{:x}", Sha256::digest(REFERENCE_BYTES));
+    let record=sonium_qa::QaResult::passed(CASE_ID)
+        .requested_backend("cpu").actual_backend("cpu")
+        .seed("unit-square:unit-top-lid:corner-zero:P2-P1:n16-n32-n64:bulk-1/8-7/8")
+        .reference("independent clamped-biharmonic finite differences n128/256/512 with verified second-order Richardson extrapolation; velocity from streamfunction; bulk divergence zero")
+        .reference_checksum(checksum)
+        .formulation("native mixed Taylor-Hood Stokes solve; fourteen interior centerline components; quadrature-integrated bulk divergence")
+        .metric("centerline_relative_l2",errors[2]).maximum("centerline_relative_l2",0.001)
+        .metric("centerline_maximum_absolute_error",maxima[2]).maximum("centerline_maximum_absolute_error",0.0001)
+        .metric("centerline_refinement_contraction",contraction).maximum("centerline_refinement_contraction",0.8)
+        .metric("bulk_divergence_rms",divergences[2]).maximum("bulk_divergence_rms",0.005)
+        .metric("bulk_divergence_refinement_contraction",divergence_contraction).maximum("bulk_divergence_refinement_contraction",0.8)
+        .metric("reference_maximum_extrapolation_change",extrapolation_change).maximum("reference_maximum_extrapolation_change",2e-6)
+        .metric("reference_maximum_adjacent_change",reference_change).maximum("reference_maximum_adjacent_change",0.0002)
+        .metric("maximum_true_residual",residuals.into_iter().fold(0.0_f64,f64::max)).maximum("maximum_true_residual",1e-8)
+        .metric("numerical_solve_executed",3.0).minimum("numerical_solve_executed",3.0);
+    record.release_eligible()?;
+    Ok(record)
 }
 
 fn apply_dirichlet(system: &mut FemSystem<f64>, bc_map: &HashMap<usize, f64>) {
@@ -300,16 +357,40 @@ fn apply_dirichlet(system: &mut FemSystem<f64>, bc_map: &HashMap<usize, f64>) {
 }
 
 fn main() {
-    let result = std::panic::catch_unwind(|| {
-        test_stokes_lid_driven_cavity();
-    });
-    match result {
-        Ok(()) => {
+    env_logger::init();
+    match run().and_then(|record| record.to_json_line()) {
+        Ok(line) => {
+            println!("QA_RESULT: {line}");
             println!("SUCCESS");
         }
-        Err(_) => {
-            println!("FAILED");
+        Err(error) => {
+            if let Ok(line) = sonium_qa::QaResult::failed(CASE_ID, &error).to_json_line() {
+                println!("QA_RESULT: {line}");
+            }
+            eprintln!("FAILED: {error}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn prescribed_lid_without_interior_flow_fails_reference_accuracy() {
+        let reference: serde_json::Value = serde_json::from_slice(REFERENCE_BYTES).unwrap();
+        let mut samples = Vec::new();
+        for key in ["vertical_ux", "horizontal_uy"] {
+            samples.extend(
+                reference["levels"][2][key]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| v.as_f64().unwrap()),
+            );
+        }
+        let (relative, maximum) = centerline_errors(&[0.0; 14], &samples).unwrap();
+        assert!(relative > 0.01 && maximum > 0.003);
+        assert!(centerline_errors(&[f64::NAN; 14], &samples).is_err());
     }
 }

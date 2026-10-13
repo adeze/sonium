@@ -1,22 +1,23 @@
-//! QA: twisted-beam shells vs OpenCourant quasi-statics.
+//! External reference health and native parity gate for shell-twisted-beam.
 //!
-//! MacNeal-Harder thin twisted beam (L = 12 in, width 1.1 in, t = 0.32 in,
-//! E = 29e6 psi, nu = 0.22, 90-degree twist, 1 lbf tip load) as a QEPH
-//! quad shell deck in SI units. This is the head-to-head C3 cross-check of
-//! the warp-aware MITC4 membrane fix (Phase-B Worker-3 P1-B-W3-0): the
-//! legacy flat-facet membrane diverged on this warped-quad geometry while
-//! the covariant membrane converges to the in-plane target 0.005424 in
-//! within 1% at 32x8 (see `fem_shell_twisted_beam.rs`). The probe replays
-//! the in-plane tip deflection, the direction that discriminates the fix.
+//! MacNeal-Harder thin twisted beam (L = 12 in, width 1.1 in, t = 0.32 in, E = 29e6 psi, nu =
+//! 0.22, 90-degree twist, 1 lbf tip load) as a QEPH quad shell deck in SI units. This is the
+//! head-to-head C3 cross-check of the warp-aware MITC4 membrane fix (Phase-B Worker-3
+//! P1-B-W3-0): the legacy flat-facet membrane diverged on this warped-quad geometry while the
+//! covariant membrane converges to the in-plane target 0.005424 in within 1% at 32x8 (see
+//! `fem_shell_twisted_beam.rs`). The probe replays the in-plane tip deflection, the direction
+//! that discriminates the fix.
 //!
-//! Reference: MacNeal, R. H. and Harder, R. L. (1985), "A proposed standard
-//! set of problems to test finite element accuracy", FEAD 1.
+//! Reference: MacNeal, R. H. and Harder, R. L. (1985), "A proposed standard set of problems to
+//! test finite element accuracy", FEAD 1.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
-//! (or legacy `RADISS_EXE`) is set and compares the tip deflection against the
-//! MacNeal target. Without an engine it prints the documented skip message
-//! and exits 0. Decks regenerate with `REGEN_DECKS=1`.
+//! Verifies the checked-in decks match the `sonium_qa::rad` extended writer, then runs the
+//! starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the
+//! tip deflection against the MacNeal target. Decks regenerate with `REGEN_DECKS=1`.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -27,6 +28,9 @@ use sonium_qa::rad::{
     run_extended_case, shel_channel, write_extended_engine, write_extended_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/twisted_native.rs"]
+pub mod twisted_native;
 
 /// MacNeal-Harder inputs converted once to SI (m, Pa, N).
 const LENGTH_M: f64 = 12.0 * 0.0254;
@@ -172,6 +176,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/shell_twisted_beam")
 }
 
+const CASE_ID: &str = "fem.opencourant.shell-twisted-beam.native-parity.v1";
+
 fn main() {
     let case = shell_twisted_beam_case();
     case.validate().expect("shell_twisted_beam must validate");
@@ -222,8 +228,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -235,37 +240,28 @@ fn main() {
     std::fs::write(work.join("shell_twisted_beam_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("shell_twisted_beam_0001.rad"), &engine).unwrap();
     let output = run_extended_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad shell_twisted_beam run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
+    let mut values = Vec::new();
     for (index, probe) in case.base.probes.iter().enumerate() {
         // The tip DZ averages the hold over two first-mode periods (28 ms
         // window); the raw trace still carries the ramp transient.
         let actual = if index == 0 {
             output.history.channel(&probe.channel).and_then(|values| {
-                let mut sum = 0.0;
-                let mut n = 0;
-                for (time, value) in output.history.times.iter().zip(values.iter()) {
-                    if *time >= 0.032 {
-                        sum += value;
-                        n += 1;
-                    }
-                }
-                if n == 0 {
-                    return Err(sonium_qa::rad::RadError::Parse(format!(
-                        "channel {} has no hold samples",
-                        probe.channel
-                    )));
-                }
-                Ok(sum / n as f64)
+                twisted_native::hold_mean(&output.history.times, values)
+                    .map_err(|error| sonium_qa::rad::RadError::Parse(error.to_string()))
             })
         } else {
             output.history.final_value(&probe.channel)
         };
         match actual {
             Ok(value) => {
+                values.push(value);
                 println!(
                     "probe {}: actual {value:.6e}, expected {:.6e}",
                     probe.label, probe.expected
@@ -288,10 +284,16 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-shell-twisted-beam");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-shell-twisted-beam");
-    println!("SUCCESS: qa-fem-opencourant-shell-twisted-beam");
+    let result = twisted_native::parity_result(&case, CASE_ID, &output.engine, &values, !failed)
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(
+                CASE_ID,
+                format!("native twisted-shell validation failed: {error}"),
+            )
+            .requested_backend("cpu+opencourant")
+            .actual_backend("cpu+opencourant")
+            .metric("external_reference_executed", 1.0)
+            .metric("native_parity_executed", 0.0)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

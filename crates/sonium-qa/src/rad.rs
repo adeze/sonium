@@ -27,6 +27,10 @@
 
 // Rust guideline compliant 2026-02-21
 
+/// Structured admission and results for the original native parity gates.
+#[path = "rad_gate.rs"]
+pub mod gate;
+
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -1022,8 +1026,9 @@ pub struct RunOutput {
 ///
 /// # Errors
 ///
-/// Returns [`RadError`] when a stage fails, when conversion is unavailable
-/// for a binary history, or when parsing fails.
+/// Returns [`RadError`] for failed stages, explicit numerical aborts even with
+/// a zero process exit code, unavailable binary conversion, malformed histories,
+/// or histories that do not cover the original requested stop time.
 pub fn run_case(
     decks_dir: &Path,
     exe: &Path,
@@ -1046,6 +1051,7 @@ pub fn run_case(
     }
     let history_path = if csv.exists() { csv } else { t01.clone() };
     let history = parse_t01(&history_path)?;
+    validate_history_extent(&history, case)?;
     Ok(RunOutput {
         engine: engine_flavor(exe).to_string(),
         history,
@@ -1077,6 +1083,63 @@ fn run_stage(exe: &Path, stage: &'static str, deck: &Path, dir: &Path) -> Result
             code: output.status.code(),
             output: tail,
         });
+    }
+    let mut log = String::from_utf8_lossy(&output.stdout).into_owned();
+    log.push_str(&String::from_utf8_lossy(&output.stderr));
+    let written_log = deck.with_extension("out");
+    if written_log.exists() {
+        log.push_str(&std::fs::read_to_string(written_log)?);
+    }
+    validate_stage_log(stage, output.status.code(), &log)?;
+    Ok(())
+}
+
+fn validate_stage_log(stage: &'static str, code: Option<i32>, log: &str) -> Result<(), RadError> {
+    if let Some(reason) = log.lines().find(|line| {
+        ["RUN KILLED:", "ERROR TERMINATION", "FATAL ERROR"]
+            .iter()
+            .any(|marker| line.contains(marker))
+    }) {
+        return Err(RadError::EngineFailed {
+            stage,
+            code,
+            output: format!(
+                "OpenCourant numerical abort despite process exit success: {}",
+                reason.trim()
+            ),
+        });
+    }
+    Ok(())
+}
+
+fn validate_history_extent(history: &TimeHistory, case: &OpenCourantCase) -> Result<(), RadError> {
+    if !case.stop_time_s.is_finite()
+        || case.stop_time_s <= 0.0
+        || !case.th_period_s.is_finite()
+        || case.th_period_s <= 0.0
+    {
+        return Err(RadError::Parse(
+            "finite positive stop time and history period required".into(),
+        ));
+    }
+    if history.times.len() < 2 || history.times.iter().any(|t| !t.is_finite()) {
+        return Err(RadError::Parse(
+            "external history needs at least two finite time samples".into(),
+        ));
+    }
+    let first = history.times[0];
+    let last = *history.times.last().unwrap();
+    let tolerance = 1.05 * case.th_period_s + 1e-8 * case.stop_time_s;
+    if first < -tolerance || first > tolerance || (last - case.stop_time_s).abs() > tolerance {
+        return Err(RadError::Parse(format!(
+            "external history [{first:.9e},{last:.9e}] does not cover original 0..{:.9e} s history (output period {:.9e} s)",
+            case.stop_time_s, case.th_period_s
+        )));
+    }
+    if history.times.windows(2).any(|pair| pair[1] < pair[0]) {
+        return Err(RadError::Parse(
+            "external history timestamps go backwards".into(),
+        ));
     }
     Ok(())
 }
@@ -2396,7 +2459,8 @@ pub fn write_extended_engine(case: &RadExtendedCase) -> String {
 ///
 /// # Errors
 ///
-/// Returns [`RadError`] when a stage fails or parsing fails.
+/// Returns [`RadError`] for failed or numerically aborted stages, malformed
+/// histories, or histories that do not cover the original requested stop time.
 pub fn run_extended_case(
     decks_dir: &Path,
     exe: &Path,
@@ -7662,5 +7726,42 @@ mod tests {
         );
         let elsewhere = Path::new("/other/placeT01");
         assert_eq!(th_to_csv_arg(elsewhere, dir), elsewhere.to_path_buf());
+    }
+    #[test]
+    fn successful_process_exit_cannot_hide_numerical_abort() {
+        let log = "MESSAGE ID:205\n** RUN KILLED: ENERGY ERROR LIMIT REACHED\nNORMAL TERMINATION\nUSER BREAK";
+        let error = validate_stage_log("engine", Some(0), log).unwrap_err();
+        match error {
+            RadError::EngineFailed {
+                stage,
+                code,
+                output,
+            } => {
+                assert_eq!(stage, "engine");
+                assert_eq!(code, Some(0));
+                assert!(output.contains("ENERGY ERROR LIMIT REACHED"));
+            }
+            other => panic!("wrong abort classification: {other:?}"),
+        }
+        assert!(
+            validate_stage_log("engine", Some(0), "ENERGY ERROR:0.1%\nNORMAL TERMINATION").is_ok()
+        );
+    }
+
+    #[test]
+    fn history_must_cover_the_original_requested_physical_time() {
+        let case = shell_scordelis_lo_case().base;
+        let make = |times| TimeHistory {
+            times,
+            channels: BTreeMap::new(),
+        };
+        assert!(validate_history_extent(&make(vec![0.0, 0.02, 8.0]), &case).is_ok());
+        assert!(validate_history_extent(&make(vec![0.0, 0.02, 7.99]), &case).is_ok());
+        assert!(validate_history_extent(&make(vec![0.0, 0.005792]), &case).is_err());
+        assert!(validate_history_extent(&make(vec![0.0, 4.0]), &case).is_err());
+        assert!(validate_history_extent(&make(vec![5.5, 8.0]), &case).is_err());
+        assert!(validate_history_extent(&make(vec![0.0, 9.0]), &case).is_err());
+        assert!(validate_history_extent(&make(vec![0.0, f64::NAN]), &case).is_err());
+        assert!(validate_history_extent(&make(vec![0.0, 6.0, 5.0, 8.0]), &case).is_err());
     }
 }

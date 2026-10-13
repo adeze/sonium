@@ -1,12 +1,14 @@
-//! QA: Scordelis-Lo roof shells vs OpenCourant quasi-statics.
+//! External reference health and native parity gate for shell-scordelis-lo.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
-//! (or legacy `RADISS_EXE`) is set and compares the free-edge midspan
-//! deflection against a REGRESSION baseline (-0.2574), not the MacNeal
-//! target (-0.3024): the engine's quads lock 15% stiff on this curved
-//! membrane benchmark (see `shell_scordelis_lo_case`). Without an engine
-//! it prints the documented skip message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` extended writer, then runs the
+//! starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the
+//! free-edge midspan deflection against a REGRESSION baseline (-0.2574), not the MacNeal target
+//! (-0.3024): the engine's quads lock 15% stiff on this curved membrane benchmark (see
+//! `shell_scordelis_lo_case`).
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -16,9 +18,14 @@ use sonium_qa::rad::{
 };
 use std::path::PathBuf;
 
+#[path = "support/scordelis_native.rs"]
+pub mod scordelis_native;
+
 fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/shell_scordelis_lo")
 }
+
+const CASE_ID: &str = "fem.opencourant.shell-scordelis-lo.native-parity.v1";
 
 fn main() {
     let case = shell_scordelis_lo_case();
@@ -70,8 +77,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -83,8 +89,10 @@ fn main() {
     std::fs::write(work.join("shell_scordelis_lo_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("shell_scordelis_lo_0001.rad"), &engine).unwrap();
     let output = run_extended_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad shell_scordelis_lo run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -136,10 +144,9 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-shell-scordelis-lo");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-shell-scordelis-lo");
-    println!("SUCCESS: qa-fem-opencourant-shell-scordelis-lo");
+    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
+        CASE_ID,
+        &output.engine,
+        !failed,
+    ));
 }

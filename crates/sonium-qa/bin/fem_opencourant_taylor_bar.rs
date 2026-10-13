@@ -1,17 +1,18 @@
-//! QA: Taylor bar vs OpenCourant (elastic prove-out leg).
+//! External reference health and native parity gate for taylor-bar.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the wall force plateau (rho c A V) and the impact-face motion
-//! against the 1D elastic impact closed form. Without an engine it prints
-//! the documented skip message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the wall force
+//! plateau (rho c A V) and the impact-face motion against the 1D elastic impact closed form.
 //!
-//! Frame note: `sonium_qa::rad` currently offers no initial-velocity card,
-//! so the bar starts at rest while the wall rises at the impact speed. By
-//! Galilean equivalence the contact force matches the flying-bar test
-//! exactly; the displacement probe uses the laboratory-frame value. The
-//! mushroom-profile and plastic-work probes need the plastic LAW cards
-//! tracked for Worker 1 (see the Phase-B report).
+//! Frame note: `sonium_qa::rad` currently offers no initial-velocity card, so the bar starts at
+//! rest while the wall rises at the impact speed. By Galilean equivalence the contact force
+//! matches the flying-bar test exactly; the displacement probe uses the laboratory-frame value.
+//! The mushroom-profile and plastic-work probes need the plastic LAW cards tracked for Worker 1
+//! (see the Phase-B report).
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -30,7 +31,7 @@ const POISSON: f64 = 0.35;
 const DENSITY: f64 = 8930.0;
 
 /// Builds the Taylor bar case on the real `sonium_qa::rad` API.
-fn taylor_bar_case() -> OpenCourantCase {
+pub fn taylor_bar_case() -> OpenCourantCase {
     let (mut mesh, face_set, face_center) = cylinder_mesh(8, 6);
     let area = std::f64::consts::PI * RADIUS * RADIUS;
     let c = (YOUNGS / DENSITY).sqrt();
@@ -212,6 +213,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/taylor_bar")
 }
 
+const CASE_ID: &str = "fem.opencourant.taylor-bar.native-parity.v1";
+
 fn main() {
     let case = taylor_bar_case();
     let dir = decks_dir();
@@ -251,8 +254,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -261,8 +263,10 @@ fn main() {
     std::fs::write(work.join("taylor_bar_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("taylor_bar_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad taylor_bar run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -293,10 +297,9 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-taylor-bar");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-taylor-bar");
-    println!("SUCCESS: qa-fem-opencourant-taylor-bar");
+    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
+        CASE_ID,
+        &output.engine,
+        !failed,
+    ));
 }

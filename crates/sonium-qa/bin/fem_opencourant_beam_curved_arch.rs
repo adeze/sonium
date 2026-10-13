@@ -1,17 +1,18 @@
-//! QA: curved arch cantilever vs OpenCourant explicit quasi-statics.
+//! External reference health and native parity gate for beam-curved-arch.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the brick-mesh tip displacement against the Castigliano curved
-//! cantilever closed form. Without an engine it prints the documented skip
-//! message and exits 0. Case contributed by the beams lane; Worker 1 owns
-//! the runner.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the brick-mesh
+//! tip displacement against the Castigliano curved cantilever closed form. Case contributed by
+//! the beams lane; Worker 1 owns the runner.
 //!
-//! The rad API ships brick meshes only (no beam cards), so the arch is a
-//! brick twin: a square section swept along a quarter circle. The tip load
-//! runs along global -X (the tip tangent), fitting the single-axis /CLOAD
-//! card. Gaps for Worker 1: no /PROP/BEAM cards, no curved-geometry mesher
-//! in rad.rs (built in-bin here), no twist/rotation probe channels.
+//! The rad API ships brick meshes only (no beam cards), so the arch is a brick twin: a square
+//! section swept along a quarter circle. The tip load runs along global -X (the tip tangent),
+//! fitting the single-axis /CLOAD card. Gaps for Worker 1: no /PROP/BEAM cards, no curved-
+//! geometry mesher in rad.rs (built in-bin here), no twist/rotation probe channels.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -21,6 +22,9 @@ use sonium_qa::rad::{
     write_engine, write_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/cantilever_native.rs"]
+mod cantilever_native;
 
 /// Quarter-circular arch swept with bricks: (mesh, root set, tip set, tip node).
 ///
@@ -142,9 +146,118 @@ pub fn beam_curved_arch_case() -> OpenCourantCase {
     }
 }
 
+/// Refine the external arch mesh while preserving the original force locations.
+///
+/// # Errors
+///
+/// Returns an error for zero arc cells, a non-even section count below two,
+/// or an original force location absent from the refined tip face.
+pub fn refined_reference_case(
+    n_arc: usize,
+    n_sec: usize,
+) -> Result<OpenCourantCase, Box<dyn std::error::Error>> {
+    if n_arc == 0 || n_sec < 2 || !n_sec.is_multiple_of(2) {
+        return Err("positive arc cells and even section cells >=2 required".into());
+    }
+    let mut case = beam_curved_arch_case();
+    let points = case.node_sets[1]
+        .nodes
+        .iter()
+        .map(|&node| case.mesh.nodes[node - 1])
+        .collect::<Vec<_>>();
+    let (mesh, root, _, probe) = arch_brick_mesh(n_arc, n_sec, 1.0, 0.05);
+    let loads = points
+        .iter()
+        .map(|point| {
+            mesh.nodes
+                .iter()
+                .position(|candidate| {
+                    candidate
+                        .iter()
+                        .zip(point)
+                        .all(|(a, b)| (a - b).abs() < 1e-12)
+                })
+                .map(|index| index + 1)
+                .ok_or("original nodal force location missing")
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    case.mesh = mesh;
+    case.node_sets[0].nodes = root;
+    case.node_sets[1].nodes = loads;
+    case.th_nodes = vec![probe];
+    case.probes[0].channel = format!("DX/{probe}");
+    Ok(case)
+}
+
 fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/beam_curved_arch")
 }
+
+fn refined_external_reference(
+    exe: &std::path::Path,
+) -> Result<[f64; 3], Box<dyn std::error::Error>> {
+    let mut values = [0.0; 3];
+    for (index, (arc, section)) in [(40, 4), (60, 6), (80, 8)].into_iter().enumerate() {
+        let case = refined_reference_case(arc, section)?;
+        let work = std::env::temp_dir().join(format!(
+            "sonium_arch_refined_{}_{}_{}",
+            std::process::id(),
+            arc,
+            section
+        ));
+        std::fs::create_dir_all(&work)?;
+        std::fs::write(work.join("beam_curved_arch_0000.rad"), write_starter(&case))?;
+        std::fs::write(work.join("beam_curved_arch_0001.rad"), write_engine(&case))?;
+        println!(
+            "external full curved-arch reference: arc={arc}, section={section}, starting original 1 s history"
+        );
+        let output = run_case(&work, exe, &case)?;
+        let probe = &case.probes[0];
+        let value = output.history.final_value(&probe.channel)?;
+        assert_probe_close(
+            value,
+            probe.expected,
+            probe.abs_tol,
+            probe.rel_tol,
+            &probe.label,
+        )?;
+        println!(
+            "external refined curved-arch arc={arc}, section={section}, final DX={value:.12e}"
+        );
+        values[index] = value;
+        std::fs::remove_dir_all(&work).ok();
+    }
+    Ok(values)
+}
+
+fn reference_refinement_changes(values: [f64; 3]) -> [f64; 3] {
+    let first = (values[1] - values[0]).abs() / values[1].abs().max(1e-30);
+    let last = (values[2] - values[1]).abs() / values[2].abs().max(1e-30);
+    [first, last, last / first.max(1e-15)]
+}
+
+fn add_reference_refinement(
+    mut result: sonium_qa::QaResult,
+    values: [f64; 3],
+) -> sonium_qa::QaResult {
+    let [first, last, contraction] = reference_refinement_changes(values);
+    for (name, value, budget) in [
+        ("external_spatial_first_relative_change", first, 0.02),
+        ("external_spatial_final_relative_change", last, 0.005),
+        ("external_spatial_contraction", contraction, 0.6),
+    ] {
+        result = result.metric(name, value).maximum(name, budget);
+    }
+    for (index, value) in values.into_iter().enumerate() {
+        result = result.metric(format!("external_refinement_{index}_tip_dx"), value);
+    }
+    if result.release_eligible().is_err() {
+        result.status = sonium_qa::QaStatus::Failed;
+    }
+    result
+}
+
+const CASE_ID: &str = "fem.opencourant.beam-curved-arch.native-parity.v1";
 
 fn main() {
     let case = beam_curved_arch_case();
@@ -186,8 +299,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -199,8 +311,10 @@ fn main() {
     std::fs::write(work.join("beam_curved_arch_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("beam_curved_arch_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad beam_curved_arch run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -229,9 +343,87 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED");
-        std::process::exit(1);
+    let result = refined_external_reference(&exe)
+        .and_then(|values| {
+            // The original coarse deck remains an external-health check. The
+            // numerical parity reference is the independently mesh-refined
+            // full solid with identical material, force sites and history.
+            cantilever_native::parity_result(&case, CASE_ID, &output.engine, values[2], !failed)
+                .map(|result| add_reference_refinement(result, values))
+        })
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(
+                CASE_ID,
+                format!("native curved continuum validation failed: {error}"),
+            )
+            .requested_backend("cpu+opencourant")
+            .actual_backend("cpu+opencourant")
+            .metric("external_reference_executed", 1.0)
+            .metric("native_parity_executed", 0.0)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
+}
+
+#[cfg(test)]
+#[test]
+fn unconverged_external_reference_cannot_release_native_parity() {
+    let passed =
+        add_reference_refinement(sonium_qa::QaResult::passed("test"), [-1.98, -1.998, -2.0]);
+    assert!(passed.release_eligible().is_ok());
+    let failed = add_reference_refinement(sonium_qa::QaResult::passed("test"), [-1.0, -1.8, -2.0]);
+    assert!(failed.release_eligible().is_err());
+    assert_eq!(failed.status, sonium_qa::QaStatus::Failed);
+}
+
+#[cfg(test)]
+#[test]
+fn original_curved_geometry_and_root_cannot_be_substituted() {
+    let mut case = beam_curved_arch_case();
+    cantilever_native::validate_case(&case).unwrap();
+    case.mesh.nodes.last_mut().unwrap()[1] = 1.2;
+    assert!(cantilever_native::validate_case(&case).is_err());
+    case = beam_curved_arch_case();
+    case.node_sets[case.bcs[0].set].nodes.pop();
+    assert!(cantilever_native::validate_case(&case).is_err());
+}
+
+#[cfg(test)]
+#[test]
+fn external_refinement_retains_original_force_sites_and_history() {
+    let original = beam_curved_arch_case();
+    let refined = refined_reference_case(40, 4).unwrap();
+    for (&a, &b) in original.node_sets[1]
+        .nodes
+        .iter()
+        .zip(&refined.node_sets[1].nodes)
+    {
+        for (x, y) in original.mesh.nodes[a - 1]
+            .iter()
+            .zip(&refined.mesh.nodes[b - 1])
+        {
+            assert!((x - y).abs() < 1e-12);
+        }
     }
-    println!("SUCCESS");
+    assert_eq!(refined.node_sets[1].nodes.len(), 9);
+    assert_eq!(
+        refined.cloads[0].force_scale_n,
+        original.cloads[0].force_scale_n
+    );
+    assert_eq!(refined.functions[0].points, original.functions[0].points);
+    assert_eq!(
+        refined.material.youngs_modulus_pa,
+        original.material.youngs_modulus_pa
+    );
+    assert_eq!(
+        refined.material.poisson_ratio,
+        original.material.poisson_ratio
+    );
+    assert_eq!(
+        refined.material.density_kg_per_m3,
+        original.material.density_kg_per_m3
+    );
+    assert_eq!(refined.stop_time_s, original.stop_time_s);
+    assert_eq!(refined.node_sets[0].nodes.len(), 25);
+    assert!(refined_reference_case(0, 4).is_err());
+    assert!(refined_reference_case(40, 3).is_err());
 }

@@ -25,7 +25,7 @@ use sonium_compute::MemoryPoolConfig;
 #[cfg(feature = "cuda")]
 use sonium_compute::{CudaBackend, CudaBemFieldOperatorC64, MemoryPool};
 
-use crate::core::parallel::{BEM_ENTRIES_PER_THREAD, gated_map, gated_map_indexed};
+use crate::core::parallel::{BEM_QUADRATURE_PAIRS_PER_THREAD, gated_map, gated_map_indexed};
 
 /// Field evaluation result at a single point
 #[derive(Debug, Clone)]
@@ -786,7 +786,7 @@ fn compute_scattered_field_gradient(
     // serial for small point × element counts). Work is evaluation points ×
     // boundary elements kernel evaluations.
     let eval_work = eval_points.len().saturating_mul(boundary_elements.len());
-    gated_map(eval_points, eval_work, BEM_ENTRIES_PER_THREAD, |point| {
+    gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
         let mut gradient = [Complex64::new(0.0, 0.0); 3];
         match basis_order {
             BasisOrder::Constant => {
@@ -913,7 +913,7 @@ pub fn build_constant_field_operator(
     let wavruim = physics.wave_number * physics.harmonic_factor;
     let eval_work = eval_points.len().saturating_mul(boundary_elements.len());
     let rows: Vec<(Vec<Complex64>, Complex64)> =
-        gated_map(eval_points, eval_work, BEM_ENTRIES_PER_THREAD, |point| {
+        gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
             let mut row = Vec::with_capacity(boundary_elements.len());
             let mut affine = Complex64::new(0.0, 0.0);
             for (index, element) in boundary_elements.iter().enumerate() {
@@ -991,7 +991,7 @@ pub fn build_field_operator_checked(
     let wavruim = physics.wave_number * physics.harmonic_factor;
     let eval_work = eval_points.len().saturating_mul(boundary_elements.len());
     let rows: Vec<(Vec<Complex64>, Complex64)> =
-        gated_map(eval_points, eval_work, BEM_ENTRIES_PER_THREAD, |point| {
+        gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
             let mut row = vec![Complex64::new(0.0, 0.0); pressure_dof_count];
             let mut affine = Complex64::new(0.0, 0.0);
 
@@ -1298,7 +1298,7 @@ pub fn eval_constant_field_operator_columns(
     let wavruim = physics.wave_number * physics.harmonic_factor;
     let eval_work = eval_points.len().saturating_mul(columns.len());
     let rows: Vec<(Vec<Complex64>, Complex64)> =
-        gated_map(eval_points, eval_work, BEM_ENTRIES_PER_THREAD, |point| {
+        gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
             let mut values = Vec::with_capacity(columns.len());
             let mut affine = Complex64::new(0.0, 0.0);
             for (position, &column) in columns.iter().enumerate() {
@@ -1397,7 +1397,7 @@ fn compute_scattered_field_with_incident(
 
     let eval_work = n_eval.saturating_mul(boundary_elements.len());
     let p_scattered_vec: Vec<Complex64> =
-        gated_map_indexed(n_eval, eval_work, BEM_ENTRIES_PER_THREAD, |i| {
+        gated_map_indexed(n_eval, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |i| {
             let x: Vec<f64> = eval_points[i].to_vec();
             let mut p_scat = Complex64::new(0.0, 0.0);
 

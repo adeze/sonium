@@ -1,14 +1,16 @@
-//! QA: rail crush vs OpenCourant (elastic prove-out leg).
+//! External reference health and native parity gate for rail-crush.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the crusher force (EA delta / L, pre-buckling) and the loaded
-//! face motion against the elastic closed form. Without an engine it prints
-//! the documented skip message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the crusher force
+//! (EA delta / L, pre-buckling) and the loaded face motion against the elastic closed form.
 //!
-//! The plastic mean-crush-force probe (Alexander/Wierzbicki) needs the
-//! plastic LAW cards tracked for Worker 1; this leg proves geometry,
-//! loading, and wall-force probing on the supported cards.
+//! The plastic mean-crush-force probe (Alexander/Wierzbicki) needs the plastic LAW cards
+//! tracked for Worker 1; this leg proves geometry, loading, and wall-force probing on the
+//! supported cards.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -127,6 +129,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/rail_crush")
 }
 
+const CASE_ID: &str = "fem.opencourant.rail-crush.native-parity.v1";
+
 fn main() {
     let case = rail_crush_case();
     let dir = decks_dir();
@@ -166,8 +170,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -176,8 +179,10 @@ fn main() {
     std::fs::write(work.join("rail_crush_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("rail_crush_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad rail_crush run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -208,10 +213,9 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-rail-crush");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-rail-crush");
-    println!("SUCCESS: qa-fem-opencourant-rail-crush");
+    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
+        CASE_ID,
+        &output.engine,
+        !failed,
+    ));
 }

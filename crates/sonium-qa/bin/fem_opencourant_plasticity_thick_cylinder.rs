@@ -1,17 +1,19 @@
-//! QA: thick-cylinder autofrettage vs OpenCourant (Worker 4 C3 case).
+//! External reference health and native parity gate for plasticity-thick-cylinder.
 //!
-//! Builds the `plasticity_thick_cylinder` OpenCourant case (ring mesh, bore
-//! pressure load-unload history, analytic probes), verifies the checked-in
-//! decks match the `sonium_qa::rad` writer, then runs the starter and engine
-//! when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set. Without an engine it prints
-//! the documented skip message and exits 0.
+//! Builds the `plasticity_thick_cylinder` OpenCourant case (ring mesh, bore pressure load-
+//! unload history, analytic probes), verifies the checked-in decks match the `sonium_qa::rad`
+//! writer, then runs the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is
+//! set.
 //!
-//! ACTIVATION STATUS (Sync 2): fully activated on the extended writer.
-//! The case uses an elastic-perfectly plastic steel `/MAT/LAW36` card and
-//! `/TH/BRIC` stress output with group-qualified `SY/BRIC/<id>` residual
-//! channels (probe bricks sit on the +X axis, where hoop is Y). The elastic
-//! displacement probes run on the loading leg; the hoop residuals are read
-//! at final time.
+//! ACTIVATION STATUS (Sync 2): fully activated on the extended writer. The case uses an
+//! elastic-perfectly plastic steel `/MAT/LAW36` card and `/TH/BRIC` stress output with group-
+//! qualified `SY/BRIC/<id>` residual channels (probe bricks sit on the +X axis, where hoop is
+//! Y). The elastic displacement probes run on the loading leg; the hoop residuals are read at
+//! final time.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -23,6 +25,9 @@ use sonium_qa::rad::{
     write_extended_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/plasticity_native.rs"]
+mod plasticity_native;
 
 const A_M: f64 = 0.05;
 const B_M: f64 = 0.10;
@@ -251,7 +256,7 @@ fn brick_volume_signed(mesh: &RadMesh, brick: &[usize; 8]) -> f64 {
 /// displacements plus the bore/outer hoop residual SY brick averages on
 /// `/TH/BRIC` channels. Residual expectations integrate the analytic
 /// autofrettage solution over each probe brick span.
-fn plasticity_thick_cylinder_case() -> RadExtendedCase {
+pub fn plasticity_thick_cylinder_case() -> RadExtendedCase {
     // 12 radial bricks: the 11.6 mm plastic zone holds ~3 bricks, so the
     // bore brick resolves the yield peak (nr = 3 smeared it elastic).
     // 24 sectors keep the probe-brick centroid 7.5 deg off the +X axis; the
@@ -388,6 +393,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/plasticity_thick_cylinder")
 }
 
+const CASE_ID: &str = "fem.opencourant.plasticity-thick-cylinder.native-parity.v1";
+
 fn main() {
     let case = plasticity_thick_cylinder_case();
     case.validate()
@@ -440,8 +447,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -453,8 +459,10 @@ fn main() {
     std::fs::write(work.join("plasticity_thick_cylinder_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("plasticity_thick_cylinder_0001.rad"), &engine).unwrap();
     let output = run_extended_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad plasticity_thick_cylinder run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     // Elastic probes are read on the loading leg where the raised cosine
@@ -534,10 +542,10 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-plasticity-thick-cylinder");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-plasticity-thick-cylinder");
-    println!("SUCCESS: qa-fem-opencourant-plasticity-thick-cylinder");
+    let result =
+        plasticity_native::parity_result(&case, CASE_ID, &output.engine, &output.history, !failed)
+            .unwrap_or_else(|error| {
+                sonium_qa::rad::gate::execution_failure_result(CASE_ID, &error.to_string())
+            });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

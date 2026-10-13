@@ -1,5 +1,7 @@
 //! Shared release-facing QA for promotion of dimension-generic FEM forms.
 
+// Rust guideline compliant 2026-02-21
+
 use sonium_fem::assembly::{assemble_bilinear, assemble_linear};
 use sonium_fem::basis::PolynomialDegree;
 use sonium_fem::forms::BilinearForm;
@@ -229,8 +231,9 @@ pub fn run_compressible_case() {
     );
 }
 
-/// Solve the Navier mixed biharmonic problem for
-/// `u = sin(pi x) sin(pi y) sin(pi z)` on two tetrahedral meshes.
+/// Verify mixed biharmonic accuracy and refinement against a smooth manufactured solution.
+///
+/// Solves `u = sin(pi x) sin(pi y) sin(pi z)` on three tetrahedral meshes.
 ///
 /// This is deliberately separate from the fast block-contract gate above: it
 /// exercises source integration, essential conditions, sparse factorization,
@@ -272,16 +275,45 @@ pub fn run_biharmonic_mms_case() {
         let mut u_reference = 0.0;
         let mut q_error = 0.0;
         let mut q_reference = 0.0;
-        for (node, point) in mesh.nodes.iter().enumerate() {
-            if is_unit_cube_boundary(point.x, point.y, point.z) {
-                continue;
+        // Integrate the interpolated FEM fields, including their interpolation error.
+        // Order-six quadrature resolves the smooth trigonometric reference on each cell.
+        let quadrature = sonium_fem::quadrature::QuadratureRule::new(
+            sonium_fem::mesh::ElementType::Tetrahedron,
+            6,
+        );
+        for element in &mesh.elements {
+            let vertices = element.vertices();
+            let p = vertices.iter().map(|&i| mesh.nodes[i]).collect::<Vec<_>>();
+            let a = [p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z];
+            let b = [p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z];
+            let c = [p[3].x - p[0].x, p[3].y - p[0].y, p[3].z - p[0].z];
+            let determinant = (a[0] * (b[1] * c[2] - b[2] * c[1])
+                - a[1] * (b[0] * c[2] - b[2] * c[0])
+                + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                .abs();
+            for point in quadrature.iter() {
+                let [xi, eta, zeta] = point.coords;
+                let basis = [1.0 - xi - eta - zeta, xi, eta, zeta];
+                let mut coordinates = [0.0; 3];
+                let mut computed_u = 0.0;
+                let mut computed_q = 0.0;
+                for i in 0..4 {
+                    coordinates[0] += basis[i] * p[i].x;
+                    coordinates[1] += basis[i] * p[i].y;
+                    coordinates[2] += basis[i] * p[i].z;
+                    computed_u += basis[i] * solution[vertices[i]];
+                    computed_q += basis[i] * solution[n + vertices[i]];
+                }
+                let exact_u = (PI * coordinates[0]).sin()
+                    * (PI * coordinates[1]).sin()
+                    * (PI * coordinates[2]).sin();
+                let exact_q = 3.0 * PI * PI * exact_u;
+                let weight = determinant * point.weight;
+                u_error += weight * (computed_u - exact_u).powi(2);
+                u_reference += weight * exact_u.powi(2);
+                q_error += weight * (computed_q - exact_q).powi(2);
+                q_reference += weight * exact_q.powi(2);
             }
-            let exact_u = (PI * point.x).sin() * (PI * point.y).sin() * (PI * point.z).sin();
-            let exact_q = 3.0 * PI * PI * exact_u;
-            u_error += (solution[node] - exact_u).powi(2);
-            u_reference += exact_u * exact_u;
-            q_error += (solution[n + node] - exact_q).powi(2);
-            q_reference += exact_q * exact_q;
         }
         let residual = relative_residual(&matrix, &solution, &rhs);
         Ok((
@@ -292,15 +324,37 @@ pub fn run_biharmonic_mms_case() {
     };
 
     let (u_coarse, q_coarse, residual_coarse) =
-        solve(3).unwrap_or_else(|error| fail(case_id, &error));
-    let (u_fine, q_fine, residual_fine) = solve(6).unwrap_or_else(|error| fail(case_id, &error));
-    let u_convergence_rate = (u_coarse / u_fine).ln() / 2.0_f64.ln();
-    let q_convergence_rate = (q_coarse / q_fine).ln() / 2.0_f64.ln();
-    let maximum_residual = residual_coarse.max(residual_fine);
-    if u_fine > 0.25
-        || q_fine > 0.13
-        || u_convergence_rate < 1.0
-        || q_convergence_rate < 0.7
+        solve(6).unwrap_or_else(|error| fail(case_id, &error));
+    let (u_medium, q_medium, residual_medium) =
+        solve(12).unwrap_or_else(|error| fail(case_id, &error));
+    let (u_fine, q_fine, residual_fine) = solve(24).unwrap_or_else(|error| fail(case_id, &error));
+    // Smooth P1 fields have second-order L2 convergence. Both refinement intervals
+    // must reach the asymptotic regime, and the resolved field must be accurate.
+    let u_convergence_rate =
+        ((u_coarse / u_medium).ln() / 2.0_f64.ln()).min((u_medium / u_fine).ln() / 2.0_f64.ln());
+    let q_convergence_rate =
+        ((q_coarse / q_medium).ln() / 2.0_f64.ln()).min((q_medium / q_fine).ln() / 2.0_f64.ln());
+    let maximum_residual = residual_coarse.max(residual_medium).max(residual_fine);
+    println!(
+        "Biharmonic volume L2: n6 u={u_coarse:.3e} q={q_coarse:.3e}; n12 u={u_medium:.3e} q={q_medium:.3e}; n24 u={u_fine:.3e} q={q_fine:.3e}; minimum rates u={u_convergence_rate:.3} q={q_convergence_rate:.3}"
+    );
+    if [
+        u_coarse,
+        q_coarse,
+        u_medium,
+        q_medium,
+        u_fine,
+        q_fine,
+        maximum_residual,
+        u_convergence_rate,
+        q_convergence_rate,
+    ]
+    .iter()
+    .any(|v| !v.is_finite())
+        || u_fine > 0.02
+        || q_fine > 0.01
+        || u_convergence_rate < 1.7
+        || q_convergence_rate < 1.7
         || maximum_residual > 1.0e-10
     {
         fail(
@@ -315,17 +369,24 @@ pub fn run_biharmonic_mms_case() {
             .requested_backend("cpu")
             .actual_backend("cpu")
             .metric("coarse_u_relative_l2", u_coarse)
+            .metric("coarse_q_relative_l2", q_coarse)
+            .metric("medium_u_relative_l2", u_medium)
+            .metric("medium_q_relative_l2", q_medium)
             .metric("fine_u_relative_l2", u_fine)
             .metric("fine_q_relative_l2", q_fine)
             .metric("u_convergence_rate", u_convergence_rate)
             .metric("q_convergence_rate", q_convergence_rate)
             .metric("maximum_algebraic_residual", maximum_residual)
-            .maximum("fine_u_relative_l2", 0.25)
-            .maximum("fine_q_relative_l2", 0.13)
-            .minimum("u_convergence_rate", 1.0)
-            .minimum("q_convergence_rate", 0.7)
+            .maximum("fine_u_relative_l2", 0.02)
+            .maximum("fine_q_relative_l2", 0.01)
+            .minimum("u_convergence_rate", 1.7)
+            .minimum("q_convergence_rate", 1.7)
             .maximum("maximum_algebraic_residual", 1.0e-10)
-            .seed("unit-cube-tet-n3-n6:p1:mixed:sin-pi-xyz"),
+            .reference("u=sin(pi*x)sin(pi*y)sin(pi*z), q=3*pi^2*u, f=9*pi^4*u")
+            .reference_checksum("analytic:navier-biharmonic-sin-pi-xyz:v1")
+            .formulation("native mixed P1 biharmonic solve; volume-quadrature L2 accuracy and both refinement intervals")
+            .metric("numerical_solve_executed", 3.0).minimum("numerical_solve_executed", 3.0)
+            .seed("unit-cube-tet-n6-n12-n24:p1:mixed:sin-pi-xyz:quadrature6"),
     );
 }
 

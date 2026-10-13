@@ -1,12 +1,14 @@
-//! QA: Hertz sphere vs OpenCourant rigid-wall contact.
+//! External reference health and native parity gate for hertz-sphere.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the pole displacement against the wall travel plus two custom
-//! force checks (wall-force balance, contact-stiffness window). The Hertz
-//! force magnitude itself is not asserted: the `sqrt(R delta)` patch is
-//! unresolvable on 10 mm bricks (see `hertz_sphere_case`). Without an engine
-//! it prints the documented skip message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the pole
+//! displacement against the wall travel plus two custom force checks (wall-force balance,
+//! contact-stiffness window). The Hertz force magnitude itself is not asserted: the `sqrt(R
+//! delta)` patch is unresolvable on 10 mm bricks (see `hertz_sphere_case`).
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -19,6 +21,8 @@ use std::path::PathBuf;
 fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/hertz_sphere")
 }
+
+const CASE_ID: &str = "fem.opencourant.hertz-sphere.native-parity.v1";
 
 fn main() {
     let case = hertz_sphere_case();
@@ -61,8 +65,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -71,8 +74,10 @@ fn main() {
     std::fs::write(work.join("hertz_sphere_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("hertz_sphere_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad hertz_sphere run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -130,10 +135,9 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-hertz-sphere");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-hertz-sphere");
-    println!("SUCCESS: qa-fem-opencourant-hertz-sphere");
+    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
+        CASE_ID,
+        &output.engine,
+        !failed,
+    ));
 }

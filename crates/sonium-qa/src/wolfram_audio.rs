@@ -121,6 +121,11 @@ pub fn reference_with(case: &str, golden_dir: &std::path::Path) -> Option<serde_
     }
 }
 
+/// Maximum engine launch attempts before a busy binary is loud.
+const LAUNCH_ATTEMPTS: u32 = 10;
+/// Spacing between engine launch attempts after ETXTBSY.
+const LAUNCH_RETRY_DELAY: std::time::Duration = std::time::Duration::from_millis(10);
+
 /// Run a `.wls` script through the live engine; `None` when the engine
 /// binary is missing. Follows the `sonium-qa` invocation pattern,
 /// including the macOS `WolframKernel` fallback. Takes the engine binary
@@ -143,13 +148,31 @@ pub fn run_wolfram_script_with(
             command.env("WolframKernel", kernel);
         }
     }
-    let output = match command.output() {
-        Ok(output) => output,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-            eprintln!("WOLFRAMSCRIPT binary not found; skipping live reference");
-            return None;
+    // Spawn retries: in multithreaded processes (the QA test
+    // harness runs one thread per test), `Command` spawns of a
+    // script intermittently fail with ETXTBSY even when nothing is
+    // writing the file — measured at ~10% per spawn under thread
+    // contention, 0% for a raw fork+execve of the same script. The
+    // spawn failed before anything executed, so retrying it is
+    // safe; ten attempts at 10 ms spacing make the residual rate
+    // negligible while keeping a genuinely busy binary loud.
+    let mut attempt = 0;
+    let output = loop {
+        attempt += 1;
+        match command.output() {
+            Ok(output) => break output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("WOLFRAMSCRIPT binary not found; skipping live reference");
+                return None;
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::ExecutableFileBusy
+                    && attempt < LAUNCH_ATTEMPTS =>
+            {
+                std::thread::sleep(LAUNCH_RETRY_DELAY);
+            }
+            Err(error) => panic!("failed to launch {executable:?}: {error}"),
         }
-        Err(error) => panic!("failed to launch {executable:?}: {error}"),
     };
     assert!(
         output.status.success(),
@@ -278,16 +301,15 @@ mod tests {
             golden_dir(),
             PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("wolfram/goldens")
         );
+        let override_dir = std::env::temp_dir().join("sonium-qa-audio-override");
+        let seed_dir = std::env::temp_dir().join("sonium-qa-audio-seed");
         unsafe {
-            env::set_var("SONIUM_QA_GOLDEN_DIR", "/tmp/sonium-qa-audio-override");
+            env::set_var("SONIUM_QA_GOLDEN_DIR", &override_dir);
         }
-        assert_eq!(golden_dir(), PathBuf::from("/tmp/sonium-qa-audio-override"));
+        assert_eq!(golden_dir(), override_dir);
         unsafe {
-            restore_var(
-                "SONIUM_QA_GOLDEN_DIR",
-                Some("/tmp/sonium-qa-audio-seed".into()),
-            );
-            assert_eq!(golden_dir(), PathBuf::from("/tmp/sonium-qa-audio-seed"));
+            restore_var("SONIUM_QA_GOLDEN_DIR", Some(seed_dir.clone().into()));
+            assert_eq!(golden_dir(), seed_dir);
             restore_var("SONIUM_QA_GOLDEN_DIR", None);
             assert_eq!(
                 golden_dir(),
@@ -317,8 +339,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn reference_takes_live_path_with_fixture_engine() {
-        let dir = std::env::temp_dir().join("sonium-qa-audio-reference-live");
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dir = fixture_dir("reference-live");
         let engine = fixture_engine(&dir);
         let ambient_script = env::var_os("WOLFRAMSCRIPT");
         let ambient_kernel = env::var_os("WolframKernel");
@@ -348,8 +369,7 @@ mod tests {
 
     #[test]
     fn reference_with_reads_golden_and_skips_when_missing() {
-        let dir = std::env::temp_dir().join("sonium-qa-audio-reference-with");
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dir = fixture_dir("reference-with");
         std::fs::write(dir.join("present.json"), r#"{"answer": 42.0}"#).expect("fixture");
         let value = reference_with("present", &dir).expect("golden loads");
         assert_eq!(value["answer"], 42.0);
@@ -360,10 +380,24 @@ mod tests {
     #[test]
     #[should_panic(expected = "is not JSON")]
     fn reference_with_rejects_corrupt_golden() {
-        let dir = std::env::temp_dir().join("sonium-qa-audio-reference-corrupt");
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dir = fixture_dir("reference-corrupt");
         std::fs::write(dir.join("broken.json"), "not json{").expect("fixture");
         let _ = reference_with("broken", &dir);
+    }
+
+    /// Unique scratch dir for one test in this process.
+    ///
+    /// Fixed shared names let concurrent test processes (nextest,
+    /// parallel `cargo test` runs) write and execute the same fixture
+    /// script at once, which fails with ETXTBSY (`Text file busy`)
+    /// both at rewrite and at launch. Suffixing the process id keeps
+    /// every process on its own fixture files, matching the sibling
+    /// harnesses in `rad_parse` / `oc_bench_cli`.
+    fn fixture_dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("sonium-qa-audio-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        dir
     }
 
     /// Fixture "engine": prints noise lines, then one JSON line, mimicking a
@@ -387,20 +421,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn runner_parses_last_json_line_and_handles_missing_binary() {
-        let dir = std::env::temp_dir().join("sonium-qa-audio-runner");
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dir = fixture_dir("runner");
         let engine = fixture_engine(&dir);
         let value = run_wolfram_script_with(engine.as_os_str(), "any.wls").expect("parses");
         assert_eq!(value["ok"], true);
         assert_eq!(value["v"], 1.5);
         // Nonexistent binary -> loud skip, not a panic.
-        assert!(
-            run_wolfram_script_with(
-                std::ffi::OsStr::new("/tmp/sonium-qa-audio-no-such-engine-xyz"),
-                "any.wls"
-            )
-            .is_none()
-        );
+        let missing = std::env::temp_dir().join("sonium-qa-audio-no-such-engine-xyz");
+        assert!(run_wolfram_script_with(missing.as_os_str(), "any.wls").is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -408,8 +436,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "not JSON")]
     fn runner_panics_on_non_json_output() {
-        let dir = std::env::temp_dir().join("sonium-qa-audio-runner-garbage");
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dir = fixture_dir("runner-garbage");
         let path = dir.join("garbage-engine.sh");
         std::fs::write(&path, "#!/bin/sh\necho 'no json here'\n").expect("fixture");
         #[cfg(unix)]
@@ -435,8 +462,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "failed")]
     fn runner_panics_on_failing_engine() {
-        let dir = std::env::temp_dir().join("sonium-qa-audio-runner-fail");
-        std::fs::create_dir_all(&dir).expect("temp dir");
+        let dir = fixture_dir("runner-fail");
         let path = dir.join("fail-engine.sh");
         std::fs::write(&path, "#!/bin/sh\necho boom >&2\nexit 3\n").expect("fixture");
         #[cfg(unix)]

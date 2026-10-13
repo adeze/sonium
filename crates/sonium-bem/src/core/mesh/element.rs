@@ -223,6 +223,9 @@ impl Element {
 /// quadratic basis therefore supplies six or nine field DOFs on the existing
 /// Tri3 or Quad4 geometric panel; it does not imply globally shared
 /// high-order mesh nodes.
+/// Quadratic Quad4 slots follow the geometric connectivity vertices, then
+/// the four consecutive edge midpoints and the panel center. This ordering
+/// also matches the continuous quadratic global DOF map.
 pub fn basis_values(element_type: ElementType, basis: BasisOrder, s: f64, t: f64) -> Vec<f64> {
     match basis {
         BasisOrder::Constant => vec![1.0],
@@ -265,15 +268,17 @@ pub fn basis_values(element_type: ElementType, basis: BasisOrder, s: f64, t: f64
                 }
                 let ls = lagrange2(s);
                 let lt = lagrange2(t);
+                // Match the Quad4 geometry/connectivity convention:
+                // vertices (+,+),(-,+),(-,-),(+,-), then their edges.
                 vec![
-                    ls[0] * lt[0],
-                    ls[2] * lt[0],
                     ls[2] * lt[2],
                     ls[0] * lt[2],
-                    ls[1] * lt[0],
-                    ls[2] * lt[1],
+                    ls[0] * lt[0],
+                    ls[2] * lt[0],
                     ls[1] * lt[2],
                     ls[0] * lt[1],
+                    ls[1] * lt[0],
+                    ls[2] * lt[1],
                     ls[1] * lt[1],
                 ]
             }
@@ -674,6 +679,30 @@ mod tests {
         assert_eq!(basis.len(), 9);
         assert!((basis.iter().sum::<f64>() - 1.0).abs() < 1.0e-12);
         assert_eq!(element.num_dofs_for_basis(BasisOrder::Quadratic), 9);
+        // Continuous DOFs follow connectivity vertices, then consecutive
+        // edge midpoints and the center. Basis slots must represent those
+        // same points under the geometry's local-coordinate convention.
+        let local_nodes = [
+            (1.0, 1.0),
+            (-1.0, 1.0),
+            (-1.0, -1.0),
+            (1.0, -1.0),
+            (0.0, 1.0),
+            (-1.0, 0.0),
+            (0.0, -1.0),
+            (1.0, 0.0),
+            (0.0, 0.0),
+        ];
+        for (slot, &(s, t)) in local_nodes.iter().enumerate() {
+            let values = basis_values(ElementType::Quad4, BasisOrder::Quadratic, s, t);
+            for (index, &value) in values.iter().enumerate() {
+                let expected = if index == slot { 1.0 } else { 0.0 };
+                assert!(
+                    (value - expected).abs() < 1e-12,
+                    "geometry node {slot} must select basis slot {slot}, got slot {index}={value}"
+                );
+            }
+        }
         assert_eq!(
             element
                 .collocation_local_coords(BasisOrder::Quadratic)

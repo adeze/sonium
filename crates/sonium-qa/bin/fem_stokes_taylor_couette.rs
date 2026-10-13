@@ -10,6 +10,8 @@
 //!         B =  omega * R1^2 * R2^2 / (R2^2 - R1^2)
 //!   u_r = 0
 
+// Rust guideline compliant 2026-02-21
+
 use sonium_fem::assembly;
 use sonium_fem::assembly::TripletMatrix;
 use sonium_fem::assembly::mixed::assemble_mixed;
@@ -28,7 +30,11 @@ use sonium_solvers::{
 use sonium_xem::io::binary_output_dir;
 use std::collections::HashMap;
 
-fn test_stokes_taylor_couette() {
+const CASE_ID: &str = "fem.stokes-taylor-couette-independent-residual.v1";
+// This algebraic gate is independent of the 2% geometric discretization error.
+const TRUE_RESIDUAL_TOLERANCE: f64 = 1e-8;
+
+fn test_stokes_taylor_couette() -> Result<sonium_qa::QaResult, String> {
     env_logger::init();
     println!("=== Stokes Taylor-Couette Flow (Taylor-Hood P2-P1) ===\n");
 
@@ -170,6 +176,11 @@ fn test_stokes_taylor_couette() {
         result.residual,
     );
 
+    // Recompute Ax-b from the assembled, constrained operator and returned vector.
+    let true_residual = sonium_qa::relative_residual_norm(&a_csr, &result.x, &rhs);
+    validate_convergence(result.converged, true_residual)?;
+    println!("  Independent relative residual: {true_residual:.3e}");
+
     // --- 7. Compare with analytical ---
     let u_sol: Vec<f64> = result.x.iter().take(n_v).copied().collect();
     let p_sol: Vec<f64> = result.x.iter().skip(n_v).copied().collect();
@@ -228,10 +239,11 @@ fn test_stokes_taylor_couette() {
         vel_rel, count
     );
 
-    assert!(
-        vel_rel < 0.02,
-        "Taylor-Couette velocity relative L2 error too large: {vel_rel:.6e} (threshold: 2%)"
-    );
+    if !vel_rel.is_finite() || vel_rel >= 0.02 {
+        return Err(format!(
+            "Taylor-Couette velocity relative L2 error too large: {vel_rel:.6e} (threshold: 2%)"
+        ));
+    }
 
     // VTK output
     let mut node_ux = vec![0.0; n_nodes];
@@ -260,10 +272,39 @@ fn test_stokes_taylor_couette() {
         .join("stokes_taylor_couette.vtu");
     writer
         .write(&output_path)
-        .expect("write Taylor-Couette VTU");
+        .map_err(|error| format!("write Taylor-Couette VTU: {error}"))?;
     println!("\nWrote {}", output_path.display());
 
     println!("\n=== Done ===");
+    Ok(sonium_qa::QaResult::passed(CASE_ID)
+        .requested_backend("cpu")
+        .actual_backend("cpu")
+        .seed("annulus-r1-1-r2-2:omega1:radial8-angular32:P2-P1")
+        .reference("u_theta(r) = -r/3 + 4/(3r); steady annular Stokes flow")
+        .reference_checksum("analytic:taylor-couette-stokes:v1")
+        .formulation(
+            "native Taylor-Hood FEM; independent constrained Ax-b residual and analytical velocity",
+        )
+        .metric("solver_converged", 1.0)
+        .minimum("solver_converged", 1.0)
+        .metric("true_relative_residual", true_residual)
+        .maximum("true_relative_residual", TRUE_RESIDUAL_TOLERANCE)
+        .metric("velocity_relative_l2_error", vel_rel)
+        .maximum("velocity_relative_l2_error", 0.02)
+        .metric("numerical_solve_executed", 1.0)
+        .minimum("numerical_solve_executed", 1.0))
+}
+
+fn validate_convergence(converged: bool, true_residual: f64) -> Result<(), String> {
+    if !converged {
+        return Err("Taylor-Couette solver did not converge".to_string());
+    }
+    if !true_residual.is_finite() || true_residual > TRUE_RESIDUAL_TOLERANCE {
+        return Err(format!(
+            "Taylor-Couette true relative residual {true_residual:.3e} exceeds {TRUE_RESIDUAL_TOLERANCE:.3e}"
+        ));
+    }
+    Ok(())
 }
 
 fn apply_dirichlet(system: &mut FemSystem<f64>, bc_map: &HashMap<usize, f64>) {
@@ -300,16 +341,34 @@ fn apply_dirichlet(system: &mut FemSystem<f64>, bc_map: &HashMap<usize, f64>) {
 }
 
 fn main() {
-    let result = std::panic::catch_unwind(|| {
-        test_stokes_taylor_couette();
-    });
-    match result {
-        Ok(()) => {
+    match test_stokes_taylor_couette().and_then(|record| record.to_json_line()) {
+        Ok(line) => {
+            println!("QA_RESULT: {line}");
             println!("SUCCESS");
         }
-        Err(_) => {
-            println!("FAILED");
+        Err(error) => {
+            if let Ok(line) = sonium_qa::QaResult::failed(CASE_ID, &error).to_json_line() {
+                println!("QA_RESULT: {line}");
+            }
+            eprintln!("FAILED: {error}");
             std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unconverged_result_is_rejected_even_with_small_residual() {
+        assert!(validate_convergence(false, 0.0).is_err());
+    }
+
+    #[test]
+    fn false_convergence_and_nonfinite_residuals_are_rejected() {
+        for residual in [1e-3, f64::NAN, f64::INFINITY] {
+            assert!(validate_convergence(true, residual).is_err());
         }
     }
 }

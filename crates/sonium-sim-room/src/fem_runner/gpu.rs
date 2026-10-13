@@ -275,6 +275,19 @@ const GPU_IR_OUTER_TOLERANCE: f64 = 1.0e-6;
 const GPU_IR_INNER_TOLERANCE: f32 = 1.0e-3;
 const GPU_IR_TRUE_RESIDUAL_CHECK_PERIOD: usize = 5;
 
+/// Tuned shifted-Laplacian AMG setup for the GPU hierarchy.
+///
+/// Must match the CPU setup ([`super::misc::shifted_laplacian_amg_config`]:
+/// parallel aggregation, Chebyshev smoother, strong threshold 0.5). The
+/// generic aggregation defaults (threshold 0.08) coarsen the
+/// high-wavenumber shifted operator poorly: the f32 inner solve then
+/// maxes out its budget every outer step and iterative refinement stalls
+/// around residual 3e-2 at 700 Hz instead of converging to 1e-6.
+#[cfg(feature = "cuda")]
+pub(super) fn gpu_amg_config() -> sonium_solvers::AmgConfig {
+    shifted_laplacian_amg_config()
+}
+
 /// Pure-f32 defaults. The solver estimate is still driven to 1e-6, then
 /// final acceptance recomputes the residual on-device after promoting the
 /// f32 system to f64 arithmetic. That avoids downloading the full solution

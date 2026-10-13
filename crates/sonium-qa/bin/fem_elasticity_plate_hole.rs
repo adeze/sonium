@@ -2,7 +2,10 @@
 //!
 //! Analytical (Kirsch): sigma_theta at r=a, theta=pi/2 equals 3*sigma0.
 //! We apply far-field displacement BCs on the outer boundary and check
-//! the stress concentration factor K_t on the hole boundary.
+//! displacement and stress against Kirsch fields on refined logarithmic meshes.
+//! Increasing the outer radius separately checks the far-field truncation error.
+
+// Rust guideline compliant 2026-02-21
 
 use sonium_fem::assembly::assemble_bilinear;
 use sonium_fem::basis::PolynomialDegree;
@@ -54,8 +57,9 @@ fn element_stress_xx(
     let x3 = nodes[2].x;
     let y3 = nodes[2].y;
 
-    let area = 0.5 * ((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1)).abs();
-    if area < 1e-30 {
+    // Shape gradients require the signed Jacobian for either node ordering.
+    let area = 0.5 * ((x2 - x1) * (y3 - y1) - (x3 - x1) * (y2 - y1));
+    if area.abs() < 1e-30 {
         return 0.0;
     }
 
@@ -91,44 +95,84 @@ fn element_stress_xx(
     factor * (ex + nu * ey)
 }
 
-fn test_elasticity_plate_hole() {
-    let a = 0.5; // hole radius
-    let b = 5.0; // outer radius (large enough to approximate infinity)
-    let sigma0 = 1.0e6; // applied tension at infinity
-    let e_mod = 200e9;
-    let nu = 0.3;
+const CASE_ID: &str = "fem.elasticity-plate-hole-kirsch-convergence.v1";
+const HOLE_RADIUS: f64 = 0.5;
+const TENSION: f64 = 1.0e6;
+const YOUNGS_MODULUS: f64 = 200e9;
+const POISSON_RATIO: f64 = 0.3;
 
-    let mesh = annular_mesh_triangles(0.0, 0.0, a, b, 12, 40);
+// Cartesian displacement follows by integrating the plane-stress Kirsch
+// strains. The rigid translation and rotation constants are zero.
+fn kirsch_displacement(x: f64, y: f64) -> [f64; 2] {
+    let r = x.hypot(y);
+    let theta = y.atan2(x);
+    let a2 = HOLE_RADIUS.powi(2);
+    let a4 = a2 * a2;
+    let nu = POISSON_RATIO;
+    let scale = TENSION / (2.0 * YOUNGS_MODULUS);
+    let ur = scale
+        * ((1.0 - nu) * r
+            + (1.0 + nu) * a2 / r
+            + ((1.0 + nu) * r + 4.0 * a2 / r - (1.0 + nu) * a4 / r.powi(3)) * (2.0 * theta).cos());
+    let ut = -scale
+        * ((1.0 + nu) * r + 2.0 * (1.0 - nu) * a2 / r + (1.0 + nu) * a4 / r.powi(3))
+        * (2.0 * theta).sin();
+    [
+        ur * theta.cos() - ut * theta.sin(),
+        ur * theta.sin() + ut * theta.cos(),
+    ]
+}
+
+fn kirsch_stress_xx(x: f64, y: f64) -> f64 {
+    let r = x.hypot(y);
+    let theta = y.atan2(x);
+    let ar2 = (HOLE_RADIUS / r).powi(2);
+    let ar4 = ar2 * ar2;
+    let rr = 0.5 * TENSION * ((1.0 - ar2) + (1.0 - 4.0 * ar2 + 3.0 * ar4) * (2.0 * theta).cos());
+    let tt = 0.5 * TENSION * ((1.0 + ar2) - (1.0 + 3.0 * ar4) * (2.0 * theta).cos());
+    let rt = -0.5 * TENSION * (1.0 + 2.0 * ar2 - 3.0 * ar4) * (2.0 * theta).sin();
+    rr * theta.cos().powi(2) + tt * theta.sin().powi(2) - 2.0 * rt * theta.sin() * theta.cos()
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Metrics {
+    displacement_error: f64,
+    stress_error: f64,
+    concentration_error: f64,
+    true_residual: f64,
+}
+
+fn solve_case(radial: usize, angular: usize, outer_radius: f64) -> Result<Metrics, String> {
+    let a = HOLE_RADIUS;
+    let b = outer_radius;
+    let mut mesh = annular_mesh_triangles(0.0, 0.0, a, b, radial, angular);
+    // Keep the near-hole resolution controlled when the outer radius increases.
+    for node in &mut mesh.nodes {
+        let r = node.x.hypot(node.y);
+        let t = (r - a) / (b - a);
+        let mapped_radius = a * (b / a).powf(t);
+        node.x *= mapped_radius / r;
+        node.y *= mapped_radius / r;
+    }
     let space = VectorH1Space::new(PolynomialDegree::P1, 2);
     let n_dofs = space.num_global_dofs(&mesh);
-
-    let material = IsotropicMaterial::new(e_mod, nu);
+    let material = IsotropicMaterial::new(YOUNGS_MODULUS, POISSON_RATIO);
     let form = ElasticityForm::new_2d(material, PlaneAssumption::PlaneStress);
     let stiffness = assemble_bilinear(&form, &space, &space, &mesh, 1);
-
     let mut csr = stiffness.to_csr();
     let mut rhs = vec![0.0; n_dofs];
-
-    // Outer boundary (marker 2): apply far-field displacement
-    // For plane stress uniaxial tension in x: u_x = sigma0*x/E, u_y = -nu*sigma0*y/E
-    let tol = b * 0.02;
     let mut prescribed = Vec::new();
     let mut prescribed_vals = Vec::new();
     for (i, node) in mesh.nodes.iter().enumerate() {
-        let r = (node.x * node.x + node.y * node.y).sqrt();
-        if (r - b).abs() < tol {
-            let ux = sigma0 * node.x / e_mod;
-            let uy = -nu * sigma0 * node.y / e_mod;
-            prescribed.push(i * 2);
-            prescribed.push(i * 2 + 1);
-            prescribed_vals.push(ux);
-            prescribed_vals.push(uy);
+        if (node.x.hypot(node.y) - b).abs() < b * 1e-10 {
+            prescribed.extend([i * 2, i * 2 + 1]);
+            prescribed_vals.extend([
+                TENSION * node.x / YOUNGS_MODULUS,
+                -POISSON_RATIO * TENSION * node.y / YOUNGS_MODULUS,
+            ]);
         }
     }
     apply_dirichlet_csr(&mut csr, &mut rhs, &prescribed, &prescribed_vals);
-
-    // Inner boundary (marker 1) is traction-free — no action needed
-
     let precond = IluPreconditioner::from_csr(&csr);
     let result = gmres_preconditioned(
         &csr,
@@ -137,7 +181,7 @@ fn test_elasticity_plate_hole() {
         &GmresConfig {
             max_iterations: 5000,
             restart: 200,
-            tolerance: 1e-8,
+            tolerance: 1e-11,
             print_interval: 0,
             convergence_check_interval: 1,
             min_restart: None,
@@ -145,62 +189,176 @@ fn test_elasticity_plate_hole() {
             exact_residual_check_interval: 0,
         },
     );
-    assert!(
-        result.converged,
-        "GMRES+ILU should converge for plate-hole: residual={:.3e}, status={:?}",
-        result.residual, result.status
-    );
-
-    // Recover stress concentration factor K_t = sigma_xx / sigma0 near theta=PI/2, r=a
-    let mut max_sigma_xx: f64 = 0.0;
-    for elem in mesh.elements.iter() {
-        let nodes_idx = &elem.nodes;
-        if nodes_idx.len() != 3 {
-            continue;
-        }
-
-        // Check if this element is near the hole boundary at theta≈PI/2
-        let mut near_hole = false;
-        for &ni in nodes_idx {
-            let node = &mesh.nodes[ni];
-            let r = (node.x * node.x + node.y * node.y).sqrt();
-            let theta = node.y.atan2(node.x);
-            if r < a * 1.3 && (theta - std::f64::consts::PI / 2.0).abs() < 0.3 {
-                near_hole = true;
-            }
-        }
-        if !near_hole {
-            continue;
-        }
-
-        let node_pts: Vec<_> = nodes_idx.iter().map(|&i| mesh.nodes[i]).collect();
-        let u_elem: Vec<f64> = nodes_idx
-            .iter()
-            .flat_map(|&i| vec![result.x[i * 2], result.x[i * 2 + 1]])
-            .collect();
-
-        let sxx = element_stress_xx(&node_pts, &u_elem, e_mod, nu);
-        max_sigma_xx = max_sigma_xx.max(sxx.abs());
+    let true_residual = sonium_qa::relative_residual_norm(&csr, &result.x, &rhs);
+    if !result.converged || !true_residual.is_finite() || true_residual > 1e-8 {
+        return Err(format!(
+            "plate-hole solve failed: converged={}, true residual={true_residual:.3e}",
+            result.converged
+        ));
     }
-
-    let kt = max_sigma_xx / sigma0;
-    println!("Elasticity plate-hole: K_t = {:.4} (exact = 3.0)", kt);
-    assert!(
-        kt > 2.0 && kt < 4.5,
-        "Stress concentration factor out of range: {:.4}",
-        kt
+    // Restrict field norms to the same near-hole annulus r<=2a at every level.
+    let mut displacement_error = 0.0;
+    let mut displacement_norm = 0.0;
+    for (i, node) in mesh.nodes.iter().enumerate() {
+        if node.x.hypot(node.y) > 2.0 * a {
+            continue;
+        }
+        let exact = kirsch_displacement(node.x, node.y);
+        for j in 0..2 {
+            displacement_error += (result.x[2 * i + j] - exact[j]).powi(2);
+            displacement_norm += exact[j].powi(2);
+        }
+    }
+    let mut stress_error = 0.0;
+    let mut stress_norm = 0.0;
+    let mut maximum_stress = 0.0_f64;
+    for element in &mesh.elements {
+        let indices = element.vertices();
+        let points = indices.iter().map(|&i| mesh.nodes[i]).collect::<Vec<_>>();
+        let cx = points.iter().map(|p| p.x).sum::<f64>() / 3.0;
+        let cy = points.iter().map(|p| p.y).sum::<f64>() / 3.0;
+        if cx.hypot(cy) > 2.0 * a {
+            continue;
+        }
+        let displacement = indices
+            .iter()
+            .flat_map(|&i| [result.x[2 * i], result.x[2 * i + 1]])
+            .collect::<Vec<_>>();
+        let actual = element_stress_xx(&points, &displacement, YOUNGS_MODULUS, POISSON_RATIO);
+        let exact = kirsch_stress_xx(cx, cy);
+        let area = 0.5
+            * ((points[1].x - points[0].x) * (points[2].y - points[0].y)
+                - (points[2].x - points[0].x) * (points[1].y - points[0].y))
+                .abs();
+        stress_error += area * (actual - exact).powi(2);
+        stress_norm += area * exact.powi(2);
+        maximum_stress = maximum_stress.max(actual);
+    }
+    let metrics = Metrics {
+        displacement_error: (displacement_error / displacement_norm).sqrt(),
+        stress_error: (stress_error / stress_norm).sqrt(),
+        concentration_error: (maximum_stress / TENSION - 3.0).abs() / 3.0,
+        true_residual,
+    };
+    println!(
+        "plate-hole radial={radial} angular={angular} b/a={:.0}: displacement={:.4e}, stress={:.4e}, Kt error={:.4e}, residual={:.3e}",
+        b / a,
+        metrics.displacement_error,
+        metrics.stress_error,
+        metrics.concentration_error,
+        true_residual
     );
+    Ok(metrics)
+}
+
+fn run() -> Result<sonium_qa::QaResult, String> {
+    let coarse = solve_case(32, 64, 10.0)?;
+    let medium = solve_case(64, 128, 10.0)?;
+    let fine = solve_case(128, 256, 10.0)?;
+    // log(40)/log(20)=1.231: 160 radial cells retain the near-hole spacing
+    // of the 128-cell b/a=20 mesh when the outer radius doubles.
+    let expanded = solve_case(160, 256, 20.0)?;
+    let displacement_contraction = (medium.displacement_error / coarse.displacement_error)
+        .max(fine.displacement_error / medium.displacement_error);
+    let stress_contraction =
+        (medium.stress_error / coarse.stress_error).max(fine.stress_error / medium.stress_error);
+    let domain_displacement_contraction = expanded.displacement_error / fine.displacement_error;
+    let domain_stress_contraction = expanded.stress_error / fine.stress_error;
+    let maximum_residual = coarse
+        .true_residual
+        .max(medium.true_residual)
+        .max(fine.true_residual)
+        .max(expanded.true_residual);
+    // Resolved P1 stresses converge at first order; displacements at second
+    // order until the independently tested outer-boundary truncation dominates.
+    Ok(sonium_qa::QaResult::passed(CASE_ID)
+        .requested_backend("cpu").actual_backend("cpu")
+        .seed("kirsch:a0.5:sigma1e6:E200e9:nu0.3:log-radial32-64-128:outer-radius10-20")
+        .reference("Kirsch plane-stress displacement and Cartesian sigma_xx; far-field uniaxial tension")
+        .reference_checksum("analytic:kirsch-plane-stress:v1")
+        .formulation("native P1 triangular elasticity; near-hole displacement and area-weighted centroid stress accuracy; mesh and outer-radius refinement")
+        .metric("displacement_relative_l2",expanded.displacement_error).maximum("displacement_relative_l2",0.005)
+        .metric("stress_relative_l2",expanded.stress_error).maximum("stress_relative_l2",0.02)
+        .metric("concentration_relative_error",expanded.concentration_error).maximum("concentration_relative_error",0.01)
+        .metric("mesh_displacement_contraction",displacement_contraction).maximum("mesh_displacement_contraction",0.85)
+        .metric("mesh_stress_contraction",stress_contraction).maximum("mesh_stress_contraction",0.85)
+        .metric("domain_displacement_contraction",domain_displacement_contraction).maximum("domain_displacement_contraction",0.9)
+        .metric("domain_stress_contraction",domain_stress_contraction).maximum("domain_stress_contraction",0.95)
+        .metric("maximum_true_residual",maximum_residual).maximum("maximum_true_residual",1e-8)
+        .metric("numerical_solve_executed",4.0).minimum("numerical_solve_executed",4.0))
 }
 
 fn main() {
-    let result = std::panic::catch_unwind(|| {
-        test_elasticity_plate_hole();
-    });
-    match result {
-        Ok(()) => println!("SUCCESS"),
-        Err(_) => {
-            println!("FAILED");
+    match run().and_then(|record| {
+        record.release_eligible()?;
+        record.to_json_line()
+    }) {
+        Ok(line) => {
+            println!("QA_RESULT: {line}");
+            println!("SUCCESS");
+        }
+        Err(error) => {
+            if let Ok(line) = sonium_qa::QaResult::failed(CASE_ID, &error).to_json_line() {
+                println!("QA_RESULT: {line}");
+            }
+            eprintln!("FAILED: {error}");
             std::process::exit(1);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recovered_stress_is_independent_of_triangle_orientation() {
+        use sonium_fem::mesh::Point;
+        for points in [
+            [
+                Point::new_2d(0.0, 0.0),
+                Point::new_2d(1.0, 0.0),
+                Point::new_2d(0.0, 1.0),
+            ],
+            [
+                Point::new_2d(0.0, 0.0),
+                Point::new_2d(0.0, 1.0),
+                Point::new_2d(1.0, 0.0),
+            ],
+        ] {
+            let displacement = points
+                .iter()
+                .flat_map(|p| {
+                    [
+                        TENSION * p.x / YOUNGS_MODULUS,
+                        -POISSON_RATIO * TENSION * p.y / YOUNGS_MODULUS,
+                    ]
+                })
+                .collect::<Vec<_>>();
+            let stress = element_stress_xx(&points, &displacement, YOUNGS_MODULUS, POISSON_RATIO);
+            assert!((stress / TENSION - 1.0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn kirsch_reference_recovers_hole_concentration_and_far_field() {
+        assert!((kirsch_stress_xx(0.0, HOLE_RADIUS) / TENSION - 3.0).abs() < 1e-12);
+        assert!(kirsch_stress_xx(HOLE_RADIUS, 0.0).abs() / TENSION < 1e-12);
+        assert!((kirsch_stress_xx(1e6, 1e6) / TENSION - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn kirsch_displacement_gradients_recover_stress() {
+        let h = 1e-5;
+        for (x, y) in [(0.8, 0.3), (-0.7, 0.6), (0.2, -1.1)] {
+            let plus_x = kirsch_displacement(x + h, y);
+            let minus_x = kirsch_displacement(x - h, y);
+            let plus_y = kirsch_displacement(x, y + h);
+            let minus_y = kirsch_displacement(x, y - h);
+            let ex = (plus_x[0] - minus_x[0]) / (2.0 * h);
+            let ey = (plus_y[1] - minus_y[1]) / (2.0 * h);
+            let actual = YOUNGS_MODULUS / (1.0 - POISSON_RATIO.powi(2)) * (ex + POISSON_RATIO * ey);
+            assert!((actual - kirsch_stress_xx(x, y)).abs() / TENSION < 1e-8);
         }
     }
 }

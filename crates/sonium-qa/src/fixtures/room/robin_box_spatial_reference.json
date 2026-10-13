@@ -1,0 +1,214 @@
+{
+  "method": "independent exterior fundamental solutions with finite-box Robin collocation",
+  "phasor_convention": "exp(-i omega t)",
+  "dimensions_m": [
+    1.6,
+    1.5,
+    1.4
+  ],
+  "source_m": [
+    0.4,
+    0.35,
+    0.35
+  ],
+  "probes_m": [
+    [
+      1.2,
+      1.1,
+      1.0
+    ],
+    [
+      1.0,
+      0.95,
+      0.9
+    ],
+    [
+      1.25,
+      0.6,
+      0.85
+    ]
+  ],
+  "frequency_hz": 400.0,
+  "sound_speed_m_s": 343.0,
+  "density_kg_m3": 1.204,
+  "source_volume_velocity_m3_s": 0.000588,
+  "normalized_wall_admittance": [
+    1.0,
+    0.0
+  ],
+  "levels": [
+    {
+      "order": 16,
+      "source_count": 1536,
+      "exterior_offset_m": 0.2,
+      "linear_relative_residual": 3.2054824537686596e-15,
+      "off_grid_relative_robin_l2": 0.0014158132805497886,
+      "pressure_pa": [
+        [
+          -0.026935409390955074,
+          0.18495095106134812
+        ],
+        [
+          0.14027228034722994,
+          -0.044604811717285704
+        ],
+        [
+          0.16056726719669356,
+          -0.08124459953517077
+        ]
+      ]
+    },
+    {
+      "order": 20,
+      "source_count": 2400,
+      "exterior_offset_m": 0.2,
+      "linear_relative_residual": 1.1451040487624123e-14,
+      "off_grid_relative_robin_l2": 0.0002048985985007786,
+      "pressure_pa": [
+        [
+          -0.026902137094647748,
+          0.1849873000391041
+        ],
+        [
+          0.14029852067811616,
+          -0.044612535675340376
+        ],
+        [
+          0.16056369795065922,
+          -0.08127429727236579
+        ]
+      ],
+      "previous_level_max_relative_complex_change": 0.0002636113785512415
+    },
+    {
+      "order": 24,
+      "source_count": 3456,
+      "exterior_offset_m": 0.2,
+      "linear_relative_residual": 6.59447591888568e-14,
+      "off_grid_relative_robin_l2": 3.950598781307565e-05,
+      "pressure_pa": [
+        [
+          -0.02689848242526982,
+          0.18499186762383785
+        ],
+        [
+          0.14030186464989305,
+          -0.04461336975182256
+        ],
+        [
+          0.16056355647542908,
+          -0.08127796755447708
+        ]
+      ],
+      "previous_level_max_relative_complex_change": 3.12925308969812e-05
+    }
+  ],
+  "placement_cross_check": {
+    "method": "independent exterior fundamental solutions with finite-box Robin collocation",
+    "phasor_convention": "exp(-i omega t)",
+    "dimensions_m": [
+      1.6,
+      1.5,
+      1.4
+    ],
+    "source_m": [
+      0.4,
+      0.35,
+      0.35
+    ],
+    "probes_m": [
+      [
+        1.2,
+        1.1,
+        1.0
+      ],
+      [
+        1.0,
+        0.95,
+        0.9
+      ],
+      [
+        1.25,
+        0.6,
+        0.85
+      ]
+    ],
+    "frequency_hz": 400.0,
+    "sound_speed_m_s": 343.0,
+    "density_kg_m3": 1.204,
+    "source_volume_velocity_m3_s": 0.000588,
+    "normalized_wall_admittance": [
+      1.0,
+      0.0
+    ],
+    "levels": [
+      {
+        "order": 16,
+        "source_count": 1536,
+        "exterior_offset_m": 0.25,
+        "linear_relative_residual": 7.745367858066762e-15,
+        "off_grid_relative_robin_l2": 0.0004392345351440469,
+        "pressure_pa": [
+          [
+            -0.026904987264986975,
+            0.18498644192035074
+          ],
+          [
+            0.14029754338668426,
+            -0.04461072246888702
+          ],
+          [
+            0.1605646540117628,
+            -0.08127160610246939
+          ]
+        ]
+      },
+      {
+        "order": 20,
+        "source_count": 2400,
+        "exterior_offset_m": 0.25,
+        "linear_relative_residual": 4.902645511657432e-14,
+        "off_grid_relative_robin_l2": 7.367484280951055e-05,
+        "pressure_pa": [
+          [
+            -0.026898451970449898,
+            0.18499203765393266
+          ],
+          [
+            0.1403019755671303,
+            -0.044613302055263995
+          ],
+          [
+            0.1605635885182724,
+            -0.08127798447668672
+          ]
+        ],
+        "previous_level_max_relative_complex_change": 4.60240871225814e-05
+      },
+      {
+        "order": 24,
+        "source_count": 3456,
+        "exterior_offset_m": 0.25,
+        "linear_relative_residual": 4.1531059604121357e-13,
+        "off_grid_relative_robin_l2": 1.5228346544055197e-05,
+        "pressure_pa": [
+          [
+            -0.026898036391032755,
+            0.18499248260999526
+          ],
+          [
+            0.14030232771326873,
+            -0.04461346772771102
+          ],
+          [
+            0.16056356403552258,
+            -0.0812784579545808
+          ]
+        ],
+        "previous_level_max_relative_complex_change": 3.256939410934979e-06
+      }
+    ]
+  },
+  "generator": "scripts/generate_room_robin_reference.py",
+  "generator_sha256": "9ab01fe19aa524bc0dea3473b8025f43714ca1c7f70e3d2661f5e9f8bce24a04"
+}

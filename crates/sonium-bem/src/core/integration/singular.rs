@@ -1129,6 +1129,8 @@ fn singular_integration_linear_with_params_mode(
                     };
 
                     let basis_values = panel_basis_values(element_type, sgg, tgg, num_basis);
+                    let basis_gradients =
+                        panel_basis_gradients(element_coords, element_type, sgg, tgg, num_basis);
 
                     // Weight by collocation-basis functions
                     for b in 0..num_basis {
@@ -1140,7 +1142,26 @@ fn singular_integration_linear_with_params_mode(
                         };
                         basis_results[b].dg_dn_integral += zhh * n_b;
                         basis_results[b].dg_dnx_integral += zht * n_b;
-                        basis_results[b].d2g_dnxdny_integral += e_area_contrib * n_b;
+                        // Stokes' theorem for a weighted hypersingular
+                        // kernel also differentiates the density. The edge
+                        // term alone is valid only for a constant basis.
+                        let gradient = basis_gradients[b];
+                        let gradient_dot_r =
+                            gradient.iter().zip(unit_r).map(|(a, b)| a * b).sum::<f64>();
+                        let gradient_dot_source = gradient
+                            .iter()
+                            .zip(source_normal)
+                            .map(|(a, b)| a * b)
+                            .sum::<f64>();
+                        let gradient_factor =
+                            -normal_dot * gradient_dot_r + re1_h * gradient_dot_source;
+                        let differentiated_green = if wavenumber_derivative {
+                            dzhh_base
+                        } else {
+                            zhh_base
+                        };
+                        basis_results[b].d2g_dnxdny_integral +=
+                            e_area_contrib * n_b + differentiated_green * gradient_factor;
                     }
                 }
             }
@@ -1148,6 +1169,90 @@ fn singular_integration_linear_with_params_mode(
     }
 
     LinearIntegrationResult { basis_results }
+}
+
+fn panel_basis_gradients(
+    coordinates: &DenseMatrix<f64>,
+    element_type: ElementType,
+    s: f64,
+    t: f64,
+    num_basis: usize,
+) -> Vec<[f64; 3]> {
+    let derivatives: Vec<[f64; 2]> = match (element_type, num_basis) {
+        (ElementType::Tri3, 3) => vec![[-2.0, -2.0], [2.0, 0.0], [0.0, 2.0]],
+        (ElementType::Tri3, 6) => {
+            let l = 1.0 - s - t;
+            vec![
+                [1.0 - 4.0 * l, 1.0 - 4.0 * l],
+                [4.0 * s - 1.0, 0.0],
+                [0.0, 4.0 * t - 1.0],
+                [4.0 * (l - s), -4.0 * s],
+                [4.0 * t, 4.0 * s],
+                [-4.0 * t, 4.0 * (l - t)],
+            ]
+        }
+        (ElementType::Quad4, 4) => {
+            let g = 1.0 / 3.0_f64.sqrt();
+            let a = 1.0 / (2.0 * g);
+            let ls = [(g - s) * a, (g + s) * a];
+            let lt = [(g - t) * a, (g + t) * a];
+            vec![
+                [-a * lt[0], -a * ls[0]],
+                [a * lt[0], -a * ls[1]],
+                [a * lt[1], a * ls[1]],
+                [-a * lt[1], a * ls[0]],
+            ]
+        }
+        (ElementType::Quad4, 9) => {
+            let lagrange = |x: f64| [0.5 * x * (x - 1.0), 1.0 - x * x, 0.5 * x * (x + 1.0)];
+            let derivative = |x: f64| [x - 0.5, -2.0 * x, x + 0.5];
+            let ls = lagrange(s);
+            let lt = lagrange(t);
+            let ds = derivative(s);
+            let dt = derivative(t);
+            [
+                (2, 2),
+                (0, 2),
+                (0, 0),
+                (2, 0),
+                (1, 2),
+                (0, 1),
+                (1, 0),
+                (2, 1),
+                (1, 1),
+            ]
+            .into_iter()
+            .map(|(i, j)| [ds[i] * lt[j], ls[i] * dt[j]])
+            .collect()
+        }
+        _ => panic!("unsupported discontinuous panel basis layout"),
+    };
+    let (_, shape_ds, shape_dt, _, _, _) =
+        compute_shape_and_jacobian(coordinates, element_type, s, t);
+    let mut tangent_s = [0.0; 3];
+    let mut tangent_t = [0.0; 3];
+    for node in 0..element_type.num_nodes() {
+        for axis in 0..3 {
+            tangent_s[axis] += shape_ds[node] * coordinates[[node, axis]];
+            tangent_t[axis] += shape_dt[node] * coordinates[[node, axis]];
+        }
+    }
+    let ss = tangent_s.iter().map(|a| a * a).sum::<f64>();
+    let tt = tangent_t.iter().map(|a| a * a).sum::<f64>();
+    let st = tangent_s
+        .iter()
+        .zip(tangent_t)
+        .map(|(a, b)| a * b)
+        .sum::<f64>();
+    let determinant = ss * tt - st * st;
+    derivatives
+        .into_iter()
+        .map(|[ds, dt]| {
+            let a = (tt * ds - st * dt) / determinant;
+            let b = (ss * dt - st * ds) / determinant;
+            std::array::from_fn(|axis| a * tangent_s[axis] + b * tangent_t[axis])
+        })
+        .collect()
 }
 
 fn panel_basis_values(element_type: ElementType, s: f64, t: f64, num_basis: usize) -> Vec<f64> {
@@ -1574,6 +1679,60 @@ fn estimate_element_size(element_coords: &DenseMatrix<f64>, element_type: Elemen
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn weighted_hypersingular_matches_integrable_quadratic_density() {
+        for (a, b, angle) in [(1.0_f64, 1.0_f64, 0.0_f64), (2.0, 0.5, 0.7)] {
+            let source = [0.2, -0.5, 0.3];
+            let normal = [0.0, -angle.sin(), angle.cos()];
+            let coordinates = DenseMatrix::from_row_major_vec(
+                4,
+                3,
+                [(a, b), (-a, b), (-a, -b), (a, -b)]
+                    .into_iter()
+                    .flat_map(|(x, y)| {
+                        [
+                            source[0] + x,
+                            source[1] + y * angle.cos(),
+                            source[2] + y * angle.sin(),
+                        ]
+                    })
+                    .collect(),
+            );
+            let mut physics = PhysicsParams::new(1.0, 343.0, 1.21, false);
+            physics.wave_number = 0.0;
+            let result = singular_integration_linear_with_params(
+                &source,
+                &normal,
+                &coordinates,
+                ElementType::Quad4,
+                &physics,
+                9,
+                &QuadratureParams {
+                    edge_gauss_order: 16,
+                    subelement_gauss_order: 16,
+                    edge_sections: 4,
+                    subtriangles_per_section: 2,
+                },
+                None,
+            );
+            // Density x^2 removes the hypersingularity. Direct integration
+            // of x^2/(4*pi*r^3) on [-a,a]x[-b,b] gives b*asinh(a/b)/pi.
+            let density = [a * a, a * a, a * a, a * a, 0.0, a * a, 0.0, a * a, 0.0];
+            let actual = result
+                .basis_results
+                .iter()
+                .zip(density)
+                .map(|(basis, value)| basis.d2g_dnxdny_integral * value)
+                .sum::<Complex64>();
+            let expected = b * (a / b).asinh() / PI;
+            assert!(
+                (actual - expected).norm() < 1e-8,
+                "weighted W={actual}, exact={expected}, half-widths=({a},{b}), angle={angle}"
+            );
+        }
+    }
+
     fn make_test_triangle() -> DenseMatrix<f64> {
         DenseMatrix::from_row_major_vec(3, 3, vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0])
     }

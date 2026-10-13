@@ -822,6 +822,113 @@ where
     ForceFn: Fn([f64; 3], [f64; 3]) -> Vec<f64> + Send + Sync + 'static,
     ForceJacFn: Fn([f64; 3], [f64; 3]) -> [[f64; 3]; 3] + Send + Sync + 'static,
 {
+    solve_picard_with_velocity_force_and_jacobian_with_policy(
+        mesh,
+        v_space,
+        p_space,
+        config,
+        bc_velocity_fn,
+        bc_dofs,
+        body_force_fn,
+        body_force_jacobian_fn,
+        initial_velocity,
+        initial_pressure,
+        false,
+    )
+}
+
+/// Assemble the constrained steady Newton system without solving a linear system.
+///
+/// Uses the same state mapping, quadrature, stabilization, force derivatives,
+/// and pressure gauge as the Picard solver's Newton observation. Algebraic
+/// turbulence requires a unique nonzero velocity peak. No solver backend is
+/// dispatched by this function.
+///
+/// # Errors
+///
+/// Returns `None` for incorrect state dimensions, non-finite state entries,
+/// out-of-range velocity boundary DOFs, or an unavailable turbulence tangent.
+///
+/// # Panics
+///
+/// Panics for non-nodal velocity spaces or boundary callbacks returning too
+/// few velocity components, matching the solver's function-space contract.
+#[allow(clippy::too_many_arguments)]
+pub fn assemble_steady_newton_linearization<VSpace, PSpace, BcFn, ForceFn, ForceJacFn>(
+    mesh: &crate::mesh::Mesh,
+    v_space: &VSpace,
+    p_space: &PSpace,
+    config: &NavierStokesConfig,
+    bc_velocity_fn: &BcFn,
+    bc_dofs: &[usize],
+    body_force_fn: ForceFn,
+    body_force_jacobian_fn: ForceJacFn,
+    initial_velocity: &[f64],
+    initial_pressure: &[f64],
+) -> Option<NavierStokesNewtonLinearization>
+where
+    VSpace: crate::spaces::FunctionSpace,
+    PSpace: crate::spaces::FunctionSpace,
+    BcFn: Fn(f64, f64, f64) -> Vec<f64>,
+    ForceFn: Fn([f64; 3], [f64; 3]) -> Vec<f64> + Send + Sync + 'static,
+    ForceJacFn: Fn([f64; 3], [f64; 3]) -> [[f64; 3]; 3] + Send + Sync + 'static,
+{
+    let n_v = v_space.num_global_dofs(mesh);
+    if initial_velocity.len() != n_v
+        || initial_pressure.len() != p_space.num_global_dofs(mesh)
+        || initial_velocity
+            .iter()
+            .chain(initial_pressure)
+            .any(|value| !value.is_finite())
+        || bc_dofs.iter().any(|&dof| dof >= n_v)
+    {
+        return None;
+    }
+    let mut assembly_config = config.clone();
+    assembly_config.max_picard_iterations = 1;
+    solve_picard_with_velocity_force_and_jacobian_with_policy(
+        mesh,
+        v_space,
+        p_space,
+        &assembly_config,
+        bc_velocity_fn,
+        bc_dofs,
+        body_force_fn,
+        body_force_jacobian_fn,
+        Some(initial_velocity),
+        Some(initial_pressure),
+        true,
+    )
+    .newton_linearization
+}
+
+#[allow(clippy::too_many_arguments)]
+fn solve_picard_with_velocity_force_and_jacobian_with_policy<
+    VSpace,
+    PSpace,
+    BcFn,
+    ForceFn,
+    ForceJacFn,
+>(
+    mesh: &crate::mesh::Mesh,
+    v_space: &VSpace,
+    p_space: &PSpace,
+    config: &NavierStokesConfig,
+    bc_velocity_fn: &BcFn,
+    bc_dofs: &[usize],
+    body_force_fn: ForceFn,
+    body_force_jacobian_fn: ForceJacFn,
+    initial_velocity: Option<&[f64]>,
+    initial_pressure: Option<&[f64]>,
+    assembly_only: bool,
+) -> NavierStokesResult
+where
+    VSpace: crate::spaces::FunctionSpace,
+    PSpace: crate::spaces::FunctionSpace,
+    BcFn: Fn(f64, f64, f64) -> Vec<f64>,
+    ForceFn: Fn([f64; 3], [f64; 3]) -> Vec<f64> + Send + Sync + 'static,
+    ForceJacFn: Fn([f64; 3], [f64; 3]) -> [[f64; 3]; 3] + Send + Sync + 'static,
+{
     let n_v = v_space.num_global_dofs(mesh);
     let n_p = p_space.num_global_dofs(mesh);
     let n_total = n_v + n_p;
@@ -940,8 +1047,9 @@ where
     // iteration re-queries it against the current iterate instead of
     // rebuilding (and linear-scanning) a per-iteration interpolator.
     // Arc-shared because the assembly closures require 'static data.
-    let velocity_topology =
-        std::sync::Arc::new(super::workspace::ElementVelocityTopology::new(mesh, v_space));
+    let velocity_topology = std::sync::Arc::new(super::workspace::ElementVelocityTopology::new(
+        mesh, v_space,
+    ));
 
     for iter in 0..config.max_picard_iterations {
         let iter_start = std::time::Instant::now();
@@ -1293,6 +1401,30 @@ where
                 state_residual,
                 state,
             });
+        }
+
+        if assembly_only {
+            let residual =
+                last_newton_linearization
+                    .as_ref()
+                    .map_or(f64::INFINITY, |observation| {
+                        observation
+                            .state_residual
+                            .iter()
+                            .map(|value| value * value)
+                            .sum::<f64>()
+                            .sqrt()
+                    });
+            return NavierStokesResult {
+                velocity,
+                pressure,
+                iterations: 0,
+                residual,
+                converged: false,
+                resolved_linear_solver_backend: LinearSolverBackend::Cpu,
+                picard_linearization: None,
+                newton_linearization: last_newton_linearization,
+            };
         }
 
         // Apply symmetric Dirichlet BCs

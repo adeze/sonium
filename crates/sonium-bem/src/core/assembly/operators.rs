@@ -30,7 +30,7 @@ use crate::core::integration::{
     singular_integration_wavenumber_derivative,
 };
 use crate::core::parallel::{
-    BEM_ENTRIES_PER_THREAD, gated_enumerate_filter_map, gated_map, use_parallel,
+    BEM_QUADRATURE_PAIRS_PER_THREAD, gated_enumerate_filter_map, gated_map, use_parallel,
 };
 use crate::core::types::{BasisOrder, Element, IntegrationResult, PhysicsParams};
 use sonium_solvers::dense::DenseMatrix;
@@ -188,7 +188,7 @@ pub fn assemble_boundary_operators(
     let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> = gated_enumerate_filter_map(
         elements,
         n.saturating_mul(n),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
         |source_index, source| {
             if source.property.is_evaluation() {
                 return None;
@@ -275,7 +275,7 @@ pub fn assemble_boundary_operators_wavenumber_derivative(
     let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> = gated_map(
         &active,
         n.saturating_mul(n),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
         |&(source_index, source_dof)| {
             let source = &elements[source_index];
             let row_entries = active
@@ -525,7 +525,7 @@ pub fn assemble_boundary_operators_with_basis(
             .collect::<Vec<_>>()
     };
     let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> =
-        if use_parallel(n.saturating_mul(elements.len()), BEM_ENTRIES_PER_THREAD) {
+        if use_parallel(n.saturating_mul(elements.len()), BEM_QUADRATURE_PAIRS_PER_THREAD) {
             elements
                 .par_iter()
                 .enumerate()
@@ -573,7 +573,7 @@ pub fn assemble_single_layer(
     let rows: Vec<(usize, Vec<(usize, Complex64)>)> = gated_enumerate_filter_map(
         elements,
         n.saturating_mul(n),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
         |iel, src| {
             if src.property.is_evaluation() {
                 return None;
@@ -644,7 +644,7 @@ pub fn assemble_hypersingular(
     let rows: Vec<(usize, Vec<(usize, Complex64)>)> = gated_enumerate_filter_map(
         elements,
         n.saturating_mul(n),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
         |iel, src| {
             if src.property.is_evaluation() {
                 return None;
@@ -1122,7 +1122,7 @@ pub fn assemble_boundary_operators_wavenumber_derivative_with_basis(
             .collect::<Vec<_>>()
     };
     let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> =
-        if use_parallel(n.saturating_mul(elements.len()), BEM_ENTRIES_PER_THREAD) {
+        if use_parallel(n.saturating_mul(elements.len()), BEM_QUADRATURE_PAIRS_PER_THREAD) {
             elements
                 .par_iter()
                 .enumerate()

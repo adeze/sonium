@@ -20,7 +20,7 @@ use crate::core::integration::{
     singular_integration_wavenumber_derivative,
 };
 use crate::core::parallel::{
-    BEM_ENTRIES_PER_THREAD, gated_enumerate_filter_map, gated_map, use_parallel,
+    BEM_QUADRATURE_PAIRS_PER_THREAD, gated_enumerate_filter_map, gated_map, use_parallel,
 };
 use crate::core::types::{
     BasisOrder, BoundaryCondition, Element, PhysicsParams, QuadratureConvergenceError,
@@ -1437,7 +1437,7 @@ pub fn build_tbem_system_with_beta_parallel(
 
         *rhs_slot = local_rhs;
     };
-    if use_parallel(num_dofs.saturating_mul(num_dofs), BEM_ENTRIES_PER_THREAD) {
+    if use_parallel(num_dofs.saturating_mul(num_dofs), BEM_QUADRATURE_PAIRS_PER_THREAD) {
         system
             .matrix
             .as_mut_slice()
@@ -2054,7 +2054,7 @@ pub fn build_tbem_rhs_stabilized_with_beta(
     let rows: Vec<(usize, Complex64)> = gated_enumerate_filter_map(
         elements,
         num_dofs.saturating_mul(elements.len()),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
         |source_index, source_element| {
             if source_element.property.is_evaluation() {
                 return None;
@@ -2271,7 +2271,7 @@ pub fn build_tbem_system_stabilized_with_beta(
     };
     if use_parallel(
         num_dofs.saturating_mul(elements.len()),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
     ) {
         elements
             .par_iter()
@@ -2352,7 +2352,7 @@ pub fn eval_tbem_rows_stabilized(
     // serial for small row × field counts). Work is rows × field kernel
     // evaluations.
     let row_work = rows.len().saturating_mul(field_indices.len());
-    gated_map(rows, row_work, BEM_ENTRIES_PER_THREAD, |&row_index| {
+    gated_map(rows, row_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |&row_index| {
         let source_elem = &elements[row_index];
         debug_assert!(!source_elem.property.is_evaluation());
         let source_point = &source_elem.center;
@@ -2701,7 +2701,7 @@ pub fn build_tbem_system_stabilized_with_beta_simd(
     };
     if use_parallel(
         num_dofs.saturating_mul(elements.len()),
-        BEM_ENTRIES_PER_THREAD,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
     ) {
         elements
             .par_iter()
@@ -3639,7 +3639,7 @@ mod metal_path {
         };
         if use_parallel(
             num_dofs.saturating_mul(elements.len()),
-            BEM_ENTRIES_PER_THREAD,
+            BEM_QUADRATURE_PAIRS_PER_THREAD,
         ) {
             elements
                 .par_iter()

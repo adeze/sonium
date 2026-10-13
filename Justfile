@@ -95,6 +95,17 @@ xem-external-interop dir:
     {{cargo}} run -p sonium-xem --example generate_external_formats --features io-sofa -- {{dir}}
     python3 crates/sonium-xem/interop/read_external_formats.py {{dir}}
 
+# Generate all six website simulation films end-to-end (simulate via
+# qa-website-demos -> VTU->PLY -> Blender PNGs -> WebM/MP4+poster) and
+# refresh website/src/data/{demos6,oc-benchmarks}.json (incl. the
+# OpenCourant explicit-dynamics rows from perf/oc/*.json). No args = all
+# six; pass slugs for a subset, e.g. `just website-demos crush arch`.
+# Requires blender, ffmpeg, python3+pyvista. In the enclosing checkout,
+# `just website-demos` also regenerates the full website afterwards.
+[group('gallery')]
+website-demos *args:
+    SONIUM_CARGO="{{cargo}}" python3 scripts/website_demos.py {{ if args == "" { "all" } else { args } }}
+
 # Regenerate the pinned website-gallery smoke set without any interactive UI.
 # On a runner with pvbatch, the PC-fan test additionally verifies its emitted
 # ParaView script renders a nonblank 1920×1080 PNG.

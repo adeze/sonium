@@ -1,11 +1,13 @@
-//! QA: FEM square-bar torsion vs OpenCourant explicit quasi-statics.
+//! External reference health and native parity gate for beam-torsion.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the mid-span corner displacement against the Saint-Venant twist
-//! with the exact square-section torsion constant. Without an engine it
-//! prints the documented skip message and exits 0. Case contributed by the
-//! beams lane; Worker 1 owns the runner.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the mid-span
+//! corner displacement against the Saint-Venant twist with the exact square-section torsion
+//! constant. Case contributed by the beams lane; Worker 1 owns the runner.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -15,6 +17,9 @@ use sonium_qa::rad::{
     run_case, write_engine, write_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/cantilever_native.rs"]
+mod cantilever_native;
 
 /// Exact torsion constant of a square bar with side `a`.
 ///
@@ -126,6 +131,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/beam_torsion")
 }
 
+const CASE_ID: &str = "fem.opencourant.beam-torsion.native-parity.v1";
+
 fn main() {
     let case = beam_torsion_case();
     if std::env::var("REGEN_DECKS").as_deref() == Ok("1") {
@@ -166,8 +173,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -176,8 +182,10 @@ fn main() {
     std::fs::write(work.join("beam_torsion_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("beam_torsion_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad beam_torsion run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -206,9 +214,48 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED");
-        std::process::exit(1);
+    let result = output
+        .history
+        .final_value(&case.probes[0].channel)
+        .map_err(|error| error.to_string())
+        .and_then(|probe| {
+            cantilever_native::parity_result(&case, CASE_ID, &output.engine, probe, !failed)
+                .map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(
+                CASE_ID,
+                format!("native transient validation failed: {error}"),
+            )
+            .requested_backend("cpu+opencourant")
+            .actual_backend("cpu+opencourant")
+            .metric("external_reference_executed", 1.0)
+            .metric("native_parity_executed", 0.0)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
+}
+
+#[cfg(test)]
+#[test]
+fn torsion_preserves_original_geometry_couple_and_probe() {
+    let case = beam_torsion_case();
+    let mut total_force = [0.0; 3];
+    let mut torque_x = 0.0;
+    for load in &case.cloads {
+        for &node in &case.node_sets[load.set].nodes {
+            let point = case.mesh.nodes[node - 1];
+            assert_eq!(point[0], 2.0);
+            total_force[load.direction - 1] += load.force_scale_n;
+            torque_x += point[1] * load.force_scale_n;
+        }
     }
-    println!("SUCCESS");
+    assert_eq!(total_force, [0.0; 3]);
+    assert!((torque_x - 500.0).abs() < 1e-12);
+    let node: usize = case.probes[0]
+        .channel
+        .strip_prefix("DY/")
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert_eq!(case.mesh.nodes[node - 1], [1.0, -0.025, -0.025]);
 }

@@ -20,7 +20,7 @@
 
 use sonium_solvers::LinearOperator;
 use sonium_solvers::TripletMatrix;
-use sonium_solvers::direct::SparseLuFactorization;
+use sonium_solvers::direct::{SparseCholeskyFactorization, SparseLuFactorization};
 use sonium_solvers::{CsrMatrix, SolverError};
 use thiserror::Error;
 
@@ -381,6 +381,55 @@ fn check_finite(values: &[f64], name: &str) -> Result<(), ImplicitDynamicsError>
     }
 }
 
+#[derive(Debug)]
+enum DynamicsFactor {
+    Lu(Box<SparseLuFactorization<f64>>),
+    Cholesky(Box<SparseCholeskyFactorization<f64>>),
+}
+
+impl DynamicsFactor {
+    fn solve(&self, rhs: &[f64]) -> Result<Vec<f64>, ImplicitDynamicsError> {
+        match self {
+            Self::Lu(factor) => factor
+                .solve(rhs)
+                .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string())),
+            Self::Cholesky(factor) => factor
+                .solve(rhs)
+                .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string())),
+        }
+    }
+}
+
+fn factor_matrix(
+    matrix: &CsrMatrix<f64>,
+    cholesky: bool,
+) -> Result<DynamicsFactor, ImplicitDynamicsError> {
+    if !cholesky {
+        return SparseLuFactorization::factorize(matrix)
+            .map(|factor| DynamicsFactor::Lu(Box::new(factor)))
+            .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string()));
+    }
+    check_finite(&matrix.values, "Cholesky matrix")?;
+    let scale = matrix
+        .values
+        .iter()
+        .fold(0.0_f64, |max, value| max.max(value.abs()));
+    // Permit assembly roundoff relative to the operator scale, not a missing asymmetric block.
+    let tolerance = 1e-12 * scale;
+    for row in 0..matrix.num_rows {
+        for (column, value) in matrix.row_entries(row) {
+            if (value - matrix.get(column, row)).abs() > tolerance {
+                return Err(ImplicitDynamicsError::InvalidConfig(
+                    "Cholesky requires symmetric mass and effective matrices".into(),
+                ));
+            }
+        }
+    }
+    SparseCholeskyFactorization::factorize_supernodal(matrix)
+        .map(|factor| DynamicsFactor::Cholesky(Box::new(factor)))
+        .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string()))
+}
+
 /// Newmark/HHT integrator with a factored effective matrix.
 ///
 /// The effective operator `Khat = a0 M + a1 (1+alpha) C + (1+alpha) K`
@@ -425,8 +474,9 @@ pub struct ImplicitDynamicsIntegrator {
     stiffness: CsrMatrix<f64>,
     damping: Option<CsrMatrix<f64>>,
     coeffs: [f64; 6],
-    effective: SparseLuFactorization<f64>,
-    mass_solver: SparseLuFactorization<f64>,
+    effective: DynamicsFactor,
+    mass_solver: DynamicsFactor,
+    cholesky: bool,
     state: ImplicitDynamicsState,
     prev_force: Vec<f64>,
     initialized: bool,
@@ -445,6 +495,34 @@ impl ImplicitDynamicsIntegrator {
         config: ImplicitDynamicsConfig,
         dt: f64,
     ) -> Result<Self, ImplicitDynamicsError> {
+        Self::new_with_factorization(system, config, dt, false)
+    }
+
+    /// Build an integrator using Cholesky for positive-definite systems.
+    ///
+    /// Uses nested-dissection ordering and supernodal factorization for both
+    /// mass and effective operators. Symmetry is checked to `1e-12` of each
+    /// operator's largest entry; positive-definiteness is checked by factorization.
+    /// The Newmark/HHT equations and checked-step residual contract are unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ImplicitDynamicsError`] for invalid configuration or dimensions,
+    /// non-finite or asymmetric matrices, or a non-positive Cholesky pivot.
+    pub fn new_spd(
+        system: ImplicitDynamicsSystem,
+        config: ImplicitDynamicsConfig,
+        dt: f64,
+    ) -> Result<Self, ImplicitDynamicsError> {
+        Self::new_with_factorization(system, config, dt, true)
+    }
+
+    fn new_with_factorization(
+        system: ImplicitDynamicsSystem,
+        config: ImplicitDynamicsConfig,
+        dt: f64,
+        cholesky: bool,
+    ) -> Result<Self, ImplicitDynamicsError> {
         config.validate()?;
         system.validate()?;
         if !dt.is_finite() || dt <= 0.0 {
@@ -454,9 +532,8 @@ impl ImplicitDynamicsIntegrator {
         }
         let num_dofs = system.num_dofs();
         let coeffs = newmark_coefficients(config.beta, config.gamma, dt);
-        let effective = factor_effective(&system, &config, &coeffs)?;
-        let mass_solver = SparseLuFactorization::factorize(&system.mass)
-            .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string()))?;
+        let effective = factor_effective(&system, &config, &coeffs, cholesky)?;
+        let mass_solver = factor_matrix(&system.mass, cholesky)?;
         Ok(Self {
             config,
             dt,
@@ -467,6 +544,7 @@ impl ImplicitDynamicsIntegrator {
             coeffs,
             effective,
             mass_solver,
+            cholesky,
             state: ImplicitDynamicsState {
                 displacement: vec![0.0; num_dofs],
                 velocity: vec![0.0; num_dofs],
@@ -498,7 +576,7 @@ impl ImplicitDynamicsIntegrator {
             stiffness: self.stiffness.clone(),
             damping: self.damping.clone(),
         };
-        self.effective = factor_effective(&system, &self.config, &coeffs)?;
+        self.effective = factor_effective(&system, &self.config, &coeffs, self.cholesky)?;
         self.dt = dt;
         self.coeffs = coeffs;
         Ok(())
@@ -540,10 +618,7 @@ impl ImplicitDynamicsIntegrator {
             .zip(elastic_force.iter())
             .map(|((f, c), k)| f - c - k)
             .collect();
-        let acceleration = self
-            .mass_solver
-            .solve(&residual)
-            .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string()))?;
+        let acceleration = self.mass_solver.solve(&residual)?;
         check_finite(&acceleration, "initial acceleration")?;
         self.state = ImplicitDynamicsState {
             displacement: displacement.to_vec(),
@@ -568,6 +643,72 @@ impl ImplicitDynamicsIntegrator {
     pub fn step(
         &mut self,
         force_next: &[f64],
+    ) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
+        self.step_impl(force_next, None, false)
+    }
+
+    /// Advance while verifying the original HHT or Newmark force balance.
+    ///
+    /// `absolute_residual_tolerance` bounds the Euclidean norm of the weighted
+    /// equilibrium equation in force units. Up to three corrections reuse the
+    /// effective factorization, updating displacement, velocity, and acceleration
+    /// together through the Newmark relations. A failed check leaves the previous
+    /// state and force history unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ImplicitDynamicsError`] for the ordinary step errors, a
+    /// non-finite or negative tolerance, or a force-balance residual that cannot
+    /// meet the tolerance within three refinement corrections.
+    pub fn step_checked(
+        &mut self,
+        force_next: &[f64],
+        absolute_residual_tolerance: f64,
+    ) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
+        self.checked_step_impl(force_next, absolute_residual_tolerance, false)
+    }
+
+    /// Advance with compensated matrix products and verified physical force balance.
+    ///
+    /// Uses error-free product residuals and compensated additions for mass,
+    /// stiffness, and damping products in the history and equilibrium checks.
+    /// This reduces cancellation error in mixed-unit thin structural systems.
+    /// The factorization, Newmark/HHT equations, and absolute force-norm
+    /// tolerance are the same as [`Self::step_checked`]. Up to eight corrections
+    /// allow cancellation-sensitive systems to finish iterative refinement.
+    /// Failure leaves the previous state and force history unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ImplicitDynamicsError`] for invalid loads or tolerance,
+    /// factorization solve failures, or failure to meet the force-balance bound.
+    pub fn step_checked_accurate(
+        &mut self,
+        force_next: &[f64],
+        absolute_residual_tolerance: f64,
+    ) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
+        self.checked_step_impl(force_next, absolute_residual_tolerance, true)
+    }
+
+    fn checked_step_impl(
+        &mut self,
+        force_next: &[f64],
+        absolute_residual_tolerance: f64,
+        compensated: bool,
+    ) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
+        if !absolute_residual_tolerance.is_finite() || absolute_residual_tolerance < 0.0 {
+            return Err(ImplicitDynamicsError::InvalidConfig(
+                "equilibrium tolerance must be finite and non-negative".into(),
+            ));
+        }
+        self.step_impl(force_next, Some(absolute_residual_tolerance), compensated)
+    }
+
+    fn step_impl(
+        &mut self,
+        force_next: &[f64],
+        equilibrium_tolerance: Option<f64>,
+        compensated: bool,
     ) -> Result<&ImplicitDynamicsState, ImplicitDynamicsError> {
         if !self.initialized {
             return Err(ImplicitDynamicsError::NotInitialized);
@@ -598,14 +739,14 @@ impl ImplicitDynamicsIntegrator {
             .zip(state.acceleration.iter())
             .map(|((u, v), acc)| h * (a[1] * u + a[4] * v + a[5] * acc) + self.config.alpha * v)
             .collect();
-        let mass_part = self.mass.apply(&history_m);
-        let damp_part = self.apply_damping(&history_c);
+        let mass_part = force_matvec(&self.mass, &history_m, compensated);
+        let damp_part = self.apply_damping_impl(&history_c, compensated);
         let stiff_history: Vec<f64> = state
             .displacement
             .iter()
             .map(|u| self.config.alpha * u)
             .collect();
-        let stiff_part = self.stiffness.apply(&stiff_history);
+        let stiff_part = force_matvec(&self.stiffness, &stiff_history, compensated);
         let rhs: Vec<f64> = force_next
             .iter()
             .zip(self.prev_force.iter())
@@ -614,12 +755,9 @@ impl ImplicitDynamicsIntegrator {
             .zip(stiff_part.iter())
             .map(|((((next, prev), m), c), k)| h * next - self.config.alpha * prev + m + c + k)
             .collect();
-        let next_u = self
-            .effective
-            .solve(&rhs)
-            .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string()))?;
+        let mut next_u = self.effective.solve(&rhs)?;
         check_finite(&next_u, "displacement")?;
-        let next_a: Vec<f64> = next_u
+        let mut next_a: Vec<f64> = next_u
             .iter()
             .zip(state.displacement.iter())
             .zip(state.velocity.iter())
@@ -627,13 +765,54 @@ impl ImplicitDynamicsIntegrator {
             .map(|(((plus, u), v), acc)| a[0] * (plus - u) - a[2] * v - a[3] * acc)
             .collect();
         let gamma = self.config.gamma;
-        let next_v: Vec<f64> = state
+        let mut next_v: Vec<f64> = state
             .velocity
             .iter()
             .zip(state.acceleration.iter())
             .zip(next_a.iter())
             .map(|((v, acc), plus)| v + self.dt * ((1.0 - gamma) * acc + gamma * plus))
             .collect();
+        if let Some(tolerance) = equilibrium_tolerance {
+            let previous_elastic = force_matvec(&self.stiffness, &state.displacement, compensated);
+            let previous_damping = self.apply_damping_impl(&state.velocity, compensated);
+            // Bound checked-step cost. Ordinary steps retain their existing path.
+            let max_equilibrium_refinements = if compensated { 8 } else { 3 };
+            for refinement in 0..=max_equilibrium_refinements {
+                let inertia = force_matvec(&self.mass, &next_a, compensated);
+                let elastic = force_matvec(&self.stiffness, &next_u, compensated);
+                let damping = self.apply_damping_impl(&next_v, compensated);
+                let residual = (0..self.num_dofs)
+                    .map(|i| {
+                        h * force_next[i]
+                            - self.config.alpha * self.prev_force[i]
+                            - inertia[i]
+                            - h * elastic[i]
+                            - h * damping[i]
+                            + self.config.alpha * previous_elastic[i]
+                            + self.config.alpha * previous_damping[i]
+                    })
+                    .collect::<Vec<_>>();
+                let residual_norm = residual
+                    .iter()
+                    .map(|value| value * value)
+                    .sum::<f64>()
+                    .sqrt();
+                if residual_norm.is_finite() && residual_norm <= tolerance {
+                    break;
+                }
+                if !residual_norm.is_finite() || refinement == max_equilibrium_refinements {
+                    return Err(ImplicitDynamicsError::LinearSolve(format!(
+                        "true equilibrium residual {residual_norm:.6e} exceeds {tolerance:.6e} after {refinement} refinements"
+                    )));
+                }
+                let correction = self.effective.solve(&residual)?;
+                for i in 0..self.num_dofs {
+                    next_u[i] += correction[i];
+                    next_a[i] += a[0] * correction[i];
+                    next_v[i] += a[1] * correction[i];
+                }
+            }
+        }
         self.state = ImplicitDynamicsState {
             displacement: next_u,
             velocity: next_v,
@@ -665,21 +844,25 @@ impl ImplicitDynamicsIntegrator {
     }
 
     fn apply_damping(&self, values: &[f64]) -> Vec<f64> {
+        self.apply_damping_impl(values, false)
+    }
+
+    fn apply_damping_impl(&self, values: &[f64], compensated: bool) -> Vec<f64> {
         let mut out = vec![0.0; self.num_dofs];
         if let Some(damping) = &self.damping {
-            let part = damping.apply(values);
+            let part = force_matvec(damping, values, compensated);
             for (slot, value) in out.iter_mut().zip(part.iter()) {
                 *slot += value;
             }
         }
         if self.config.rayleigh_mass != 0.0 {
-            let part = self.mass.apply(values);
+            let part = force_matvec(&self.mass, values, compensated);
             for (slot, value) in out.iter_mut().zip(part.iter()) {
                 *slot += self.config.rayleigh_mass * value;
             }
         }
         if self.config.stiffness_damping != 0.0 {
-            let part = self.stiffness.apply(values);
+            let part = force_matvec(&self.stiffness, values, compensated);
             for (slot, value) in out.iter_mut().zip(part.iter()) {
                 *slot += self.config.stiffness_damping * value;
             }
@@ -688,11 +871,35 @@ impl ImplicitDynamicsIntegrator {
     }
 }
 
+fn force_matvec(matrix: &CsrMatrix<f64>, values: &[f64], compensated: bool) -> Vec<f64> {
+    if !compensated {
+        return matrix.apply(values);
+    }
+    (0..matrix.num_rows)
+        .map(|row| {
+            let mut high = 0.0;
+            let mut low = 0.0;
+            for entry in matrix.row_ptrs[row]..matrix.row_ptrs[row + 1] {
+                let coefficient = matrix.values[entry];
+                let value = values[matrix.col_indices[entry]];
+                let product = coefficient * value;
+                let product_error = coefficient.mul_add(value, -product);
+                let sum = high + product;
+                let recovered = sum - high;
+                low += (high - (sum - recovered)) + (product - recovered) + product_error;
+                high = sum;
+            }
+            high + low
+        })
+        .collect()
+}
+
 fn factor_effective(
     system: &ImplicitDynamicsSystem,
     config: &ImplicitDynamicsConfig,
     coeffs: &[f64; 6],
-) -> Result<SparseLuFactorization<f64>, ImplicitDynamicsError> {
+    cholesky: bool,
+) -> Result<DynamicsFactor, ImplicitDynamicsError> {
     let h = 1.0 + config.alpha;
     let scale_m = coeffs[0] + coeffs[1] * h * config.rayleigh_mass;
     let scale_k = h + coeffs[1] * h * config.stiffness_damping;
@@ -721,13 +928,86 @@ fn factor_effective(
     // The triplet buffers are constructed valid; conversion sums the
     // overlapping mass, stiffness, and damping patterns.
     let matrix = triplet.to_csr();
-    SparseLuFactorization::factorize(&matrix)
-        .map_err(|error| ImplicitDynamicsError::LinearSolve(error.to_string()))
+    factor_matrix(&matrix, cholesky)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compensated_force_products_retain_exact_cancellation_remainders() {
+        let mut entries = TripletMatrix::new(1, 3);
+        entries.push(0, 0, 1e16);
+        entries.push(0, 1, 1.0);
+        entries.push(0, 2, -1e16);
+        let matrix = entries.to_csr();
+        assert_eq!(force_matvec(&matrix, &[1.0, 1.0, 1.0], true), vec![1.0]);
+        let epsilon = 2.0_f64.powi(-27);
+        let mut entries = TripletMatrix::new(1, 2);
+        entries.push(0, 0, 1.0 + epsilon);
+        entries.push(0, 1, -1.0);
+        assert_eq!(
+            force_matvec(&entries.to_csr(), &[1.0 - epsilon, 1.0], true),
+            vec![-epsilon * epsilon]
+        );
+    }
+
+    #[test]
+    fn accurate_checked_hht_preserves_balance_kinematics_and_failed_state() {
+        let config = ImplicitDynamicsConfig {
+            rayleigh_mass: 0.02,
+            stiffness_damping: 0.001,
+            ..ImplicitDynamicsConfig::hht(-0.1)
+        };
+        let mut integrator =
+            ImplicitDynamicsIntegrator::new_spd(sdof_system(2.0, 0.4, 11.0), config, 0.02).unwrap();
+        let damping = 0.4 + 0.02 * 2.0 + 0.001 * 11.0;
+        let mut previous_force = 0.7;
+        integrator
+            .initialize(&[0.25], &[-0.1], &[previous_force])
+            .unwrap();
+        for step in 1..=12 {
+            if step == 6 {
+                integrator.set_timestep(0.01).unwrap();
+            }
+            let dt = integrator.dt();
+            let previous = integrator.state().clone();
+            let force = 0.7 + 0.1 * step as f64;
+            let next = integrator.step_checked_accurate(&[force], 1e-11).unwrap();
+            let h = 1.0 + config.alpha;
+            let residual = 2.0 * next.acceleration[0]
+                + h * damping * next.velocity[0]
+                + h * 11.0 * next.displacement[0]
+                - config.alpha * damping * previous.velocity[0]
+                - config.alpha * 11.0 * previous.displacement[0]
+                - h * force
+                + config.alpha * previous_force;
+            assert!(residual.abs() <= 1e-11);
+            let du = next.displacement[0]
+                - previous.displacement[0]
+                - dt * previous.velocity[0]
+                - dt * dt
+                    * ((0.5 - config.beta) * previous.acceleration[0]
+                        + config.beta * next.acceleration[0]);
+            let dv = next.velocity[0]
+                - previous.velocity[0]
+                - dt * ((1.0 - config.gamma) * previous.acceleration[0]
+                    + config.gamma * next.acceleration[0]);
+            assert!(du.abs() <= 1e-13 && dv.abs() <= 1e-13);
+            previous_force = force;
+        }
+        let previous = integrator.state().clone();
+        let force_history = integrator.prev_force.clone();
+        assert!(integrator.step_checked_accurate(&[1e308], 1e-11).is_err());
+        assert_eq!(integrator.state().time, previous.time);
+        assert_eq!(integrator.state().displacement, previous.displacement);
+        assert_eq!(integrator.state().velocity, previous.velocity);
+        assert_eq!(integrator.state().acceleration, previous.acceleration);
+        assert_eq!(integrator.prev_force, force_history);
+        assert!(integrator.step_checked_accurate(&[0.8], f64::NAN).is_err());
+        assert!(integrator.step_checked_accurate(&[0.8], 1e-11).is_ok());
+    }
 
     fn sdof_system(m: f64, c: f64, k: f64) -> ImplicitDynamicsSystem {
         let mut mass = TripletMatrix::new(1, 1);
@@ -746,6 +1026,100 @@ mod tests {
             stiffness: stiffness.to_csr(),
             damping,
         }
+    }
+
+    #[test]
+    fn spd_constructor_matches_lu_for_coupled_hht_and_timestep_change() {
+        let matrix = |entries: &[(usize, usize, f64)]| {
+            let mut triplets = TripletMatrix::new(2, 2);
+            for &(row, column, value) in entries {
+                triplets.push(row, column, value);
+            }
+            triplets.to_csr()
+        };
+        let system = ImplicitDynamicsSystem {
+            mass: matrix(&[(0, 0, 2.0), (0, 1, 0.3), (1, 0, 0.3), (1, 1, 1.0)]),
+            stiffness: matrix(&[(0, 0, 40.0), (0, 1, -10.0), (1, 0, -10.0), (1, 1, 20.0)]),
+            damping: Some(matrix(&[
+                (0, 0, 0.5),
+                (0, 1, -0.1),
+                (1, 0, -0.1),
+                (1, 1, 0.4),
+            ])),
+        };
+        let config = ImplicitDynamicsConfig {
+            rayleigh_mass: 0.02,
+            stiffness_damping: 0.001,
+            ..ImplicitDynamicsConfig::hht(-0.1)
+        };
+        let mut lu = ImplicitDynamicsIntegrator::new(system.clone(), config, 0.02).unwrap();
+        let mut spd = ImplicitDynamicsIntegrator::new_spd(system, config, 0.02).unwrap();
+        for integrator in [&mut lu, &mut spd] {
+            integrator
+                .initialize(&[0.1, -0.2], &[0.3, 0.1], &[0.5, -0.2])
+                .unwrap();
+        }
+        for step in 0..100 {
+            if step == 20 {
+                lu.set_timestep(0.01).unwrap();
+                spd.set_timestep(0.01).unwrap();
+            }
+            let force = [(step as f64 * 0.03).sin(), (step as f64 * 0.05).cos()];
+            lu.step_checked(&force, 1e-10).unwrap();
+            spd.step_checked(&force, 1e-10).unwrap();
+            for (a, b) in lu
+                .state()
+                .displacement
+                .iter()
+                .zip(&spd.state().displacement)
+                .chain(lu.state().velocity.iter().zip(&spd.state().velocity))
+                .chain(
+                    lu.state()
+                        .acceleration
+                        .iter()
+                        .zip(&spd.state().acceleration),
+                )
+            {
+                assert!((a - b).abs() < 1e-10);
+            }
+            assert!(matches!(spd.effective, DynamicsFactor::Cholesky(_)));
+        }
+    }
+
+    #[test]
+    fn spd_constructor_rejects_asymmetry_and_nonpositive_mass() {
+        let mut mass = TripletMatrix::new(2, 2);
+        mass.push(0, 0, 1.0);
+        mass.push(1, 1, 1.0);
+        let mut stiffness = TripletMatrix::new(2, 2);
+        stiffness.push(0, 0, 2.0);
+        stiffness.push(1, 1, 2.0);
+        stiffness.push(0, 1, 1.0);
+        let system = ImplicitDynamicsSystem {
+            mass: mass.to_csr(),
+            stiffness: stiffness.to_csr(),
+            damping: None,
+        };
+        assert!(
+            ImplicitDynamicsIntegrator::new(
+                system.clone(),
+                ImplicitDynamicsConfig::default(),
+                0.01
+            )
+            .is_ok()
+        );
+        assert!(matches!(
+            ImplicitDynamicsIntegrator::new_spd(system, ImplicitDynamicsConfig::default(), 0.01),
+            Err(ImplicitDynamicsError::InvalidConfig(_))
+        ));
+        assert!(
+            ImplicitDynamicsIntegrator::new_spd(
+                sdof_system(-1.0, 0.0, 0.0),
+                ImplicitDynamicsConfig::default(),
+                0.01
+            )
+            .is_err()
+        );
     }
 
     #[test]
@@ -852,5 +1226,133 @@ mod tests {
         assert!(integrator.set_timestep(0.0).is_err());
         integrator.set_timestep(0.02).unwrap();
         assert!((integrator.dt() - 0.02).abs() < 1e-15);
+    }
+
+    #[test]
+    fn checked_step_preserves_stiff_static_equilibrium() {
+        let mut stiffness = TripletMatrix::new(2, 2);
+        for (row, col, value) in [
+            (0, 0, 1e12 + 1.0),
+            (0, 1, -1e12),
+            (1, 0, -1e12),
+            (1, 1, 1e12 + 1.0),
+        ] {
+            stiffness.push(row, col, value);
+        }
+        let mut mass = TripletMatrix::new(2, 2);
+        mass.push(0, 0, 1.0);
+        mass.push(1, 1, 1.0);
+        let system = ImplicitDynamicsSystem {
+            mass: mass.to_csr(),
+            stiffness: stiffness.to_csr(),
+            damping: None,
+        };
+        let mut plain = ImplicitDynamicsIntegrator::new(
+            system.clone(),
+            ImplicitDynamicsConfig::default(),
+            0.01,
+        )
+        .unwrap();
+        let mut checked = ImplicitDynamicsIntegrator::new(
+            system.clone(),
+            ImplicitDynamicsConfig::default(),
+            0.01,
+        )
+        .unwrap();
+        for integrator in [&mut plain, &mut checked] {
+            integrator
+                .initialize(&[1.0, 1.0], &[0.0, 0.0], &[1.0, 1.0])
+                .unwrap();
+        }
+        let residual = |state: &ImplicitDynamicsState| {
+            let inertia = system.mass.apply(&state.acceleration);
+            let elastic = system.stiffness.apply(&state.displacement);
+            inertia
+                .iter()
+                .zip(elastic)
+                .map(|(m, k)| (m + k - 1.0).powi(2))
+                .sum::<f64>()
+                .sqrt()
+        };
+        let original_residual = residual(plain.step(&[1.0, 1.0]).unwrap());
+        assert!(
+            original_residual > 1e-8,
+            "counterexample must exercise effective-system cancellation: {original_residual}"
+        );
+        let state = checked.step_checked(&[1.0, 1.0], 1e-8).unwrap();
+        assert!(residual(state) <= 1e-8);
+        assert!(
+            state
+                .displacement
+                .iter()
+                .all(|value| (*value - 1.0).abs() <= 1e-12)
+        );
+        for i in 0..2 {
+            assert!(
+                (state.displacement[i] - 1.0 - 0.25 * 0.01_f64.powi(2) * state.acceleration[i])
+                    .abs()
+                    <= 5e-16
+            );
+            assert!((state.velocity[i] - 0.5 * 0.01 * state.acceleration[i]).abs() <= 5e-16);
+        }
+    }
+
+    #[test]
+    fn checked_hht_step_preserves_weighted_balance_and_kinematics() {
+        let config = ImplicitDynamicsConfig::hht(-0.1);
+        let dt = 0.02;
+        let mut integrator =
+            ImplicitDynamicsIntegrator::new(sdof_system(2.0, 0.4, 11.0), config, dt).unwrap();
+        let mut previous_force = 0.7;
+        integrator
+            .initialize(&[0.25], &[-0.1], &[previous_force])
+            .unwrap();
+        for step in 1..=12 {
+            let previous = integrator.state().clone();
+            let force = 0.7 + 0.1 * step as f64;
+            let next = integrator.step_checked(&[force], 1e-11).unwrap();
+            let h = 1.0 + config.alpha;
+            let residual = 2.0 * next.acceleration[0]
+                + h * 0.4 * next.velocity[0]
+                + h * 11.0 * next.displacement[0]
+                - config.alpha * 0.4 * previous.velocity[0]
+                - config.alpha * 11.0 * previous.displacement[0]
+                - h * force
+                + config.alpha * previous_force;
+            assert!(residual.abs() <= 1e-11);
+            let displacement_defect = next.displacement[0]
+                - previous.displacement[0]
+                - dt * previous.velocity[0]
+                - dt * dt
+                    * ((0.5 - config.beta) * previous.acceleration[0]
+                        + config.beta * next.acceleration[0]);
+            let velocity_defect = next.velocity[0]
+                - previous.velocity[0]
+                - dt * ((1.0 - config.gamma) * previous.acceleration[0]
+                    + config.gamma * next.acceleration[0]);
+            assert!(displacement_defect.abs() <= 1e-13);
+            assert!(velocity_defect.abs() <= 1e-13);
+            previous_force = force;
+        }
+    }
+
+    #[test]
+    fn failed_checked_step_preserves_state_and_force_history() {
+        let mut integrator = ImplicitDynamicsIntegrator::new(
+            sdof_system(1.3, 0.31, 7.1),
+            ImplicitDynamicsConfig::default(),
+            0.01,
+        )
+        .unwrap();
+        integrator.initialize(&[0.2], &[0.3], &[0.7]).unwrap();
+        let previous = integrator.state().clone();
+        let force = integrator.prev_force.clone();
+        assert!(integrator.step_checked(&[1e308], 1e-10).is_err());
+        assert_eq!(integrator.state.time, previous.time);
+        assert_eq!(integrator.state.displacement, previous.displacement);
+        assert_eq!(integrator.state.velocity, previous.velocity);
+        assert_eq!(integrator.state.acceleration, previous.acceleration);
+        assert_eq!(integrator.prev_force, force);
+        assert!(integrator.step_checked(&[0.8], 1e-10).is_ok());
     }
 }

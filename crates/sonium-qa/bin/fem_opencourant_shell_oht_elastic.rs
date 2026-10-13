@@ -1,39 +1,35 @@
-//! QA: open-hole plate shells vs OpenCourant quasi-statics.
+//! External reference health and native parity gate for shell-oht-elastic.
 //!
-//! Elastic precursor of the progressive-failure open-hole tension case:
-//! the Part-2 planform (L = 128 mm, W = 32 mm, D = 6.35 mm, t = 1.0 mm)
-//! as homogenized quasi-isotropic QEPH shells (CLT E = 52.70 GPa,
-//! nu = 0.24 for the [45/0/-45/90]s T300/914-ish layup) pulled to a
-//! 100 MPa nominal stress. Probes replay the bar compliance and the
-//! Howland finite-width stress concentration at the hole minimum
-//! section, the site where the in-process progressive-damage QA
-//! (`fem_composites_progressive_failure.rs`) initiates and cascades.
+//! Elastic precursor of the progressive-failure open-hole tension case: the Part-2 planform (L
+//! = 128 mm, W = 32 mm, D = 6.35 mm, t = 1.0 mm) as homogenized quasi-isotropic QEPH shells
+//! (CLT E = 52.70 GPa, nu = 0.24 for the [45/0/-45/90]s T300/914-ish layup) pulled to a 100 MPa
+//! nominal stress. Probes replay the bar compliance and the Howland finite-width stress
+//! concentration at the hole minimum section, the site where the in-process progressive-damage
+//! QA (`fem_composites_progressive_failure.rs`) initiates and cascades.
 //!
-//! References: Howland, R. C. J. (1930), "On the stresses in the
-//! neighbourhood of a circular hole in a strip under tension", Phil.
-//! Trans. R. Soc. A 229; Green, B. G. et al. (2007), "Experimental
-//! investigation of the failure of scaled open-hole tensile composite
-//! laminates", Composites Part A 38.
+//! References: Howland, R. C. J. (1930), "On the stresses in the neighbourhood of a circular
+//! hole in a strip under tension", Phil. Trans. R. Soc. A 229; Green, B. G. et al. (2007),
+//! "Experimental investigation of the failure of scaled open-hole tensile composite laminates",
+//! Composites Part A 38.
 //!
-//! Seam (Worker-1 gap): `sonium_qa::rad` ships no layered composite
-//! property and no ply-failure material (no /PROP/SHELL composite, no
-//! /MAT/LAW25), so the engine deck can only cover the linear elastic
-//! precursor. Progressive Hashin/Puck damage stays in-process in the
-//! Part-2 QA, which reproduces the Green et al. notched/unnotched trend
-//! (ratio 0.62 in the 0.35-0.85 band) with hole-edge initiation and a
-//! 0-degree fiber cascade.
+//! Seam (Worker-1 gap): `sonium_qa::rad` ships no layered composite property and no ply-failure
+//! material (no /PROP/SHELL composite, no /MAT/LAW25), so the engine deck can only cover the
+//! linear elastic precursor. Progressive Hashin/Puck damage stays in-process in the Part-2 QA,
+//! which reproduces the Green et al. notched/unnotched trend (ratio 0.62 in the 0.35-0.85 band)
+//! with hole-edge initiation and a 0-degree fiber cascade.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` extended
-//! writer, then runs the starter and engine when `OPENCOURANT_EXE`
-//! (or legacy `RADISS_EXE`) is set and compares compliance plus hole-edge
-//! membrane stress against the closed forms. Without an engine it prints
-//! the documented skip message and exits 0. Decks regenerate with
+//! Verifies the checked-in decks match the `sonium_qa::rad` extended writer, then runs the
+//! starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares
+//! compliance plus hole-edge membrane stress against the closed forms. Decks regenerate with
 //! `REGEN_DECKS=1`.
 //!
-//! Prove-out note: `/TH/SHELL` F1/F2/F12 channels report membrane STRESS
-//! (Pa), not force resultants (N/m) -- doubling the shell thickness at
-//! fixed load halves the channel. Moment channels (M1, ...) do report
-//! resultants (clamped-plate M1 passes as such).
+//! Prove-out note: `/TH/SHELL` F1/F2/F12 channels report membrane STRESS (Pa), not force
+//! resultants (N/m) -- doubling the shell thickness at fixed load halves the channel. Moment
+//! channels (M1, ...) do report resultants (clamped-plate M1 passes as such).
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -44,6 +40,9 @@ use sonium_qa::rad::{
     run_extended_case, shel_channel, write_extended_engine, write_extended_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/oht_native.rs"]
+pub mod oht_native;
 
 const LENGTH_M: f64 = 128.0e-3;
 const WIDTH_M: f64 = 32.0e-3;
@@ -178,7 +177,7 @@ fn howland_kt(d_over_w: f64) -> f64 {
 /// quasi-static. The 10% compliance tolerance covers grip end effects;
 /// the 20% Kt tolerance covers the staircase hole edge plus the probe
 /// centroid offset from the true edge.
-fn shell_oht_elastic_case() -> RadExtendedCase {
+pub fn shell_oht_elastic_case() -> RadExtendedCase {
     let mesh = oht_mesh(100, 40);
     let kt = howland_kt(HOLE_D_M / WIDTH_M);
     let compliance_m = LOAD_N * LENGTH_M / (YOUNG_PA * WIDTH_M * THICK_M);
@@ -281,6 +280,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/shell_oht_elastic")
 }
 
+const CASE_ID: &str = "fem.opencourant.shell-oht-elastic.native-parity.v1";
+
 fn main() {
     let case = shell_oht_elastic_case();
     case.validate().expect("shell_oht_elastic must validate");
@@ -331,8 +332,7 @@ fn main() {
     );
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -344,14 +344,18 @@ fn main() {
     std::fs::write(work.join("shell_oht_elastic_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("shell_oht_elastic_0001.rad"), &engine).unwrap();
     let output = run_extended_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad shell_oht_elastic run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
+    let mut external = Vec::new();
     for probe in &case.base.probes {
         match output.history.final_value(&probe.channel) {
             Ok(actual) => {
+                external.push(actual);
                 println!(
                     "probe {}: actual {actual:.6e}, expected {:.6e}",
                     probe.label, probe.expected
@@ -374,10 +378,16 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-shell-oht-elastic");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-shell-oht-elastic");
-    println!("SUCCESS: qa-fem-opencourant-shell-oht-elastic");
+    let result = oht_native::parity_result(
+        &case,
+        CASE_ID,
+        &output.engine,
+        &external,
+        output.history.times.last().copied().unwrap_or(f64::NAN),
+        !failed,
+    )
+    .unwrap_or_else(|error| {
+        sonium_qa::rad::gate::execution_failure_result(CASE_ID, &error.to_string())
+    });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

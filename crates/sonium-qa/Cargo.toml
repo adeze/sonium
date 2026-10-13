@@ -1339,6 +1339,12 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-bem-rigid-sphere-mie-accuracy"
+path = "bin/bem_rigid_sphere_mie_accuracy.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-bem-node-scaling"
 path = "bin/bem_node_scaling.rs"
 test = false
@@ -1869,7 +1875,6 @@ required-features = ["qa-binaries", "legacy-sims"]
 [[bin]]
 name = "qa-room-fem-spatial-field-reference"
 path = "bin/room_fem_spatial_field_reference.rs"
-test = false
 required-features = ["qa-binaries", "legacy-sims"]
 
 [[bin]]
@@ -3522,7 +3527,6 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-plasticity-thick-cylinder"
 path = "bin/fem_opencourant_plasticity_thick_cylinder.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [features]
@@ -5755,7 +5759,6 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-cantilever"
 path = "bin/fem_opencourant_cantilever.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
@@ -5809,25 +5812,21 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-beam-3d-cantilever"
 path = "bin/fem_opencourant_beam_3d_cantilever.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
 name = "qa-fem-opencourant-beam-torsion"
 path = "bin/fem_opencourant_beam_torsion.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
 name = "qa-fem-opencourant-shell-scordelis-lo"
 path = "bin/fem_opencourant_shell_scordelis_lo.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
 name = "qa-fem-opencourant-shell-clamped-plate"
 path = "bin/fem_opencourant_shell_clamped_plate.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
@@ -5881,7 +5880,6 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-bending-3pt"
 path = "bin/fem_opencourant_bending_3pt.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
@@ -5917,13 +5915,11 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-beam-curved-arch"
 path = "bin/fem_opencourant_beam_curved_arch.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
 name = "qa-fem-opencourant-beam-warping"
 path = "bin/fem_opencourant_beam_warping.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
@@ -5947,13 +5943,11 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-shell-twisted-beam"
 path = "bin/fem_opencourant_shell_twisted_beam.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
 name = "qa-fem-opencourant-shell-oht-elastic"
 path = "bin/fem_opencourant_shell_oht_elastic.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
@@ -5977,6 +5971,12 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-oc-ns-bench"
 path = "bin/oc_ns_bench.rs"
+test = false
+required-features = ["qa-binaries"]
+
+[[bin]]
+name = "qa-website-demos"
+path = "bin/website_demos.rs"
 test = false
 required-features = ["qa-binaries"]
 

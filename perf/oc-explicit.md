@@ -65,9 +65,9 @@ deck column is bold.
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 1 | 0.00306 | **216** | 83 MB |
-| sonium | native | 16 | 0.00307 | 217 | 83 MB |
-| sonium | native | 64 | 0.00309 | 218 | 83 MB |
+| sonium | native | 64 | 0.00291 | **205** | 4 MB |
+| sonium | native | 1 | 0.00306 | 216 | 4 MB |
+| sonium | native | 16 | 0.00308 | 217 | 4 MB |
 | engine | smp | 1 | 0.0336 | 2071 | 39 MB |
 | engine | serial | 1 | 0.0342 | 2113 | 39 MB |
 | engine | smp | 4 | 0.0453 | 2795 | 44 MB |
@@ -85,8 +85,8 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 1 | 0.302 | **156** | 83 MB |
-| sonium | native | 16 | 0.308 | 159 | 83 MB |
+| sonium | native | 16 | 0.289 | **149** | 5 MB |
+| sonium | native | 1 | 0.303 | 156 | 5 MB |
 | engine | smp | 1 | 0.546 | 266 | 39 MB |
 | engine | serial | 1 | 0.55 | 269 | 39 MB |
 | engine | smp | 4 | 1.01 | 495 | 44 MB |
@@ -100,8 +100,8 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 1 | 56.7 | **146** | 83 MB |
-| sonium | native | 16 | 59.8 | 154 | 83 MB |
+| sonium | native | 1 | 56.8 | **147** | 4 MB |
+| sonium | native | 16 | 59 | 152 | 4 MB |
 | engine | smp | 1 | 100 | 246 | 39 MB |
 | engine | mpi | 4 | 104 | 255 | 69 MB |
 | engine | mpi | 2 | 110 | 269 | 71 MB |
@@ -115,8 +115,8 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 16 | 9.13 | **60** | 83 MB |
-| sonium | native | 1 | 9.14 | 60 | 83 MB |
+| sonium | native | 16 | 9.11 | **60** | 13 MB |
+| sonium | native | 1 | 9.2 | 60 | 13 MB |
 | engine | mpi | 4 | 16.6 | 83 | 69 MB |
 | engine | mpi | 2 | 21.3 | 106 | 72 MB |
 | engine | serial | 1 | 25.6 | 128 | 39 MB |
@@ -130,8 +130,8 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 1 | 1.01 | **115** | 83 MB |
-| sonium | native | 16 | 1.01 | 115 | 83 MB |
+| sonium | native | 16 | 1.02 | **116** | 5 MB |
+| sonium | native | 1 | 1.03 | 117 | 5 MB |
 | engine | smp | 1 | 1.19 | 123 | 39 MB |
 | engine | serial | 1 | 1.2 | 123 | 39 MB |
 | engine | smp | 4 | 1.26 | 130 | 47 MB |
@@ -145,8 +145,8 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 16 | 0.0844 | **293** | 83 MB |
-| sonium | native | 1 | 0.0845 | 293 | 83 MB |
+| sonium | native | 16 | 0.0859 | **298** | 5 MB |
+| sonium | native | 1 | 0.0863 | 300 | 5 MB |
 | engine | serial | 1 | 0.0539 | 434 | 40 MB |
 | engine | smp | 1 | 0.0545 | 439 | 40 MB |
 | engine | smp | 4 | 0.0572 | 461 | 47 MB |
@@ -185,13 +185,15 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
   (future work, needs native shells first). At 16 cores
   sonium still wins all 6 decks (1.6x-24x per-cycle) because
   the engine degrades while sonium holds flat.
-- Memory: sonium reports a fixed 83 MB peak RSS on every
-  fresh cell regardless of deck size (297-2340 dof) against
-  3-15 MB on the Oct-11 binary: process-level overhead,
-  unexplained, flagged for follow-up (not investigated;
-  numbers published as measured). Engine 38-112 MB per cell
-  (MPI RSS covers the launcher only and under-reports ranks —
-  6A caveat, restated).
+- Memory: sonium peaks at 4-13 MB per cell (hertz highest;
+  its precomputed linear stiffness is the largest native
+  buffer). An earlier fixed 83 MB reading on every cell was a
+  measurement artifact: `getrusage(RUSAGE_SELF)` keeps the
+  launcher's `ru_maxrss` across `fork` + `exec`, so `cargo run`
+  reported cargo's own peak; the harness now reads the
+  per-process `VmHWM` from `/proc/self/status` on Linux.
+  Engine 38-112 MB per cell (MPI RSS covers the launcher only
+  and under-reports ranks — 6A caveat, restated).
 - Engine serial == smp1 on every deck (within 2%), as expected.
 
 ## Rerun

@@ -7,17 +7,17 @@ validated cases, not every runnable QA binary.
 
 ## Summary
 
-- Registered Cargo QA binaries: 983
-- Manifest-backed validation cases: 780
+- Registered Cargo QA binaries: 985
+- Manifest-backed validation cases: 804
 
 | Tier | Cases |
 | --- | ---: |
 | accelerator-gate | 8 |
 | contract-gate | 41 |
-| physics-gate | 371 |
+| physics-gate | 392 |
 | reference-only | 100 |
-| smoke | 155 |
-| solver-gate | 105 |
+| smoke | 157 |
+| solver-gate | 106 |
 
 ## Manifest-backed cases
 
@@ -32,7 +32,7 @@ validated cases, not every runnable QA binary.
 | bem.adjoint-compressed-backends.v1 | sonium-bem | `qa-bem-adjoint-compressed-backends` | physics-gate | checked CPU H-matrix, SLFMM near-field ILU, MLFMM near-field ILU, and directional-MLFMM Hermitian-adjoint solves with exact residual and checked field certification |
 | bem.adjoint-frequency-batch.v1 | sonium-bem | `qa-bem-adjoint-frequency-batch` | physics-gate | checked CPU TBEM dense reference plus H-matrix, SLFMM, MLFMM, and directional-MLFMM compressed solves with exact per-column residuals at each frequency |
 | bem.adjoint-many.v1 | sonium-bem | `qa-bem-adjoint-many` | physics-gate | checked CPU TBEM and H-matrix assembly with dense LU or GMRES and exact per-column residuals |
-| bem.axisymmetric-penetrable-sphere-mie-convergence.v1 | bem | `qa-bem-axisymmetric-penetrable-sphere-mie-convergence` | physics-gate | CPU two-medium meridional collocation with interior/exterior azimuthally integrated source rings |
+| bem.axisymmetric-penetrable-sphere-mie-convergence.v1 | bem | `qa-bem-axisymmetric-penetrable-sphere-mie-convergence` | physics-gate | CPU two-medium meridional collocation with interior/exterior azimuthally integrated source rings; independent Mie truncations 32/48 |
 | bem.axisymmetric-profile-forward-batch.v1 | sonium-bem | `qa-bem-axisymmetric-profile-forward-batch` | physics-gate | CPU shared-LU batch compared with independent scalar solves and finite-value admission |
 | bem.axisymmetric-profile-transmission.v1 | bem | `qa-bem-axisymmetric-profile-transmission` | physics-gate | CPU meridional collocation with independently offset exterior/interior azimuthal source rings |
 | bem.axisymmetric-ring-mie-convergence.v1 | bem | `qa-bem-axisymmetric-ring-mie-convergence` | physics-gate | CPU meridional collocation with azimuthally integrated interior Helmholtz source rings |
@@ -137,6 +137,9 @@ validated cases, not every runnable QA binary.
 | bem.penetrable-sphere-mie-convergence.v1 | bem | `qa-bem-penetrable-sphere-mie-convergence` | physics-gate | two-level 3-D penetrable-sphere pressure/normal-velocity transmission solve |
 | bem.quad4-higher-order-regular-singular-reference.v1 | bem | `qa-bem-quad4-higher-order-kernel-reference` | reference-only | 12-point tensor-Gauss regular and quadrant-Duffy singular kernel references plus finite 9x9 assembly |
 | bem.quadratic-vtu-export.v1 | sonium-bem | `qa-bem-quadratic-vtu-export` | physics-gate | checked CPU dense direct discontinuous quadratic TBEM solve, refined linear-cell VTU, independent XML validation |
+| bem.rigid-sphere-mie-accuracy-ka1.v1 | sonium-qa | `qa-bem-rigid-sphere-mie-accuracy` | physics-gate | native Burton-Miller rigid-sphere BEM complex-pressure accuracy; legacy mesh2hrtf command is an alias |
+| bem.rigid-sphere-mie-accuracy-ka2.v1 | sonium-qa | `qa-bem-rigid-sphere-mie-accuracy` | physics-gate | native Burton-Miller rigid-sphere BEM complex-pressure accuracy; legacy mesh2hrtf command is an alias |
+| bem.rigid-sphere-mie-accuracy-ka5.v1 | sonium-qa | `qa-bem-rigid-sphere-mie-accuracy` | physics-gate | native Burton-Miller rigid-sphere BEM complex-pressure accuracy; legacy mesh2hrtf command is an alias |
 | bem.slfmm-adjoint-preconditioners.v1 | sonium-bem | `qa-bem-slfmm-adjoint-preconditioners` | contract-gate | bounded CPU synthetic SLFMM near-field solves with independent full matrix-free residual, solution-parity, and non-finite-RHS checks |
 | bem.slfmm-checked-admission.v1 | sonium-bem | `qa-bem-slfmm-checked-admission` | contract-gate | pre-quadrature topology validation with fail-closed higher-order rejection |
 | bem.slfmm-nearfield-ilu.v1 | sonium-bem | `qa-bem-slfmm-nearfield-ilu` | physics-gate | production rigid-sphere SLFMM solve with checked near-field ILU(0) and independently certified full-operator residual |
@@ -152,9 +155,9 @@ validated cases, not every runnable QA binary.
 | bem.transmission-adjoint.v1 | sonium-bem | `qa-bem-transmission-adjoint` | physics-gate | checked dense constant-panel CPU Müller transmission Aᴴ solve with multi-RHS residual certification |
 | bem.transmission-compressed-adjoint-block-action.v1 | sonium-bem | `qa-bem-transmission-compressed-adjoint-block-action` | physics-gate | dense and low-rank ACA Hermitian blocks applied to three RHS columns |
 | bem.transmission-compressed-block-action.v1 | sonium-bem | `qa-bem-transmission-compressed-block-action` | physics-gate | dense and low-rank ACA blocks applied to three RHS columns |
-| bem.transmission-compressed-field-parity.v1 | sonium-bem | `qa-bem-transmission-compressed-field-parity` | physics-gate | continuous quadratic Müller transmission dense-source block-ACA solve compared with dense forward/adjoint fields |
+| bem.transmission-compressed-field-parity.v1 | sonium-bem | `qa-bem-transmission-compressed-field-parity` | physics-gate | continuous quadratic Mueller transmission entry-based block-ACA without retained exact source; four approximation levels with fixed algebraic solve tolerance and independent dense actions and fields |
 | bem.transmission-compressed-parity.v1 | sonium-bem | `qa-bem-transmission-compressed-parity` | physics-gate | conforming quadratic Müller transmission assembly compressed into deterministic diagonal dense/off-diagonal ACA blocks, callback-driven on-demand reconstruction, forward/Hermitian action parity, checked non-finite admission, rank-truncated far-block action bound, and ILU-GMRES solves |
-| bem.transmission-continuous-quadratic-quad4-mie-convergence.v1 | bem | `qa-bem-transmission-continuous-quadratic-quad4-mie-convergence` | physics-gate | CPU Müller transmission direct solve on coarse/fine conforming cubed-sphere meshes |
+| bem.transmission-continuous-quadratic-quad4-mie-convergence.v1 | bem | `qa-bem-transmission-continuous-quadratic-quad4-mie-convergence` | physics-gate | CPU Galerkin Mueller transmission with shared quadratic traces and projected incident data on three conforming cubed-sphere meshes |
 | bem.transmission-continuous-quadratic.v1 | sonium-bem | `qa-bem-transmission-continuous-quadratic` | physics-gate | typed-XEM convention admission, shared vertex/edge DOF topology on Tri3 and curved Quad4 panels, basis-weighted forward and Hermitian-adjoint assembly/solves, checked forward and adjoint exterior fields with invalid-point rejection, independent fluid-sphere Mie comparison |
 | bem.transmission-distributed-block-rows.v1 | sonium-bem | `qa-bem-transmission-distributed-block-rows` | physics-gate | owned rows with duplicate preservation evaluated across three forward and transpose RHS columns |
 | bem.transmission-distributed-hermitian-block-rows.v1 | sonium-bem | `qa-bem-transmission-distributed-hermitian-block-rows` | physics-gate | owned rows with duplicate preservation evaluated across three Hermitian RHS columns |
@@ -242,6 +245,7 @@ validated cases, not every runnable QA binary.
 | fem.eddy-current-1d-skin-effect.v1 | sonium-fem | `qa-fem-eddy-current-1d-skin-effect` | physics-gate | EddyCurrentForm with Nedelec edge elements, sparse LU, and three spatial refinements |
 | fem.eddy-current-thin-sheet.v1 | sonium-fem | `qa-fem-eddy-current-thin-sheet` | physics-gate | EddyCurrentForm with Nedelec edge elements, sparse LU, and three spatial refinements |
 | fem.eigenphysics-wrappers.v1 | fem | `qa-fem-eigenphysics-wrappers` | physics-gate | shift-invert eigensolves with residual, self-convergence, cross-check, and Rayleigh-consistency gates |
+| fem.elasticity-plate-hole-kirsch-convergence.v1 | sonium-qa | `qa-fem-elasticity-plate-hole` | physics-gate | P1 plane-stress elasticity; logarithmic radial mesh refinement and doubled outer radius |
 | fem.electroacoustics-cavity-bar.v1 | sonium-fem | `qa-fem-electroacoustics-validation` | physics-gate | native 2D fluid/elastic/interface forms restricted to uniform transverse mode, harmonic solves at n8/16/32 and 10/20/30Hz |
 | fem.electroacoustics-validation.v1 | fem | `qa-fem-electroacoustics-validation` | physics-gate | 5 Hz driven coupled solve with residual, decoupled-limit, physical scaled reciprocity, and power-balance gates |
 | fem.electrochemistry-3d-pnp-electrode.v1 | sonium-fem | `qa-fem-electrochemistry-3d` | physics-gate | native diffusion/migration/ionic-charge and Butler-Volmer flux/tangent forms; monolithic concentration-positive Newton solves and independent surface quadrature |
@@ -337,6 +341,23 @@ validated cases, not every runnable QA binary.
 | fem.necking-bar-spatial.v1 | sonium-qa | `qa-fem-necking-bar` | physics-gate | axial P1 bar, native finite-strain J2 Voce plasticity, transverse plane-stress condensation and evolving cross-section, Newton equilibrium |
 | fem.nonlinear-solid-validation.v1 | fem | `qa-fem-nonlinear-solid-validation` | physics-gate | compression, consistent traction and finite-strain affine patch via production Newton solver from u=0 |
 | fem.nonlinear-tangent.v1 | fem | `qa-fem-nonlinear-tangent` | physics-gate | finite-difference Taylor remainder on production Neo-Hookean element |
+| fem.ns-cavity-obstacle-smoke-re100.v1 | sonium-qa | `qa-fem-ns-cavity-obstacle` | smoke | native Picard smoke invariants only; no field, mass, force, or mesh-convergence accuracy claim |
+| fem.ns-cavity-obstacle-smoke-re400.v1 | sonium-qa | `qa-fem-ns-cavity-obstacle` | smoke | native Picard smoke invariants only; no field, mass, force, or mesh-convergence accuracy claim |
+| fem.opencourant.beam-3d-cantilever.native-parity.v1 | fem | `qa-fem-opencourant-beam-3d-cantilever` | physics-gate | original full 3D Y-loaded transient continuum solve, quadratic tetrahedra and consistent mass; three spatial levels, finest-grid timestep refinement, every-step dynamic residual and native/OpenCourant tip parity |
+| fem.opencourant.beam-curved-arch.native-parity.v1 | fem | `qa-fem-opencourant-beam-curved-arch` | physics-gate | original full 3D quarter-circle continuum transient; three native curved meshes plus native timestep refinement and every-step dynamic residual; actual three-mesh external reference convergence preserving all nine original nodal force sites; Castigliano accuracy and native/refined OpenCourant tangential tip parity |
+| fem.opencourant.beam-torsion.native-parity.v1 | fem | `qa-fem-opencourant-beam-torsion` | physics-gate | original full 3D torque-loaded transient continuum solve, quadratic tetrahedra and consistent mass; three spatial levels, finest-grid timestep refinement, every-step dynamic residual and native/OpenCourant midspan corner parity |
+| fem.opencourant.beam-warping.native-parity.v1 | fem | `qa-fem-opencourant-beam-warping` | physics-gate | original full 3D restrained I-section warping and twist transient; three refined quadratic tetrahedral meshes, checked nested-dissection supernodal Cholesky, timestep refinement, every-step dynamic residual, original paired displacement parity and independent axial warping reference |
+| fem.opencourant.bending-3pt.native-parity.v1 | fem | `qa-fem-opencourant-bending-3pt` | physics-gate | original full 3D pin/roller-supported transient continuum solve; three quadratic tetrahedral meshes, finest-grid timestep refinement, every-step dynamic residual and native/OpenCourant center displacement parity |
+| fem.opencourant.cantilever.native-parity.v1 | fem | `qa-fem-opencourant-cantilever` | physics-gate | original full 3D transient continuum solve, quadratic tetrahedra and consistent mass; three spatial levels, finest-grid timestep refinement, every-step dynamic residual and native/OpenCourant tip parity |
+| fem.opencourant.hertz-sphere.native-parity.v1 | fem | `qa-fem-opencourant-hertz-sphere` | physics-gate | external deck identity and analytical probe health; matching native solve and full named phenomenon are required for release eligibility |
+| fem.opencourant.necking-bar.native-parity.v1 | fem | `qa-fem-opencourant-necking-bar` | physics-gate | external deck identity and analytical probe health; matching native solve and full named phenomenon are required for release eligibility |
+| fem.opencourant.plasticity-thick-cylinder.native-parity.v1 | fem | `qa-fem-opencourant-plasticity-thick-cylinder` | physics-gate | original external reference and complete native 3D finite-strain LAW36 loading, unloading and residual stress; original and refined-CFL histories; matching physical sample times, native/external probe and plastic-zone parity |
+| fem.opencourant.rail-crush.native-parity.v1 | fem | `qa-fem-opencourant-rail-crush` | physics-gate | external deck identity and analytical probe health; matching native solve and full named phenomenon are required for release eligibility |
+| fem.opencourant.shell-clamped-plate.native-parity.v1 | fem | `qa-fem-opencourant-shell-clamped-plate` | physics-gate | original external shell transient plus native DKT/MITC4 full pressure histories; fixed-location hoop moment from a shrinking cubic native-rotation patch, raw element moment accuracy/parity, shell inertia, verified exact flat-shell block decoupling, compensated checked Newmark, full six-DOF force-balance verification and mesh/timestep refinement |
+| fem.opencourant.shell-oht-elastic.native-parity.v1 | fem | `qa-fem-opencourant-shell-oht-elastic` | physics-gate | original external reference plus four complete native six-DOF MITC4 histories; original-geometry subdivision, Allman-enriched stress, native/external parity, spatial and temporal convergence, every-step physical equilibrium |
+| fem.opencourant.shell-scordelis-lo.native-parity.v1 | fem | `qa-fem-opencourant-shell-scordelis-lo` | physics-gate | external deck identity and analytical probe health; matching native solve and full named phenomenon are required for release eligibility |
+| fem.opencourant.shell-twisted-beam.native-parity.v1 | fem | `qa-fem-opencourant-shell-twisted-beam` | physics-gate | original external shell transient and full six-DOF native MITC4 histories with translational/rotary inertia, original hold-mean sampling, three-mesh/timestep refinement and every-step independent force balance |
+| fem.opencourant.taylor-bar.native-parity.v1 | fem | `qa-fem-opencourant-taylor-bar` | physics-gate | external deck identity and analytical probe health; matching native solve and full named phenomenon are required for release eligibility |
 | fem.operator-invariants.v1 | fem | `qa-fem-operator-invariants` | physics-gate | production P1 stiffness/mass CSR invariant gate |
 | fem.p2-poisson-convergence-3d.v1 | sonium-fem | `qa-fem-p2-poisson-convergence-3d` | physics-gate | production 3-D P2 tetrahedron and Q2 hexahedron scalar FEM path |
 | fem.p3-h1-triangle-quad-reproduction.v1 | fem | `qa-fem-p3-h1-triangle-quad-reproduction` | physics-gate | topology-owned vertices, oriented edge nodes, and element-interior nodes |
@@ -364,7 +385,9 @@ validated cases, not every runnable QA binary.
 | fem.shell-validation.v1 | fem | `qa-fem-shell-validation` | physics-gate | solved 12x2-cell clamped cantilever with tip load plus axial-tension solve with CST stress recovery |
 | fem.solver-failure-contract.v1 | sonium-fem | `qa-fem-solver-failure-contract` | smoke | FEM SolverError implements sonium-solvers SolverFailure vocabulary |
 | fem.spatial-source-locator.v1 | sonium-fem | `qa-fem-spatial-source-locator` | physics-gate | deterministic BVH traversal with lowest-index shared-boundary ownership |
+| fem.stokes-cavity-independent-centerlines.v1 | sonium-qa | `qa-fem-stokes-lid-driven-cavity` | physics-gate | Taylor-Hood Stokes three-level refinement; centerline velocity and bulk divergence accuracy |
 | fem.stokes-stability.v1 | fem | `qa-fem-stokes-validation` | physics-gate | Poiseuille analytical solve plus coupling/null-block and cavity/Couette stability checks |
+| fem.stokes-taylor-couette-independent-residual.v1 | sonium-qa | `qa-fem-stokes-taylor-couette` | physics-gate | Taylor-Hood annular Stokes; enforce convergence and independently recompute constrained Ax-b |
 | fem.thermal-dirichlet.v1 | fem | `qa-fem-thermal` | physics-gate | production P1 steady thermal bar with opposite Dirichlet walls |
 | fem.thermal-validation.v1 | fem | `qa-fem-thermal-validation` | physics-gate | nonpolynomial manufactured solution on refined unit squares with element-quadrature L2 error |
 | fem.thermoelasticity-3d-history-mms.v1 | sonium-fem | `qa-fem-thermoelasticity-3d` | physics-gate | native coupled thermal/elastic blocks, CN heat history with declared scalar relaxation, actual solved-temperature thermal-strain loads, sparse Cholesky |
@@ -471,11 +494,11 @@ validated cases, not every runnable QA binary.
 | pcfan.cfd-invariants.v1 | sim-pcfan | `qa-pcfan-cfd-invariants` | physics-gate | production immersed-solid CFD smoke field and reduced-order fan curve |
 | pcfan.fidelity-promotion-reference.v1 | sim-pcfan | `qa-pcfan-fidelity-promotion-reference` | reference-only | provenance-labelled reduced-order to rotating-wall fidelity admission |
 | pcfan.gallery-image-contract.v1 | sim-pcfan | `qa-pcfan-gallery-image-contract` | reference-only | deterministic native PNG gallery artifact admission |
-| pcfan.mass-balance-reference.v1 | sim-pcfan | `qa-pcfan-mass-balance-reference` | physics-gate | production PC-fan mean-flow CFD mass-balance observable |
+| pcfan.mass-balance-reference.v1 | sim-pcfan | `qa-pcfan-mass-balance-reference` | physics-gate | native steady CFD with exact inner solves; independent constrained nonlinear residual reassembly and inlet/outlet boundary flux recomputation |
 | pcfan.measured-correlation-contract.v1 | sim-pcfan | `qa-pcfan-measured-correlation-reference` | reference-only | provenance-labelled fan-curve and acoustic observation comparison |
 | pcfan.measured-product-evidence-reference.v1 | sim-pcfan | `qa-pcfan-measured-product-evidence-reference` | reference-only | instrumented product evidence metadata and fixed-unit measurement ingestion |
 | pcfan.measured-product-validation-reference.v1 | sim-pcfan | `qa-pcfan-measured-product-validation-reference` | reference-only | independent measured-product versus simulation prediction RMSE admission |
-| pcfan.mesh-convergence-reference.v1 | sim-pcfan | `qa-pcfan-mesh-convergence-reference` | physics-gate | production immersed-solid CFD mesh-convergence metadata and admission |
+| pcfan.mesh-convergence-reference.v1 | sim-pcfan | `qa-pcfan-mesh-convergence-reference` | physics-gate | native immersed-solid CFD refinement with exact inner solves; all-level nonlinear admission and independently recomputed airflow/pressure changes |
 | pcfan.operating-envelope-optimization-reference.v1 | sim-pcfan | `qa-pcfan-operating-envelope-optimization-reference` | reference-only | reduced-order RPM/manufacturing cross-product objective and L-SHADE contract |
 | pcfan.operating-envelope-reference.v1 | sim-pcfan | `qa-pcfan-operating-envelope-reference` | physics-gate | RPM sweep through blade-element flow, aeroacoustics, thermal, structural, and manufacturing contracts |
 | pcfan.predicted-correlation-pipeline-reference.v1 | sim-pcfan | `qa-pcfan-predicted-correlation-pipeline-reference` | reference-only | reduced-order solver prediction into provenance-labelled measured-correlation admission |
@@ -569,7 +592,7 @@ validated cases, not every runnable QA binary.
 | roomsim.fast-modal-reference.v1 | sim-room | `qa-room-fast-modal-reference` | physics-gate | production fast-hybrid modal path against independent rigid-shoebox mode and zero-mode formulas |
 | roomsim.fem-mesh-convergence.v1 | sim-room | `qa-room-fem-mesh-convergence` | physics-gate | sequential P1 solves, retained nodal fields, exact listener coordinates, solved-response refinement |
 | roomsim.fem-nodal-gallery.v1 | sim-room | `qa-room-fem-nodal-gallery` | physics-gate | physical-domain CPU FEM nodal pressure capture, P1 slice interpolation, and VTU export |
-| roomsim.fem-spatial-field-reference.v1 | sim-room | `qa-room-fem-spatial-field-reference` | physics-gate | matched-boundary CPU FEM P1 nodal field versus independent monopole Green-function magnitude |
+| roomsim.fem-spatial-field-reference.v1 | sim-room | `qa-room-fem-spatial-field-reference` | physics-gate | three-level native CPU FEM P1 nodal fields versus independent finite-box Robin Helmholtz reference, with complex probe errors and true equation residuals |
 | roomsim.frequency-segment-merge.v1 | sim-room | `qa-room-frequency-segment-merge` | physics-gate | ordered concatenation plus exact-grid complex overlap blending, provenance, tensor-shape validation |
 | roomsim.gallery-artifacts.v1 | sim-room | `qa-room-gallery-artifacts` | physics-gate | fixed-viewport PNG/SVG/CSV/WAV/HTML generation with manifest and source checksums |
 | roomsim.measured-response-correlation.v1 | sim-room | `qa-room-measured-response-correlation` | reference-only | source/listener/frequency topology validation with peak-SPL magnitude and wrapped-phase error budgets |
@@ -684,6 +707,7 @@ validated cases, not every runnable QA binary.
 | solvers.multifrontal-blr-config.v1 | solver-foundations | `qa-solvers-multifrontal-blr-config` | solver-gate | independent four-family BLR/LDLT residual and configuration-boundary fixture |
 | solvers.multifrontal-ldlt-reference.v1 | solvers | `qa-solvers-multifrontal-ldlt-reference` | smoke | independent 2x2 real Bunch-Kaufman and Complex64 Hermitian reference solves with checked rejection fixtures |
 | solvers.nonlinear-generated-residual.v1 | solvers | `qa-solvers-nonlinear-generated-residual` | solver-gate | deterministic generated residual and matrix-free Jacobian output callbacks on Newton and Newton-Krylov paths |
+| solvers.nonlinear-independent-accuracy.v1 | sonium-qa | `qa-solvers-nonlinear` | solver-gate | native Newton on both circle/line root branches; recomputed final equation residual and algebraic root error |
 | solvers.numa-partitioning-report.v1 | solver-foundations | `qa-solvers-numa-partitioning-report` | solver-gate | skewed-row CSR admission and portable runtime SpMV across shared/replicated pinned policies, explicit placement fallback, row-count clamp, nonzero-load imbalance, and pre-allocation memory-budget admission |
 | solvers.operator-adjoint-randomized.v1 | solver-foundations | `qa-solvers-operator-adjoint-randomized` | solver-gate | nine exact-adjoint Complex64 operators, thirty-two deterministic vector pairs, block-vs-single checks, and typed rejection paths |
 | solvers.operator-combinator-boundaries.v1 | solver-foundations | `qa-solvers-operator-boundaries` | physics-gate | SumOperator/CompositeOperator/FnOperator checked actions, callback panic containment, non-finite-output and adjoint-capability rejection |

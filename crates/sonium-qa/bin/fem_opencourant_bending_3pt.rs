@@ -1,14 +1,16 @@
-//! QA: 3-point bending vs OpenCourant quasi-statics.
+//! External reference health and native parity gate for bending-3pt.
 //!
-//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs
-//! the starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and
-//! compares the center deflection against Euler-Bernoulli (FL^3/48EI).
-//! Without an engine it prints the documented skip message and exits 0.
+//! Verifies the checked-in decks match the `sonium_qa::rad` writer, then runs the starter and
+//! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the center
+//! deflection against Euler-Bernoulli (FL^3/48EI).
 //!
-//! Supports are transverse BCS pins at both ends with a ramped center
-//! concentrated load: the supported-card equivalent of the 3-point rig.
-//! Indenter-contact and plastic-hinge probes need the shell and plastic
-//! LAW cards tracked for Worker 1.
+//! Supports are transverse BCS pins at both ends with a ramped center concentrated load: the
+//! supported-card equivalent of the 3-point rig. Indenter-contact and plastic-hinge probes need
+//! the shell and plastic LAW cards tracked for Worker 1.
+//!
+//! Missing references emit a structured optional skip, or fail when
+//! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
+//! success also requires a matching native solve and full named phenomenon.
 
 // Rust guideline compliant 2026-02-21
 
@@ -18,6 +20,9 @@ use sonium_qa::rad::{
     write_engine, write_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/cantilever_native.rs"]
+mod cantilever_native;
 
 const NAME: &str = "bending_3pt";
 
@@ -177,6 +182,8 @@ fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/bending_3pt")
 }
 
+const CASE_ID: &str = "fem.opencourant.bending-3pt.native-parity.v1";
+
 fn main() {
     let case = bending_case();
     let dir = decks_dir();
@@ -216,8 +223,7 @@ fn main() {
     let _ = probes_json(&case, "none (prove-out deferred)");
 
     let Some(exe) = engine_exe() else {
-        println!("skipped: set OPENCOURANT_EXE (or legacy RADISS_EXE)");
-        return;
+        sonium_qa::rad::gate::report_missing_engine(CASE_ID);
     };
 
     // Run in a scratch dir so engine artifacts never pollute the repo.
@@ -226,8 +232,10 @@ fn main() {
     std::fs::write(work.join("bending_3pt_0000.rad"), &starter).unwrap();
     std::fs::write(work.join("bending_3pt_0001.rad"), &engine).unwrap();
     let output = run_case(&work, &exe, &case).unwrap_or_else(|error| {
-        eprintln!("rad bending_3pt run failed: {error}");
-        std::process::exit(1);
+        sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::execution_failure_result(
+            CASE_ID,
+            &error.to_string(),
+        ));
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
@@ -256,10 +264,35 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    if failed {
-        println!("FAILED: qa-fem-opencourant-bending-3pt");
-        std::process::exit(1);
-    }
-    println!("PASS: qa-fem-opencourant-bending-3pt");
-    println!("SUCCESS: qa-fem-opencourant-bending-3pt");
+    let result = output
+        .history
+        .final_value(&case.probes[0].channel)
+        .map_err(|error| error.to_string())
+        .and_then(|probe| {
+            cantilever_native::parity_result(&case, CASE_ID, &output.engine, probe, !failed)
+                .map_err(|error| error.to_string())
+        })
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(
+                CASE_ID,
+                format!("native three-point transient validation failed: {error}"),
+            )
+            .requested_backend("cpu+opencourant")
+            .actual_backend("cpu+opencourant")
+            .metric("external_reference_executed", 1.0)
+            .metric("native_parity_executed", 0.0)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
+}
+
+#[cfg(test)]
+#[test]
+fn original_three_point_supports_cannot_be_replaced_by_end_clamps() {
+    let mut case = bending_case();
+    cantilever_native::validate_case(&case).unwrap();
+    case.bcs[0].lock = [true; 6];
+    assert!(cantilever_native::validate_case(&case).is_err());
+    case = bending_case();
+    case.node_sets[case.bcs[1].set].nodes.pop();
+    assert!(cantilever_native::validate_case(&case).is_err());
 }

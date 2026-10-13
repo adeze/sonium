@@ -1,14 +1,20 @@
-//! Lid-driven cavity with centered square obstacle
+//! Native lid-driven cavity with centered square obstacle smoke checks.
 //!
 //! Extension of the standard cavity benchmark with a solid square block
 //! in the center. This creates more complex recirculation patterns and
 //! secondary vortices around the obstacle.
+//!
+//! This is a smoke case: bounded fields, converged Picard updates, and a
+//! recirculation signature. It does not establish field, mass, or force
+//! accuracy against an independent reference or a mesh-refinement limit.
 //!
 //! Setup:
 //!   Domain: [0,1]² with square obstacle [0.3,0.7] × [0.3,0.7] removed
 //!   Lid: u=[1,0] at y=1
 //!   Walls + obstacle: no-slip u=0
 //!   Re = 100, 400
+
+// Rust guideline compliant 2026-02-21
 
 use sonium_fem::basis::PolynomialDegree;
 use sonium_fem::boundary::locate_dofs_geometrical;
@@ -190,6 +196,28 @@ fn run_cavity_obstacle(re: f64, n: usize) {
         Ok(_) => println!("  Wrote {filename}"),
         Err(e) => println!("  VTK error: {e}"),
     }
+    let case_id = format!("fem.ns-cavity-obstacle-smoke-re{}.v1", re as u32);
+    let record = sonium_qa::QaResult::passed(&case_id)
+        .requested_backend("cpu")
+        .actual_backend("cpu")
+        .seed(format!("unit-square:obstacle-0.3-0.7:Re{re}:mesh{n}:P1-P1"))
+        .reference("smoke invariants only; no independent field, mass, or force accuracy reference")
+        .reference_checksum("contract:cavity-obstacle-smoke:v1")
+        .formulation("native Picard FEM smoke; no numerical accuracy or mesh convergence claim")
+        .metric("numerical_solve_executed", 1.0)
+        .minimum("numerical_solve_executed", 1.0)
+        .metric("accuracy_reference_executed", 0.0)
+        .maximum("accuracy_reference_executed", 0.0)
+        .metric("solver_converged", 1.0)
+        .minimum("solver_converged", 1.0)
+        .metric("maximum_speed", vel_max)
+        .maximum("maximum_speed", 10.0)
+        .metric("recirculation_sign_changes", sign_changes as f64)
+        .minimum("recirculation_sign_changes", 1.0);
+    println!(
+        "QA_RESULT: {}",
+        record.to_json_line().expect("valid smoke record")
+    );
     println!();
 }
 
@@ -197,7 +225,7 @@ fn test_ns_cavity_obstacle() {
     println!("=== Lid-Driven Cavity with Square Obstacle ===\n");
     run_cavity_obstacle(100.0, 16);
     run_cavity_obstacle(400.0, 20);
-    println!("=== Benchmark Complete ===");
+    println!("=== Native Smoke Checks Complete ===");
 }
 
 fn main() {

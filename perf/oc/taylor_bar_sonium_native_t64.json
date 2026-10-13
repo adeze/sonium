@@ -16,11 +16,11 @@
       "side": "sonium",
       "flavor": "native",
       "threads": 64,
-      "wall_s": 0.003085735,
+      "wall_s": 0.002912698,
       "cycles": 21,
       "dof": 675,
-      "ns_per_dof_cycle": 217.68853615520283,
-      "peak_rss_bytes": 82837504,
+      "ns_per_dof_cycle": 205.48134038800706,
+      "peak_rss_bytes": 4435968,
       "correctness_passed": true
     }
   ]

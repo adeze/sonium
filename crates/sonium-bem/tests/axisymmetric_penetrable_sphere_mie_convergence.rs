@@ -1,5 +1,7 @@
 //! Independent Mie reference for the reduced axisymmetric penetrable path.
 
+// Rust guideline compliant 2026-02-21
+
 use num_complex::Complex64;
 use sonium_bem::{AxisymmetricPenetrableSphere, PhysicsParams};
 use sonium_wave::analytical::FluidSphereTransmission3d;
@@ -16,6 +18,23 @@ const EXTERIOR_WAVE_NUMBER: f64 = EXTERIOR_KA / RADIUS;
 const FREQUENCY: f64 = EXTERIOR_WAVE_NUMBER * EXTERIOR_SPEED / (2.0 * PI);
 const INTERIOR_WAVE_NUMBER: f64 = 2.0 * PI * FREQUENCY / INTERIOR_SPEED;
 
+fn exterior_samples() -> Vec<[f64; 2]> {
+    let mut points = vec![[0.0, 1.0], [0.24, 0.97], [0.4, 0.85], [0.7, 0.7]];
+    // Include the near exterior at 1.05 radii, rather than only the far field.
+    for theta in [0.3_f64, 0.9, 1.6, 2.4] {
+        points.push([1.05 * RADIUS * theta.sin(), 1.05 * RADIUS * theta.cos()]);
+    }
+    points
+}
+
+fn interior_samples() -> Vec<[f64; 2]> {
+    let mut points = vec![[0.0, 0.0], [0.04, 0.08], [0.1, 0.05], [0.12, -0.04]];
+    for theta in [0.0_f64, 0.55, 1.3, 2.4] {
+        points.push([0.95 * RADIUS * theta.sin(), 0.95 * RADIUS * theta.cos()]);
+    }
+    points
+}
+
 fn far_field_angles() -> Vec<f64> {
     (0..24)
         .map(|index| PI * (index as f64 + 0.5) / 24.0)
@@ -30,6 +49,8 @@ pub struct AxisymmetricPenetrableMetrics {
     pub fine_interior_error: f64,
     pub coarse_far_field_error: f64,
     pub fine_far_field_error: f64,
+    /// Maximum reference-field change when Mie truncation increases from 32 to 48.
+    pub reference_change: f64,
     pub fine_residual: f64,
     pub forward_solution_error: f64,
     pub pressure_continuity_error: f64,
@@ -106,8 +127,8 @@ fn solve_level(
     )
     .unwrap();
     let solution = problem.solve(Complex64::new(1.0, 0.0), 1.0e-10).unwrap();
-    let exterior_points: [[f64; 2]; 4] = [[0.0, 1.0], [0.24, 0.97], [0.4, 0.85], [0.7, 0.7]];
-    let interior_points: [[f64; 2]; 4] = [[0.0, 0.0], [0.04, 0.08], [0.1, 0.05], [0.12, -0.04]];
+    let exterior_points = exterior_samples();
+    let interior_points = interior_samples();
     let exterior_values = solution
         .evaluate_exterior_total_pressure(&exterior_points)
         .unwrap();
@@ -139,8 +160,8 @@ pub fn run_axisymmetric_penetrable_sphere_mie_convergence() -> AxisymmetricPenet
         32,
     )
     .unwrap();
-    let exterior_points: [[f64; 2]; 4] = [[0.0, 1.0], [0.24, 0.97], [0.4, 0.85], [0.7, 0.7]];
-    let interior_points: [[f64; 2]; 4] = [[0.0, 0.0], [0.04, 0.08], [0.1, 0.05], [0.12, -0.04]];
+    let exterior_points = exterior_samples();
+    let interior_points = interior_samples();
     let exterior_reference = exterior_points
         .iter()
         .map(|&[radial, axial]| {
@@ -159,6 +180,42 @@ pub fn run_axisymmetric_penetrable_sphere_mie_convergence() -> AxisymmetricPenet
         .iter()
         .map(|&theta| mie.exterior_pressure(1.0, theta).unwrap())
         .collect::<Vec<_>>();
+    let resolved_mie = FluidSphereTransmission3d::try_new(
+        RADIUS,
+        EXTERIOR_WAVE_NUMBER,
+        INTERIOR_WAVE_NUMBER,
+        EXTERIOR_DENSITY,
+        INTERIOR_DENSITY,
+        48,
+    )
+    .unwrap();
+    let resolved_exterior = exterior_points
+        .iter()
+        .map(|&[r, z]| {
+            resolved_mie
+                .exterior_pressure(r.hypot(z), r.atan2(z))
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let resolved_interior = interior_points
+        .iter()
+        .map(|&[r, z]| {
+            resolved_mie
+                .interior_pressure(r.hypot(z), r.atan2(z))
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    let resolved_far = far_field_angles()
+        .iter()
+        .map(|&theta| resolved_mie.exterior_pressure(1.0, theta).unwrap())
+        .collect::<Vec<_>>();
+    let reference_change = field_error(&exterior_reference, &resolved_exterior)
+        .max(field_error(&interior_reference, &resolved_interior))
+        .max(field_error(&far_field_reference, &resolved_far));
+    assert!(
+        reference_change.is_finite() && reference_change <= 1e-10,
+        "axisymmetric Mie reference did not converge: {reference_change:.3e}"
+    );
     let (coarse_exterior_error, coarse_interior_error, coarse_far_field_error, _) = solve_level(
         8,
         &exterior_reference,
@@ -279,7 +336,11 @@ pub fn run_axisymmetric_penetrable_sphere_mie_convergence() -> AxisymmetricPenet
             .solve_adjoint(&adjoint_rhs[..dimension - 1], 1.0e-10)
             .is_err()
     );
+    println!(
+        "Axisymmetric near/interior Mie: exterior {coarse_exterior_error:.3e} -> {fine_exterior_error:.3e}; interior {coarse_interior_error:.3e} -> {fine_interior_error:.3e}; reference change {reference_change:.3e}"
+    );
     AxisymmetricPenetrableMetrics {
+        reference_change,
         coarse_exterior_error,
         fine_exterior_error,
         coarse_interior_error,
@@ -303,11 +364,11 @@ pub fn run_axisymmetric_penetrable_sphere_mie_convergence() -> AxisymmetricPenet
 #[test]
 fn axisymmetric_penetrable_sphere_converges_to_mie() {
     let metrics = run_axisymmetric_penetrable_sphere_mie_convergence();
-    assert!(metrics.fine_exterior_error < 0.2);
-    assert!(metrics.fine_interior_error < 0.2);
+    assert!(metrics.fine_exterior_error < 1e-4);
+    assert!(metrics.fine_interior_error < 1e-4);
     assert!(metrics.fine_far_field_error < metrics.coarse_far_field_error);
     assert!(metrics.fine_far_field_error / metrics.coarse_far_field_error <= 0.01);
-    assert!(metrics.fine_far_field_error < 0.2);
+    assert!(metrics.fine_far_field_error < 1e-5);
     assert!(metrics.pressure_continuity_error <= 1.0e-10);
     assert!(metrics.velocity_continuity_error <= 1.0e-10);
     assert!(metrics.adjoint_field_norm.is_finite());

@@ -3,6 +3,8 @@
 //! Resident GPU sweep execution now lives in [`super::gpu`]; this module keeps
 //! only frequency-independent constants and the absorption back-fit helper.
 
+// Rust guideline compliant 2026-02-21
+
 use num_complex::Complex64;
 use sonium_bem::materials::{AmbientMedium, PorousLayer, PorousModel};
 #[cfg(test)]
@@ -103,16 +105,10 @@ pub fn complex_wavenumber(k_real: f64, frequency_hz: f64, modal_damping_ratio: f
     Complex64::new(k_real, atmos.max(modal_floor))
 }
 
-/// Target elements per shortest wavelength.
+/// Default target elements per shortest wavelength.
 ///
-/// 3 EPW (the previous default) leaves ≈ 30 % amplitude error and ≈ 10 % modal
-/// frequency drift at the band edge for P1 tetrahedra — well below the
-/// pollution-error guidance of the FEM-Helmholtz literature. 6 EPW brings
-/// the amplitude error under ~10 % and is the calibrated default. The cost
-/// is roughly 8× the node count of the old 3-EPW default, which is the price
-/// of getting modal amplitudes right; users who want the old performance
-/// envelope can set `FEM_ELEMENTS_PER_WAVELENGTH` lower in scenario configs
-/// or rebuild with a custom value here.
+/// [`super::FemMeshConfig::elements_per_wavelength`] overrides this default
+/// for resolved accuracy studies. Far-field grading is applied afterward.
 pub const ELEMENTS_PER_WAVELENGTH: f64 = 6.0;
 
 /// GMRES restart window. This keeps orthogonalization cost bounded while still

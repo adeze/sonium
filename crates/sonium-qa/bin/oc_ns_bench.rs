@@ -148,6 +148,11 @@ enum GpuPrecondOpt {
     Chebyshev,
     /// Block Jacobi-Schur with AMG on the pressure block (strongest).
     SchurAmg,
+    /// Block Jacobi-Schur with a polynomial pressure block (the only
+    /// Schur variant available to the mixed-precision inner Krylov).
+    Schur,
+    /// Block Jacobi-Schur with a Chebyshev pressure block.
+    SchurCheb,
 }
 
 #[derive(Parser, Debug)]
@@ -239,6 +244,14 @@ fn gpu_precond_kinds(
         GpuPrecondOpt::SchurAmg => (
             BackendPreconditionerKind::JacobiSchur,
             BackendPressureSchurPreconditionerKind::Amg,
+        ),
+        GpuPrecondOpt::Schur => (
+            BackendPreconditionerKind::JacobiSchur,
+            BackendPressureSchurPreconditionerKind::Polynomial,
+        ),
+        GpuPrecondOpt::SchurCheb => (
+            BackendPreconditionerKind::JacobiSchur,
+            BackendPressureSchurPreconditionerKind::Chebyshev,
         ),
     }
 }

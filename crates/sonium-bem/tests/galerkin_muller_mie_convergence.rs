@@ -3,9 +3,11 @@
 //!
 //! The operator/solve contract is useful on its own, but a transmission
 //! implementation also needs an independent field reference.  This fixture
-//! solves the same lossless fluid sphere on two conforming icosphere levels
+//! solves the same lossless fluid sphere on three conforming icosphere levels
 //! and compares checked exterior pressure samples with the independent Mie
 //! series from `sonium-wave`.
+
+// Rust guideline compliant 2026-02-21
 
 use num_complex::Complex64;
 use sonium_bem::core::assembly::assemble_galerkin_muller_transmission_with_global_dofs;
@@ -30,6 +32,12 @@ const SOLVE_TOLERANCE: f64 = 1.0e-8;
 pub struct GalerkinMullerMieMetrics {
     pub coarse_l2_error: f64,
     pub coarse_pointwise_error: f64,
+    /// Complex exterior-pressure L2 error on the middle refinement level.
+    pub medium_l2_error: f64,
+    /// Maximum exterior-pressure error on the middle refinement level.
+    pub medium_pointwise_error: f64,
+    /// Independently recomputed middle-level relative algebraic residual.
+    pub medium_residual: f64,
     pub fine_l2_error: f64,
     pub fine_pointwise_error: f64,
     pub coarse_residual: f64,
@@ -207,13 +215,21 @@ pub fn run_galerkin_muller_mie_convergence() -> GalerkinMullerMieMetrics {
         })
         .collect::<Vec<_>>();
     let coarse = solve_level(0, &exterior, &interior);
-    let fine = solve_level(1, &exterior, &interior);
+    let medium = solve_level(1, &exterior, &interior);
+    let fine = solve_level(2, &exterior, &interior);
     let (coarse_l2_error, coarse_pointwise_error) = field_errors(&coarse.field, &reference);
+    let (medium_l2_error, medium_pointwise_error) = field_errors(&medium.field, &reference);
     let (fine_l2_error, fine_pointwise_error) = field_errors(&fine.field, &reference);
+    println!(
+        "Galerkin Mie: L2 {coarse_l2_error:.3e} -> {medium_l2_error:.3e} -> {fine_l2_error:.3e}; maximum {coarse_pointwise_error:.3e} -> {medium_pointwise_error:.3e} -> {fine_pointwise_error:.3e}"
+    );
 
     GalerkinMullerMieMetrics {
         coarse_l2_error,
         coarse_pointwise_error,
+        medium_l2_error,
+        medium_pointwise_error,
+        medium_residual: medium.residual,
         fine_l2_error,
         fine_pointwise_error,
         coarse_residual: coarse.residual,
@@ -242,13 +258,17 @@ fn galerkin_muller_converges_to_independent_mie_field() {
     assert!(metrics.fine_dofs > metrics.coarse_dofs);
     assert!(metrics.maximum_fine_field_magnitude > 0.0);
     assert!(
-        metrics.fine_l2_error <= metrics.coarse_l2_error * 1.05,
+        metrics.medium_l2_error <= metrics.coarse_l2_error * 0.5
+            && metrics.fine_l2_error <= metrics.medium_l2_error * 0.5
+            && metrics.fine_l2_error <= 0.001,
         "Galerkin Mie L2 error did not refine: coarse={:.3e}, fine={:.3e}",
         metrics.coarse_l2_error,
         metrics.fine_l2_error
     );
     assert!(
-        metrics.fine_pointwise_error <= metrics.coarse_pointwise_error * 1.10,
+        metrics.medium_pointwise_error <= metrics.coarse_pointwise_error * 0.5
+            && metrics.fine_pointwise_error <= metrics.medium_pointwise_error * 0.5
+            && metrics.fine_pointwise_error <= 0.002,
         "Galerkin Mie pointwise error did not refine: coarse={:.3e}, fine={:.3e}",
         metrics.coarse_pointwise_error,
         metrics.fine_pointwise_error

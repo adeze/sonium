@@ -1,19 +1,25 @@
 //! CPU QA for the production PC-fan CFD mesh-convergence admission path.
 
-use sonium_qa::QaResult;
+// Rust guideline compliant 2026-02-21
+
+use sonium_qa::{QaResult, QaStatus};
 use sonium_sim_pcfan::{
-    PcFanCfdConfig, PcFanCfdMeshConvergenceConfig, PcFanConfig, PcFanFlowModel,
+    PcFanCfdBackend, PcFanCfdConfig, PcFanCfdMeshConvergenceConfig, PcFanConfig, PcFanFlowModel,
     PcFanMeshResolution, solve_pc_fan_cfd_mesh_convergence,
 };
 use std::time::Instant;
 
 const CASE_ID: &str = "pcfan.mesh-convergence-reference.v1";
-const RELATIVE_TOLERANCE: f64 = 0.70;
+// Five percent adjacent response changes replace the former 70% admission.
+const RELATIVE_TOLERANCE: f64 = 0.05;
+const SOLVE_TOLERANCE: f64 = 1.0e-7;
 const METADATA_TOLERANCE: f64 = 2.0e-12;
 
 struct Metrics {
     levels: f64,
     converged_status: f64,
+    all_levels_converged_status: f64,
+    maximum_update_residual: f64,
     final_airflow_cfm: f64,
     final_pressure_abs_pa: f64,
     final_airflow_relative_change: f64,
@@ -35,13 +41,15 @@ fn run() -> Result<Metrics, String> {
         },
         cfd: PcFanCfdConfig {
             flow_model: PcFanFlowModel::IncompressibleCfd,
-            cells_x: 2,
-            cells_y: 2,
-            cells_z: 2,
-            max_picard_iterations: 40,
-            nonlinear_tolerance: 5.0e-2,
-            linear_solver_max_iterations: 300,
-            linear_solver_tolerance: 1.0e-4,
+            backend: PcFanCfdBackend::Cpu,
+            use_direct_solver: true,
+            cells_x: 4,
+            cells_y: 4,
+            cells_z: 4,
+            max_picard_iterations: 2000,
+            nonlinear_tolerance: SOLVE_TOLERANCE,
+            linear_solver_max_iterations: 2000,
+            linear_solver_tolerance: 1.0e-10,
             ..PcFanCfdConfig::default()
         },
         ..PcFanConfig::default_120mm()
@@ -51,11 +59,11 @@ fn run() -> Result<Metrics, String> {
         &config,
         &design,
         PcFanCfdMeshConvergenceConfig {
-            start_cells: 2,
-            max_cells: 4,
+            start_cells: 4,
+            max_cells: 8,
             relative_tolerance: RELATIVE_TOLERANCE,
             min_levels: 3,
-            max_final_residual: 1.0e-3,
+            max_final_residual: SOLVE_TOLERANCE,
         },
     );
 
@@ -64,6 +72,19 @@ fn run() -> Result<Metrics, String> {
             "mesh-convergence returned {} levels, expected at least 3",
             convergence.levels.len()
         ));
+    }
+
+    // Include the first level: pair-wise checks alone never inspect its status.
+    let mut maximum_update_residual: f64 = 0.0;
+    for level in &convergence.levels {
+        require_solve_convergence(level.solution.converged, level.solution.residual)?;
+        maximum_update_residual = maximum_update_residual.max(level.solution.residual);
+    }
+    if !convergence.converged || !convergence.all_levels_converged_and_finite {
+        return Err(
+            "native mesh-convergence report did not admit all solves and final response changes"
+                .into(),
+        );
     }
 
     let mut max_metadata_relative_error: f64 = 0.0;
@@ -131,9 +152,8 @@ fn run() -> Result<Metrics, String> {
     let final_pressure_relative_change = last
         .pressure_relative_change
         .ok_or_else(|| "final mesh level lacks pressure change metadata".to_string())?;
-    if convergence.converged
-        && (final_airflow_relative_change > RELATIVE_TOLERANCE
-            || final_pressure_relative_change > RELATIVE_TOLERANCE)
+    if final_airflow_relative_change > RELATIVE_TOLERANCE
+        || final_pressure_relative_change > RELATIVE_TOLERANCE
     {
         return Err(format!(
             "final mesh changes exceed admission tolerance: airflow={}, pressure={}",
@@ -155,6 +175,12 @@ fn run() -> Result<Metrics, String> {
     Ok(Metrics {
         levels: convergence.levels.len() as f64,
         converged_status: if convergence.converged { 1.0 } else { 0.0 },
+        all_levels_converged_status: if convergence.all_levels_converged_and_finite {
+            1.0
+        } else {
+            0.0
+        },
+        maximum_update_residual,
         final_airflow_cfm: last.solution.airflow_cfm,
         final_pressure_abs_pa: last.solution.pressure_drop_pa.abs(),
         final_airflow_relative_change,
@@ -167,7 +193,7 @@ fn main() {
     let started = Instant::now();
     match run() {
         Ok(metrics) => {
-            let record = QaResult::passed(CASE_ID)
+            let mut record = QaResult::passed(CASE_ID)
                 .requested_backend("cpu")
                 .actual_backend("cpu")
                 .metric("levels", metrics.levels)
@@ -187,26 +213,45 @@ fn main() {
                     metrics.max_metadata_relative_error,
                 )
                 .minimum("levels", 3.0)
-                .minimum("converged_status", 0.0)
+                .metric(
+                    "all_levels_converged_status",
+                    metrics.all_levels_converged_status,
+                )
+                .minimum("all_levels_converged_status", 1.0)
+                .metric("maximum_update_residual", metrics.maximum_update_residual)
+                .maximum("maximum_update_residual", SOLVE_TOLERANCE)
+                .minimum("converged_status", 1.0)
                 .maximum("converged_status", 1.0)
-                .minimum("final_airflow_cfm", 0.0)
-                .minimum("final_pressure_abs_pa", 0.0)
+                .minimum("final_airflow_cfm", f64::MIN_POSITIVE)
+                .minimum("final_pressure_abs_pa", f64::MIN_POSITIVE)
                 .minimum("final_airflow_relative_change", 0.0)
                 .minimum("final_pressure_relative_change", 0.0)
                 .maximum("final_airflow_relative_change", RELATIVE_TOLERANCE)
                 .maximum("final_pressure_relative_change", RELATIVE_TOLERANCE)
                 .maximum("max_metadata_relative_error", METADATA_TOLERANCE)
                 .reference_checksum("analytic/invariant:pcfan-mesh-convergence-v1")
-                .input_checksum("pcfan-120mm:incompressible-cfd:cells=2..4:cpu")
+                .input_checksum("pcfan-120mm:incompressible-cfd:cells=4..8:cpu")
                 .formulation(
                     "production immersed-solid CFD mesh-convergence metadata and admission",
                 )
-                .seed("pcfan-mesh-convergence-v1:2,3,4:relative-tolerance=0.70")
+                .seed("pcfan-mesh-convergence-v1:4..8:relative-tolerance=0.05")
                 .elapsed_ms(started.elapsed().as_millis().try_into().unwrap_or(u64::MAX));
-            if let Ok(json) = record.to_json_line() {
-                println!("QA_RESULT: {json}");
+            if let Err(error) = record.release_eligible() {
+                record.status = QaStatus::Failed;
+                record.message = Some(error);
             }
-            println!("SUCCESS");
+            println!(
+                "QA_RESULT: {}",
+                record
+                    .to_json_line()
+                    .expect("serialize PC-fan mesh-convergence result")
+            );
+            if record.status == QaStatus::Passed {
+                println!("SUCCESS");
+            } else {
+                println!("FAILED");
+                std::process::exit(1);
+            }
         }
         Err(error) => {
             if let Ok(json) = QaResult::failed(CASE_ID, error.clone())
@@ -221,5 +266,34 @@ fn main() {
             println!("FAILED");
             std::process::exit(1);
         }
+    }
+}
+
+// A small self-reported update cannot admit a failed nonlinear solve.
+fn require_solve_convergence(converged: bool, residual: f64) -> Result<(), String> {
+    if !converged || !residual.is_finite() || residual < 0.0 || residual > SOLVE_TOLERANCE {
+        return Err(format!(
+            "mesh level failed nonlinear admission: converged={converged}, update residual={residual:.6e}"
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SOLVE_TOLERANCE, require_solve_convergence};
+
+    #[test]
+    fn small_update_cannot_hide_an_unconverged_mesh_level() {
+        assert!(require_solve_convergence(false, 0.0).is_err());
+        assert!(require_solve_convergence(false, SOLVE_TOLERANCE / 2.0).is_err());
+    }
+
+    #[test]
+    fn convergence_flag_cannot_hide_an_invalid_or_large_update() {
+        for residual in [f64::NAN, f64::INFINITY, -1.0, 2.0 * SOLVE_TOLERANCE] {
+            assert!(require_solve_convergence(true, residual).is_err());
+        }
+        assert!(require_solve_convergence(true, SOLVE_TOLERANCE / 2.0).is_ok());
     }
 }

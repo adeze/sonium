@@ -101,11 +101,23 @@ cannot regress) and sonium with 1.85x margin for development headroom.
 | 16/32   | 10.79  | 57.2   | 5.3x    |
 
 Both sides saturate: sonium self-speedup is 1.44x at 16 threads
-(assembly scales 2.45x; the GMRES+ILU solve is serial-triangular-solve
-bound), the engine 3.95x at 32 threads. Absolute wall time favors
-sonium 5x or more at every thread count. A level-scheduled parallel
-triangular solve is the principled follow-up for sonium's
-self-scaling.
+(assembly scales 2.45x; the remaining GMRES work is dominated by
+cache-resident Krylov kernels), the engine 3.95x at 32 threads.
+Absolute wall time favors sonium 5x or more at every thread count.
+
+A level-scheduled wavefront triangular apply now exists in
+`IluPreconditioner` (bit-identical results at any thread count,
+covered by tests), but measurements on this chiplet x86 say it must
+stay gated off here: at 12k/50k/120k rows it loses to the serial
+kernel at every thread count, because freshly written dependency
+values cross die boundaries at full coherence latency while the
+serial kernel stays cache-resident. The gate
+(`LEVEL_WAVEFRONT_MIN_N`/`_MIN_AVG_WIDTH` in `ilu.rs`) admits only
+very large, wide-schedule systems; the batched orthogonalization
+project shows the same effect (its n>=16384 parallel threshold is
+load-bearing at cavity size). On uniform-latency architectures
+(ARM servers) the balance may flip; the implementation is
+architecture-portable pure Rust + rayon either way.
 
 ## GPU (RTX PRO 6000 Blackwell, cavity + Taylor-Green)
 
@@ -114,10 +126,17 @@ self-scaling.
 | cavity n64 | 15.6    | 11.64   | 1.34x   | all-GPU, mixed FGMRES-IR + poly |
 | cavity n128| 354 (stalled, gate failed) | 38.1 | 9.3x | all-GPU, error 0.0064 (mesh-convergent) |
 | TG n128    | 23.07   | 14.40   | 1.60x   | all-CUDA, F64 + Schur/AMG |
+| TG n128    | 23.07   | 11.3-11.8 | 1.95x | all-CUDA, mixed FGMRES-IR + f32 Schur/Chebyshev |
 
 Every GPU row is audited: the cavity arm checks the sticky resolved
 backend per repeat, the Taylor-Green arm per BDF step. Any CPU
 fallback marks the row `correct=false` (never silently relabeled).
-Known limits: poly/Chebyshev GPU preconditioners cannot build on
-saddle-point zero diagonals and fail closed to CPU (graceful, no
-panic); mixed-precision Schur is f64-only and falls back likewise.
+Known limits: monolithic poly/Chebyshev GPU preconditioners cannot
+build on saddle-point zero diagonals (a mathematical property, not a
+bug) and fail closed to CPU (graceful, no panic). The saddle-point
+preconditioner itself is precision-generic (`SaddlePointJacobiSchurBackend<T>`;
+f32 action matches f64 to f32 accuracy in tests, `--backend-precond
+schur|schur-cheb`): a polynomial pressure block is too weak for TG
+(stalls, honest fallback), Chebyshev pressure converges, and AMG
+pressure remains f64-only. The implementation is backend-generic, so
+CUDA and Metal share the same code path.

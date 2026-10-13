@@ -3,6 +3,8 @@
 //! Usage:
 //!   cargo run --bin generate-roomeq-data --release -- --output-dir data_tests/roomeq/generated
 
+// Rust guideline compliant 2026-02-21
+
 use anyhow::Result;
 use clap::Parser;
 use num_complex::Complex64;
@@ -2341,6 +2343,7 @@ fn main() -> Result<()> {
         anyhow::bail!("--modal-damping-ratio must be a finite non-negative value");
     }
     let fem_mesh = fem_runner::FemMeshConfig {
+        elements_per_wavelength: fem_runner::FemMeshConfig::default().elements_per_wavelength,
         grading_factor: args.mesh_grading,
         fine_radius: args.mesh_fine_radius,
         preconditioner: args.preconditioner,

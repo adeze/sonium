@@ -324,13 +324,41 @@ fn has_si_units(starter_deck_text: &str) -> bool {
         .any(|line| line.split_whitespace().collect::<Vec<_>>() == ["kg", "m", "s"])
 }
 
-/// Peak RSS of this process in bytes via `getrusage`.
+/// Peak RSS of this process in bytes.
+///
+/// On Linux this reads the `VmHWM` high-water mark from
+/// `/proc/self/status`: it is per address space, starts at `exec`,
+/// and so measures this binary alone. `getrusage(RUSAGE_SELF)` is
+/// not used there because its `ru_maxrss` survives `fork` + `exec`
+/// and reports the launcher's peak instead (about 80 MB inherited
+/// from `cargo run`, against a true footprint of a few MB). Other
+/// platforms fall back to `getrusage`.
 fn self_peak_rss_bytes() -> u64 {
+    #[cfg(target_os = "linux")]
+    if let Some(bytes) = linux_self_peak_rss_bytes() {
+        return bytes;
+    }
     let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
     if unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) } != 0 {
         return 0;
     }
     maxrss_to_bytes(usage.ru_maxrss)
+}
+
+/// Peak RSS of this process from `/proc/self/status`, when readable.
+#[cfg(target_os = "linux")]
+fn linux_self_peak_rss_bytes() -> Option<u64> {
+    parse_vmhwm_bytes(&std::fs::read_to_string("/proc/self/status").ok()?)
+}
+
+/// Parses the `VmHWM` value (kibibytes) out of status text, in bytes.
+#[cfg(target_os = "linux")]
+fn parse_vmhwm_bytes(status: &str) -> Option<u64> {
+    let rest = status
+        .lines()
+        .find_map(|line| line.strip_prefix("VmHWM:"))?;
+    let kib: u64 = rest.trim().trim_end_matches("kB").trim().parse().ok()?;
+    Some(kib.saturating_mul(1024))
 }
 
 /// Converts `ru_maxrss` to bytes (kilobytes on Linux, bytes on macOS).
@@ -2875,7 +2903,15 @@ fn sonium_repeat_plastic(
                 max_porosity: f64::INFINITY,
                 max_tabular_damage: f64::INFINITY,
             };
-            repeat_plastic_core(deck, model, probes, material, states, criterion)
+            repeat_plastic_core(
+                deck,
+                model,
+                probes,
+                material,
+                states,
+                criterion,
+                NativeRunOptions::default(),
+            )
         }
         NativeMaterial::Law36 { material } => {
             let states: Vec<HexExplicitState<Law36State>> = model
@@ -2892,10 +2928,196 @@ fn sonium_repeat_plastic(
                 max_porosity: f64::INFINITY,
                 max_tabular_damage: f64::INFINITY,
             };
-            repeat_plastic_core(deck, model, probes, material, states, criterion)
+            repeat_plastic_core(
+                deck,
+                model,
+                probes,
+                material,
+                states,
+                criterion,
+                NativeRunOptions::default(),
+            )
         }
         NativeMaterial::Law1 => Err("plastic repeat called on a LAW1 model".to_string()),
     }
+}
+
+/// Complete native plastic observations, independent of benchmark verdicts.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct NativePlasticityHistory {
+    pub probe_channels: Vec<String>,
+    pub times_s: Vec<f64>,
+    pub probe_values: Vec<Vec<f64>>,
+    pub element_ids: Vec<i64>,
+    pub final_element_plastic_strain: Vec<f64>,
+    pub final_time_s: f64,
+    pub steps: u64,
+    pub kinetic_energy_j: f64,
+    pub internal_energy_j: f64,
+    pub external_work_j: f64,
+    pub relative_energy_drift: f64,
+    pub eroded_elements: usize,
+    pub starter_sha256: String,
+    pub engine_deck_sha256: String,
+    /// Original deck node ids for the measured final profile.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub node_ids: Vec<i64>,
+    /// Final physical coordinates, in the same order as `node_ids`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub final_positions_m: Vec<[f64; 3]>,
+}
+
+#[derive(Debug)]
+struct NativeRunOptions<'a> {
+    timestep_scale: f64,
+    capture: Option<&'a mut NativePlasticityHistory>,
+}
+
+impl Default for NativeRunOptions<'_> {
+    fn default() -> Self {
+        Self {
+            timestep_scale: 1.0,
+            capture: None,
+        }
+    }
+}
+
+/// Run the original full plastic cylinder and return measured native histories.
+///
+/// Consumes the same checked-in C3 decks and native constitutive/integration
+/// code as the benchmark. `timestep_scale` in `(0,1]` refines the bulk CFL bound.
+/// It returns observations without promoting the benchmark verdict to QA parity.
+///
+/// # Errors
+/// Returns an error for invalid timestep scale, unavailable/malformed original
+/// decks, incompatible material, failed native integration or incomplete traces.
+pub fn original_thick_cylinder_history(
+    timestep_scale: f64,
+) -> Result<NativePlasticityHistory, String> {
+    use sha2::{Digest, Sha256};
+    if !timestep_scale.is_finite() || timestep_scale <= 0.0 || timestep_scale > 1.0 {
+        return Err("native CFL timestep scale must be in (0,1]".into());
+    }
+    let decks = resolve_c3_decks("plasticity_thick_cylinder")?;
+    let model = parse_native_model(&decks)?;
+    let probes = read_probe_file(&decks.probes)?;
+    let NativeMaterial::Law36 { material } = &model.material else {
+        return Err("original thick-cylinder LAW36 material required".into());
+    };
+    let states = model
+        .bricks
+        .iter()
+        .map(|_| HexExplicitState::new(Law36State::new()))
+        .collect();
+    let criterion = ErosionCriterion {
+        max_equiv_plastic_strain: f64::INFINITY,
+        max_damage: 1.0,
+        max_porosity: f64::INFINITY,
+        max_tabular_damage: f64::INFINITY,
+    };
+    let mut history = NativePlasticityHistory::default();
+    repeat_plastic_core(
+        "plasticity_thick_cylinder",
+        &model,
+        &probes,
+        material,
+        states,
+        criterion,
+        NativeRunOptions {
+            timestep_scale,
+            capture: Some(&mut history),
+        },
+    )?;
+    // The original initial state is unstressed and at rest. Keep it explicit
+    // in the exported physical trace; benchmark sampling remains unchanged.
+    history.times_s.insert(0, 0.0);
+    for values in &mut history.probe_values {
+        values.insert(0, 0.0);
+    }
+    if history.steps == 0
+        || history.times_s.len() < 2
+        || history.probe_values.len() != probes.len()
+        || (history.final_time_s - model.stop).abs() > 1e-12
+        || history
+            .probe_values
+            .iter()
+            .any(|v| v.len() != history.times_s.len() || v.iter().any(|x| !x.is_finite()))
+    {
+        return Err("incomplete finite original native cylinder history".into());
+    }
+    history.starter_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.starter).map_err(|e| e.to_string())?)
+    );
+    history.engine_deck_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.engine).map_err(|e| e.to_string())?)
+    );
+    Ok(history)
+}
+
+/// Measure a complete copper Taylor impact from an explicit deck directory.
+///
+/// The directory must contain `taylor_bar_full_plastic_0000.rad`, its engine
+/// deck, and `probes.json`. Uses the actual native LAW2 integration path and
+/// exports observations; benchmark probe verdicts do not establish QA parity.
+///
+/// # Errors
+/// Rejects invalid CFL scale, nonplastic material, unresolved probe channels,
+/// integration failures, nonfinite results, and incomplete histories.
+pub fn taylor_plastic_history(
+    directory: &Path,
+    timestep_scale: f64,
+) -> Result<NativePlasticityHistory, String> {
+    use sha2::{Digest, Sha256};
+    if !timestep_scale.is_finite() || timestep_scale <= 0.0 || timestep_scale > 1.0 {
+        return Err("native CFL timestep scale must be in (0,1]".into());
+    }
+    let decks = C3Decks {
+        starter: directory.join("taylor_bar_full_plastic_0000.rad"),
+        engine: directory.join("taylor_bar_full_plastic_0001.rad"),
+        probes: directory.join("probes.json"),
+    };
+    let model = parse_native_model(&decks)?;
+    let probes = read_probe_file(&decks.probes)?;
+    for probe in &probes {
+        resolve_probe_channel(&probe.channel, &model)?;
+    }
+    let NativeMaterial::Law2 { material, t0, fail_ep } = &model.material else {
+        return Err("Taylor impact requires a LAW2 plastic material".into());
+    };
+    let initial = model.bricks.iter()
+        .map(|_| HexExplicitState::new(Law2State::new(*t0))).collect();
+    let mut history = NativePlasticityHistory::default();
+    repeat_plastic_core(
+        "taylor_bar_full_plastic", &model, &probes, material, initial,
+        ErosionCriterion {
+            max_equiv_plastic_strain: *fail_ep,
+            max_damage: 1.0,
+            max_porosity: f64::INFINITY,
+            max_tabular_damage: f64::INFINITY,
+        },
+        NativeRunOptions { timestep_scale, capture: Some(&mut history) },
+    )?;
+    history.times_s.insert(0, 0.0);
+    for values in &mut history.probe_values { values.insert(0, 0.0); }
+    if history.steps == 0 || history.times_s.len() < 2
+        || history.probe_values.len() != probes.len()
+        || (history.final_time_s - model.stop).abs() > 1e-12
+        || history.probe_values.iter().any(|v| v.len() != history.times_s.len()
+            || v.iter().any(|x| !x.is_finite()))
+        || history.final_positions_m.len() != model.coords.len()
+        || history.final_positions_m.iter().flatten().any(|x| !x.is_finite())
+        || history.final_element_plastic_strain.iter().any(|x| !x.is_finite())
+        || !history.relative_energy_drift.is_finite()
+    {
+        return Err("incomplete finite native Taylor impact history".into());
+    }
+    history.starter_sha256 = format!("{:x}", Sha256::digest(
+        std::fs::read(&decks.starter).map_err(|e| e.to_string())?));
+    history.engine_deck_sha256 = format!("{:x}", Sha256::digest(
+        std::fs::read(&decks.engine).map_err(|e| e.to_string())?));
+    Ok(history)
 }
 
 /// Generic plastic repeat: fixed-step CFL loop over
@@ -2910,6 +3132,7 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     material: &M,
     initial: Vec<HexExplicitState<M::State>>,
     criterion: ErosionCriterion,
+    options: NativeRunOptions<'_>,
 ) -> Result<RepeatSample, String> {
     let mesh = HexMesh::new(model.coords.clone(), model.bricks.clone());
     let num_nodes = mesh.num_nodes();
@@ -2950,6 +3173,7 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
         let penalty = suggested_penalty(model.youngs, min_char, PLASTIC_PENALTY_FACTOR);
         0.1 * 2.0 * (min_mass / penalty).sqrt()
     };
+    let dt_max = dt_max * options.timestep_scale;
     if !dt_max.is_finite() || dt_max <= 0.0 {
         return Err("native dt bound is not positive".to_string());
     }
@@ -3122,7 +3346,7 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     // probes as trailing means, so the native arm records per-step
     // histories for those targets; every other deck keeps final-state
     // sampling and skips the recording.
-    let record_histories = deck == "plasticity_thick_cylinder";
+    let record_histories = deck == "plasticity_thick_cylinder" || options.capture.is_some();
     let targets: Vec<Option<ProbeTarget>> = if record_histories {
         probes
             .iter()
@@ -3204,6 +3428,9 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
                     Some(ProbeTarget::ElemStress { comp, elem }) => {
                         M::centroid_stress(&snapshots[elem].centroid)[comp]
                     }
+                    Some(ProbeTarget::ElemPlas { elem }) => {
+                        material.erosion_features(&snapshots[elem].centroid).0
+                    }
                     _ => f64::NAN,
                 };
                 probe_values[slot].push(value);
@@ -3228,7 +3455,7 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     // Hold start transcribed from the leg deck (raised cosine unloads
     // to zero at twice the load time, then holds to stop).
     const HOLD_START_S: f64 = 0.002;
-    let sample_times = record_histories.then(thick_cylinder_sample_times);
+    let sample_times = (deck == "plasticity_thick_cylinder").then(thick_cylinder_sample_times);
     let mut failures = Vec::new();
     for (index, probe) in probes.iter().enumerate() {
         let target = match resolve_probe_channel(&probe.channel, model) {
@@ -3335,6 +3562,41 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
         "sonium: wall {wall_s:.3}s, cycles {steps}, dof {dof}, correct {}",
         failures.is_empty()
     );
+    if let Some(capture) = options.capture {
+        *capture = NativePlasticityHistory {
+            probe_channels: probes.iter().map(|p| p.channel.clone()).collect(),
+            times_s: probe_times,
+            probe_values,
+            element_ids: {
+                let mut ids = vec![0; num_elems];
+                for (&id, &index) in &model.elem_index_of {
+                    ids[index] = id;
+                }
+                ids
+            },
+            final_element_plastic_strain: states
+                .borrow()
+                .iter()
+                .map(|s| material.erosion_features(&s.centroid).0)
+                .collect(),
+            final_time_s: state.time,
+            steps,
+            kinetic_energy_j: balance.kinetic,
+            internal_energy_j: balance.internal,
+            external_work_j: balance.external_work,
+            relative_energy_drift: drift_frac,
+            eroded_elements: eroded,
+            node_ids: if deck == "taylor_bar_full_plastic" {
+                let mut ids = vec![0; num_nodes];
+                for (&id, &index) in &model.index_of { ids[index] = id; }
+                ids
+            } else { Vec::new() },
+            final_positions_m: if deck == "taylor_bar_full_plastic" {
+                state.positions.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect()
+            } else { Vec::new() },
+            ..NativePlasticityHistory::default()
+        };
+    }
     Ok(RepeatSample {
         wall_s,
         cycles: steps,
@@ -3597,6 +3859,28 @@ mod tests {
             scratch_root: None,
             keep_scratch: false,
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn vmhwm_parse_reads_peak_kib() {
+        let status = "Name:\tqa-oc-bench\nVmRSS:\t    3000 kB\nVmHWM:\t    80896 kB\nThreads:\t1\n";
+        assert_eq!(parse_vmhwm_bytes(status), Some(80896 * 1024));
+        assert_eq!(parse_vmhwm_bytes("VmRSS:\t    3000 kB\n"), None);
+        assert_eq!(parse_vmhwm_bytes("VmHWM:\tgarbage kB\n"), None);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn self_peak_rss_is_own_footprint() {
+        // The test binary's own high-water mark is far below the
+        // hundreds of MB a launcher-inherited value would show.
+        let bytes = self_peak_rss_bytes();
+        assert!(bytes > 0, "peak RSS must be measurable");
+        assert!(
+            bytes < 512 * 1024 * 1024,
+            "peak RSS {bytes} looks inherited, not own footprint"
+        );
     }
 
     #[test]

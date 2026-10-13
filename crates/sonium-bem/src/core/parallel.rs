@@ -24,7 +24,27 @@ pub fn is_parallel_available() -> bool {
 /// assembly and matvec row loops parallelize. One pair evaluation is tens
 /// to hundreds of nanoseconds (singular quadrature more), so the grain
 /// keeps pool dispatch amortized; small systems stay serial.
+///
+/// This grain only fits cheap (single-point collocation, matvec) pair
+/// work. Dense quadrature-pair assembly/evaluation loops use
+/// [`BEM_QUADRATURE_PAIRS_PER_THREAD`] instead.
 pub const BEM_ENTRIES_PER_THREAD: usize = 65_536;
+
+/// Source x field quadrature pairs per thread above which dense
+/// kernel-quadrature loops (TBEM/operator assembly, field evaluation)
+/// parallelize.
+///
+/// One TBEM pair costs ~6.4 us (measured Oct 2026, x86_64, N=1280
+/// icosphere: 10.5 s serial / 1.64M pairs), 20-60x more than the
+/// nanosecond-scale pairs [`BEM_ENTRIES_PER_THREAD`] was calibrated for.
+/// Sharing that grain pushed the parallel threshold to
+/// 65536 x threads pairs (8.4M pairs / N >= 2896 on a 128-core box),
+/// serializing multi-second assemblies. At 512 pairs/thread the gate
+/// opens at N >= 256 on 128 threads (~0.4 s of serial work), where pool
+/// dispatch (~10-50 us) is negligible. Lowering this further only adds
+/// dispatch overhead on second-scale work; raising it re-serializes
+/// realistic speaker/room meshes on many-core machines.
+pub const BEM_QUADRATURE_PAIRS_PER_THREAD: usize = 512;
 
 /// Coarse blocks (clusters, H-matrix partitions, FMM interaction blocks)
 /// per thread above which block loops parallelize. Each block is itself a

@@ -34,7 +34,7 @@ pub struct SaddlePointJacobiSchurBackend<'a, B: Backend, T: DeviceScalar = f64> 
     a: PersistentDeviceCsr<B, T>,
     velocity_block: PersistentDeviceCsr<B, T>,
     pressure_schur: PersistentDeviceCsr<B, T>,
-    pressure_preconditioner: Option<&'a dyn BackendPreconditioner<B, f64>>,
+    pressure_preconditioner: Option<&'a dyn BackendPreconditioner<B, T>>,
     pressure_mask: PersistentDeviceCsr<B, T>,
     velocity_diag_inv: PersistentDeviceCsr<B, T>,
     pressure_diag_inv: PersistentDeviceCsr<B, T>,
@@ -47,51 +47,51 @@ pub struct SaddlePointJacobiSchurBackend<'a, B: Backend, T: DeviceScalar = f64> 
     pressure_chebyshev_degree: usize,
     pressure_chebyshev_eigenvalue_ratio: f64,
     pressure_lambda_max: f64,
-    workspace: Mutex<SaddlePointWorkspace<B>>,
+    workspace: Mutex<SaddlePointWorkspace<B, T>>,
     runtime_diagnostics: crate::DevicePreconditionerDiagnostics,
 }
 
-struct SaddlePointWorkspace<B: Backend> {
-    result: B::Buffer<f64>,
-    y_pressure: B::Buffer<f64>,
-    modified_rhs: B::Buffer<f64>,
-    residual: B::Buffer<f64>,
-    correction: B::Buffer<f64>,
-    d_new: B::Buffer<f64>,
-    external_input: B::Buffer<f64>,
-    external_output: B::Buffer<f64>,
-    external_masked: B::Buffer<f64>,
+struct SaddlePointWorkspace<B: Backend, T: DeviceScalar> {
+    result: B::Buffer<T>,
+    y_pressure: B::Buffer<T>,
+    modified_rhs: B::Buffer<T>,
+    residual: B::Buffer<T>,
+    correction: B::Buffer<T>,
+    d_new: B::Buffer<T>,
+    external_input: B::Buffer<T>,
+    external_output: B::Buffer<T>,
+    external_masked: B::Buffer<T>,
 }
 
-impl<B: Backend> SaddlePointWorkspace<B> {
+impl<B: Backend, T: DeviceScalar> SaddlePointWorkspace<B, T> {
     fn new(backend: &B, len: usize) -> crate::BackendResult<Self> {
         Ok(Self {
             result: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             y_pressure: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             modified_rhs: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             residual: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             correction: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             d_new: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             external_input: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             external_output: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
             external_masked: backend
-                .raw_alloc::<f64>(len)
+                .raw_alloc::<T>(len)
                 .map_err(crate::BackendError::from)?,
         })
     }
@@ -107,7 +107,7 @@ impl<B: Backend> SaddlePointWorkspace<B> {
         ] {
             if buffer.len() != len {
                 *buffer = backend
-                    .raw_alloc::<f64>(len)
+                    .raw_alloc::<T>(len)
                     .map_err(crate::BackendError::from)?;
             }
         }
@@ -125,6 +125,62 @@ pub struct SaddlePointJacobiSchurBackendConfig {
     pub pressure_kind: PressureSchurBackendKind,
     pub pressure_chebyshev_degree: usize,
     pub pressure_chebyshev_eigenvalue_ratio: f64,
+}
+
+/// Convert an f64 configuration scalar into `T::Real`.
+fn real_from_f64<T: DeviceScalar>(value: f64) -> T::Real {
+    use num_traits::{FromPrimitive, Zero};
+    T::Real::from_f64(value).unwrap_or_else(T::Real::zero)
+}
+
+/// Estimate the pressure-Schur spectral bound from f64 host data (the
+/// estimate only scales the Chebyshev bracket, so evaluating it in f64
+/// is valid for every working precision).
+fn schur_lambda_max_f64(
+    n: usize,
+    velocity_block_size: usize,
+    schur: HostCsrRef<'_, f64>,
+) -> crate::BackendResult<f64> {
+    HostCsrRef::try_new(
+        schur.num_rows,
+        schur.num_cols,
+        schur.row_ptrs,
+        schur.col_indices,
+        schur.values,
+    )
+    .map_err(|error| crate::BackendError::InvalidArgument {
+        operation: "saddle_preconditioner_constructor",
+        reason: error.to_string(),
+    })?;
+    let pressure_size = n - velocity_block_size;
+    if schur.num_rows != pressure_size || schur.num_cols != pressure_size {
+        return Err(crate::BackendError::InvalidArgument {
+            operation: "saddle_preconditioner_constructor",
+            reason: format!(
+                "Schur dimensions {}/{} do not match pressure block size {pressure_size}",
+                schur.num_rows, schur.num_cols
+            ),
+        });
+    }
+    let mut pressure_diag = vec![0.0_f64; n];
+    for row in 0..schur.num_rows {
+        let lo = schur.row_ptrs[row];
+        let hi = schur.row_ptrs[row + 1];
+        for k in lo..hi {
+            if schur.col_indices[k] == row {
+                pressure_diag[velocity_block_size + row] = schur.values[k];
+                break;
+            }
+        }
+    }
+    Ok(estimate_lambda_max_host_f64(
+        schur.num_rows,
+        schur.row_ptrs,
+        schur.col_indices,
+        schur.values,
+        &pressure_diag[velocity_block_size..],
+    )
+    .max(f64::EPSILON))
 }
 
 impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
@@ -225,6 +281,75 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
         config: SaddlePointJacobiSchurBackendConfig,
         pressure_preconditioner: Option<&'a dyn BackendPreconditioner<B, f64>>,
     ) -> crate::BackendResult<Self> {
+        let pressure_lambda_max =
+            schur_lambda_max_f64(a.m, config.velocity_block_size, pressure_schur)?;
+        Self::try_build(
+            backend,
+            a,
+            row_ptr_host,
+            col_idx_host,
+            values_host,
+            pressure_schur,
+            config,
+            pressure_preconditioner,
+            pressure_lambda_max,
+        )
+    }
+}
+
+impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f32> {
+    /// Checked f32 construction from raw host CSR parts (the
+    /// mixed-precision inner preconditioner). The pressure spectral
+    /// estimate is evaluated in f64 from widened host values.
+    #[allow(clippy::too_many_arguments)]
+    pub fn try_from_csr_host_parts_f32(
+        backend: &B,
+        a: &'a BackendCsr<B, f32>,
+        row_ptr_host: &[i32],
+        col_idx_host: &[i32],
+        values_host: &[f32],
+        pressure_schur: HostCsrRef<'_, f32>,
+        config: SaddlePointJacobiSchurBackendConfig,
+    ) -> crate::BackendResult<Self> {
+        let schur_values_f64: Vec<f64> =
+            pressure_schur.values.iter().map(|&v| f64::from(v)).collect();
+        let schur_f64 = HostCsrRef::new(
+            pressure_schur.num_rows,
+            pressure_schur.num_cols,
+            pressure_schur.row_ptrs,
+            pressure_schur.col_indices,
+            &schur_values_f64,
+        );
+        let pressure_lambda_max =
+            schur_lambda_max_f64(a.m, config.velocity_block_size, schur_f64)?;
+        Self::try_build(
+            backend,
+            a,
+            row_ptr_host,
+            col_idx_host,
+            values_host,
+            pressure_schur,
+            config,
+            None,
+            pressure_lambda_max,
+        )
+    }
+}
+
+impl<'a, B: Backend, T: DeviceScalar> SaddlePointJacobiSchurBackend<'a, B, T> {
+    /// Shared checked construction for every working precision.
+    #[allow(clippy::too_many_arguments)]
+    fn try_build(
+        backend: &B,
+        a: &'a BackendCsr<B, T>,
+        row_ptr_host: &[i32],
+        col_idx_host: &[i32],
+        values_host: &[T],
+        pressure_schur: HostCsrRef<'_, T>,
+        config: SaddlePointJacobiSchurBackendConfig,
+        pressure_preconditioner: Option<&'a dyn BackendPreconditioner<B, T>>,
+        pressure_lambda_max: f64,
+    ) -> crate::BackendResult<Self> {
         let velocity_block_size = config.velocity_block_size;
         if a.m != a.n {
             return Err(crate::BackendError::InvalidArgument {
@@ -267,7 +392,7 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
             });
         }
 
-        let mut velocity_diag = vec![0.0_f64; a.m];
+        let mut velocity_diag = vec![T::zero(); a.m];
         let (velocity_block_row_ptr, velocity_block_col_idx, velocity_block_values) =
             extract_embedded_velocity_block(
                 a.m,
@@ -289,7 +414,7 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
             }
         }
 
-        let mut pressure_diag = vec![0.0_f64; a.m];
+        let mut pressure_diag = vec![T::zero(); a.m];
         for row in 0..pressure_schur.num_rows {
             let lo = pressure_schur.row_ptrs[row];
             let hi = pressure_schur.row_ptrs[row + 1];
@@ -300,14 +425,6 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
                 }
             }
         }
-        let pressure_lambda_max = estimate_lambda_max_host_f64(
-            pressure_schur.num_rows,
-            pressure_schur.row_ptrs,
-            pressure_schur.col_indices,
-            pressure_schur.values,
-            &pressure_diag[velocity_block_size..],
-        )
-        .max(f64::EPSILON);
 
         let matrix_m = a.m;
         let matrix_n = a.n;
@@ -366,9 +483,9 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
             pressure_diag_inv,
             n: matrix_m,
             velocity_degree: config.velocity_degree.max(1),
-            velocity_damping: config.velocity_damping,
+            velocity_damping: T::from_real(real_from_f64::<T>(config.velocity_damping)),
             pressure_degree: config.pressure_degree.max(1),
-            pressure_damping: config.pressure_damping,
+            pressure_damping: T::from_real(real_from_f64::<T>(config.pressure_damping)),
             pressure_kind: config.pressure_kind,
             pressure_chebyshev_degree: config.pressure_chebyshev_degree.max(1),
             pressure_chebyshev_eigenvalue_ratio: config
@@ -383,11 +500,11 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
     fn try_apply_pressure_schur(
         &self,
         backend: &B,
-        r: &B::Buffer<f64>,
-        y_pressure: &mut B::Buffer<f64>,
-        residual: &mut B::Buffer<f64>,
-        correction: &mut B::Buffer<f64>,
-        d_new: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        y_pressure: &mut B::Buffer<T>,
+        residual: &mut B::Buffer<T>,
+        correction: &mut B::Buffer<T>,
+        d_new: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         match self.pressure_kind {
             PressureSchurBackendKind::Polynomial => {
@@ -417,20 +534,20 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
     fn try_apply_pressure_polynomial(
         &self,
         backend: &B,
-        r: &B::Buffer<f64>,
-        y_pressure: &mut B::Buffer<f64>,
-        residual: &mut B::Buffer<f64>,
-        correction: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        y_pressure: &mut B::Buffer<T>,
+        residual: &mut B::Buffer<T>,
+        correction: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         self.pressure_diag_inv.try_apply(backend, r, y_pressure)?;
         for _ in 1..self.pressure_degree {
             self.pressure_schur
                 .try_apply(backend, y_pressure, residual)?;
-            backend.try_scale::<f64>(-1.0, residual)?;
-            backend.try_axpy::<f64>(1.0, r, residual)?;
+            backend.try_scale::<T>(-T::one(), residual)?;
+            backend.try_axpy::<T>(T::one(), r, residual)?;
             self.pressure_diag_inv
                 .try_apply(backend, residual, correction)?;
-            backend.try_axpy::<f64>(self.pressure_damping, correction, y_pressure)?;
+            backend.try_axpy::<T>(self.pressure_damping, correction, y_pressure)?;
         }
         Ok(())
     }
@@ -438,11 +555,11 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
     fn try_apply_pressure_chebyshev(
         &self,
         backend: &B,
-        r: &B::Buffer<f64>,
-        y_pressure: &mut B::Buffer<f64>,
-        residual: &mut B::Buffer<f64>,
-        correction: &mut B::Buffer<f64>,
-        d_new: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        y_pressure: &mut B::Buffer<T>,
+        residual: &mut B::Buffer<T>,
+        correction: &mut B::Buffer<T>,
+        d_new: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         if self.pressure_lambda_max <= 0.0 || self.pressure_chebyshev_eigenvalue_ratio <= 1.0 {
             self.try_apply_pressure_polynomial(backend, r, y_pressure, residual, correction)?;
@@ -461,7 +578,7 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
         let mut rho = 1.0 / sigma;
 
         self.pressure_diag_inv.try_apply(backend, r, correction)?;
-        backend.try_scale::<f64>(1.0 / theta, correction)?;
+        backend.try_scale::<T>(T::from_real(real_from_f64::<T>(1.0 / theta)), correction)?;
         backend.try_copy_d2d(correction, y_pressure)?;
 
         for _ in 1..self.pressure_chebyshev_degree {
@@ -471,13 +588,13 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
 
             self.pressure_schur
                 .try_apply(backend, y_pressure, residual)?;
-            backend.try_scale::<f64>(-1.0, residual)?;
-            backend.try_axpy::<f64>(1.0, r, residual)?;
+            backend.try_scale::<T>(-T::one(), residual)?;
+            backend.try_axpy::<T>(T::one(), r, residual)?;
             self.pressure_diag_inv.try_apply(backend, residual, d_new)?;
 
-            backend.try_scale::<f64>(coeff_old, correction)?;
-            backend.try_axpy::<f64>(coeff_res, d_new, correction)?;
-            backend.try_axpy::<f64>(1.0, correction, y_pressure)?;
+            backend.try_scale::<T>(T::from_real(real_from_f64::<T>(coeff_old)), correction)?;
+            backend.try_axpy::<T>(T::from_real(real_from_f64::<T>(coeff_res)), d_new, correction)?;
+            backend.try_axpy::<T>(T::one(), correction, y_pressure)?;
             rho = rho_new;
         }
         Ok(())
@@ -488,14 +605,14 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
         &self,
         backend: &B,
         rhs: usize,
-        r: &B::Buffer<f64>,
-        y_pressure: &mut B::Buffer<f64>,
-        residual: &mut B::Buffer<f64>,
-        correction: &mut B::Buffer<f64>,
-        d_new: &mut B::Buffer<f64>,
-        external_input: &mut B::Buffer<f64>,
-        external_output: &mut B::Buffer<f64>,
-        external_masked: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        y_pressure: &mut B::Buffer<T>,
+        residual: &mut B::Buffer<T>,
+        correction: &mut B::Buffer<T>,
+        d_new: &mut B::Buffer<T>,
+        external_input: &mut B::Buffer<T>,
+        external_output: &mut B::Buffer<T>,
+        external_masked: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         match self.pressure_kind {
             PressureSchurBackendKind::Polynomial => {
@@ -546,21 +663,21 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
         &self,
         backend: &B,
         rhs: usize,
-        r: &B::Buffer<f64>,
-        y_pressure: &mut B::Buffer<f64>,
-        residual: &mut B::Buffer<f64>,
-        correction: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        y_pressure: &mut B::Buffer<T>,
+        residual: &mut B::Buffer<T>,
+        correction: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         self.pressure_diag_inv
             .try_apply_colmajor(backend, rhs, r, y_pressure)?;
         for _ in 1..self.pressure_degree {
             self.pressure_schur
                 .try_apply_colmajor(backend, rhs, y_pressure, residual)?;
-            backend.try_scale::<f64>(-1.0, residual)?;
-            backend.try_axpy::<f64>(1.0, r, residual)?;
+            backend.try_scale::<T>(-T::one(), residual)?;
+            backend.try_axpy::<T>(T::one(), r, residual)?;
             self.pressure_diag_inv
                 .try_apply_colmajor(backend, rhs, residual, correction)?;
-            backend.try_axpy::<f64>(self.pressure_damping, correction, y_pressure)?;
+            backend.try_axpy::<T>(self.pressure_damping, correction, y_pressure)?;
         }
         Ok(())
     }
@@ -570,11 +687,11 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
         &self,
         backend: &B,
         rhs: usize,
-        r: &B::Buffer<f64>,
-        y_pressure: &mut B::Buffer<f64>,
-        residual: &mut B::Buffer<f64>,
-        correction: &mut B::Buffer<f64>,
-        d_new: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        y_pressure: &mut B::Buffer<T>,
+        residual: &mut B::Buffer<T>,
+        correction: &mut B::Buffer<T>,
+        d_new: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         if self.pressure_lambda_max <= 0.0 || self.pressure_chebyshev_eigenvalue_ratio <= 1.0 {
             self.try_apply_pressure_polynomial_colmajor(
@@ -598,7 +715,7 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
 
         self.pressure_diag_inv
             .try_apply_colmajor(backend, rhs, r, correction)?;
-        backend.try_scale::<f64>(1.0 / theta, correction)?;
+        backend.try_scale::<T>(T::from_real(real_from_f64::<T>(1.0 / theta)), correction)?;
         backend.try_copy_d2d(correction, y_pressure)?;
 
         for _ in 1..self.pressure_chebyshev_degree {
@@ -608,22 +725,22 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f64> {
 
             self.pressure_schur
                 .try_apply_colmajor(backend, rhs, y_pressure, residual)?;
-            backend.try_scale::<f64>(-1.0, residual)?;
-            backend.try_axpy::<f64>(1.0, r, residual)?;
+            backend.try_scale::<T>(-T::one(), residual)?;
+            backend.try_axpy::<T>(T::one(), r, residual)?;
             self.pressure_diag_inv
                 .try_apply_colmajor(backend, rhs, residual, d_new)?;
 
-            backend.try_scale::<f64>(coeff_old, correction)?;
-            backend.try_axpy::<f64>(coeff_res, d_new, correction)?;
-            backend.try_axpy::<f64>(1.0, correction, y_pressure)?;
+            backend.try_scale::<T>(T::from_real(real_from_f64::<T>(coeff_old)), correction)?;
+            backend.try_axpy::<T>(T::from_real(real_from_f64::<T>(coeff_res)), d_new, correction)?;
+            backend.try_axpy::<T>(T::one(), correction, y_pressure)?;
             rho = rho_new;
         }
         Ok(())
     }
 }
 
-impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend<'_, B, f64> {
-    fn apply(&self, backend: &B, r: &B::Buffer<f64>, z: &mut B::Buffer<f64>) {
+impl<B: Backend, T: DeviceScalar> BackendPreconditioner<B, T> for SaddlePointJacobiSchurBackend<'_, B, T> {
+    fn apply(&self, backend: &B, r: &B::Buffer<T>, z: &mut B::Buffer<T>) {
         if let Err(error) = self.try_apply(backend, r, z) {
             log::error!(
                 target: "sonium_compute::preconditioner",
@@ -635,8 +752,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
     fn try_apply(
         &self,
         backend: &B,
-        r: &B::Buffer<f64>,
-        z: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         let result = self.try_apply_untracked(backend, r, z);
         match &result {
@@ -649,8 +766,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
     fn try_apply_untracked(
         &self,
         backend: &B,
-        r: &B::Buffer<f64>,
-        z: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         backend.try_inject_preconditioner_failure(PreconditionerFailureInjectionPoint::Launch)?;
         if r.len() != self.n || z.len() != self.n {
@@ -691,26 +808,26 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
         self.try_apply_pressure_schur(backend, r, y_pressure, residual, correction, d_new)?;
 
         self.a.try_apply(backend, y_pressure, modified_rhs)?;
-        backend.try_scale::<f64>(-1.0, modified_rhs)?;
-        backend.try_axpy::<f64>(1.0, r, modified_rhs)?;
+        backend.try_scale::<T>(-T::one(), modified_rhs)?;
+        backend.try_axpy::<T>(T::one(), r, modified_rhs)?;
         self.velocity_diag_inv
             .try_apply(backend, modified_rhs, result)?;
-        backend.try_scale::<f64>(self.velocity_damping, result)?;
+        backend.try_scale::<T>(self.velocity_damping, result)?;
 
         for _ in 1..self.velocity_degree {
             self.velocity_block.try_apply(backend, result, residual)?;
-            backend.try_scale::<f64>(-1.0, residual)?;
-            backend.try_axpy::<f64>(1.0, modified_rhs, residual)?;
+            backend.try_scale::<T>(-T::one(), residual)?;
+            backend.try_axpy::<T>(T::one(), modified_rhs, residual)?;
             self.velocity_diag_inv
                 .try_apply(backend, residual, correction)?;
-            backend.try_axpy::<f64>(self.velocity_damping, correction, result)?;
+            backend.try_axpy::<T>(self.velocity_damping, correction, result)?;
         }
 
-        backend.try_axpy::<f64>(1.0, y_pressure, result)?;
+        backend.try_axpy::<T>(T::one(), y_pressure, result)?;
         backend.try_copy_d2d(result, z)
     }
 
-    fn apply_colmajor(&self, backend: &B, rhs: usize, r: &B::Buffer<f64>, z: &mut B::Buffer<f64>) {
+    fn apply_colmajor(&self, backend: &B, rhs: usize, r: &B::Buffer<T>, z: &mut B::Buffer<T>) {
         if let Err(error) = self.try_apply_colmajor(backend, rhs, r, z) {
             log::error!(
                 target: "sonium_compute::preconditioner",
@@ -723,8 +840,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
         &self,
         backend: &B,
         rhs: usize,
-        r: &B::Buffer<f64>,
-        z: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         let result = self.try_apply_colmajor_untracked(backend, rhs, r, z);
         match &result {
@@ -738,8 +855,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
         &self,
         backend: &B,
         rhs: usize,
-        r: &B::Buffer<f64>,
-        z: &mut B::Buffer<f64>,
+        r: &B::Buffer<T>,
+        z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         backend.try_inject_preconditioner_failure(PreconditionerFailureInjectionPoint::Launch)?;
         let len = self
@@ -801,23 +918,23 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
 
         self.a
             .try_apply_colmajor(backend, rhs, y_pressure, modified_rhs)?;
-        backend.try_scale::<f64>(-1.0, modified_rhs)?;
-        backend.try_axpy::<f64>(1.0, r, modified_rhs)?;
+        backend.try_scale::<T>(-T::one(), modified_rhs)?;
+        backend.try_axpy::<T>(T::one(), r, modified_rhs)?;
         self.velocity_diag_inv
             .try_apply_colmajor(backend, rhs, modified_rhs, result)?;
-        backend.try_scale::<f64>(self.velocity_damping, result)?;
+        backend.try_scale::<T>(self.velocity_damping, result)?;
 
         for _ in 1..self.velocity_degree {
             self.velocity_block
                 .try_apply_colmajor(backend, rhs, result, residual)?;
-            backend.try_scale::<f64>(-1.0, residual)?;
-            backend.try_axpy::<f64>(1.0, modified_rhs, residual)?;
+            backend.try_scale::<T>(-T::one(), residual)?;
+            backend.try_axpy::<T>(T::one(), modified_rhs, residual)?;
             self.velocity_diag_inv
                 .try_apply_colmajor(backend, rhs, residual, correction)?;
-            backend.try_axpy::<f64>(self.velocity_damping, correction, result)?;
+            backend.try_axpy::<T>(self.velocity_damping, correction, result)?;
         }
 
-        backend.try_axpy::<f64>(1.0, y_pressure, result)?;
+        backend.try_axpy::<T>(T::one(), y_pressure, result)?;
         backend.try_copy_d2d(result, z)
     }
 
@@ -828,8 +945,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
     fn try_apply_transpose(
         &self,
         _backend: &B,
-        _r: &B::Buffer<f64>,
-        _z: &mut B::Buffer<f64>,
+        _r: &B::Buffer<T>,
+        _z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         let error = crate::BackendError::Unsupported {
             backend: "device",
@@ -843,8 +960,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
     fn try_apply_hermitian(
         &self,
         _backend: &B,
-        _r: &B::Buffer<f64>,
-        _z: &mut B::Buffer<f64>,
+        _r: &B::Buffer<T>,
+        _z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         let error = crate::BackendError::Unsupported {
             backend: "device",
@@ -859,8 +976,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
         &self,
         _backend: &B,
         _rhs: usize,
-        _r: &B::Buffer<f64>,
-        _z: &mut B::Buffer<f64>,
+        _r: &B::Buffer<T>,
+        _z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         let error = crate::BackendError::Unsupported {
             backend: "device",
@@ -875,8 +992,8 @@ impl<B: Backend> BackendPreconditioner<B, f64> for SaddlePointJacobiSchurBackend
         &self,
         _backend: &B,
         _rhs: usize,
-        _r: &B::Buffer<f64>,
-        _z: &mut B::Buffer<f64>,
+        _r: &B::Buffer<T>,
+        _z: &mut B::Buffer<T>,
     ) -> crate::BackendResult<()> {
         let error = crate::BackendError::Unsupported {
             backend: "device",
@@ -915,11 +1032,11 @@ fn extract_embedded_velocity_block<T: Copy>(
     (row_ptr, col_idx, values)
 }
 
-fn embed_pressure_schur(
+fn embed_pressure_schur<T: Copy>(
     n: usize,
     velocity_block_size: usize,
-    schur: HostCsrRef<'_, f64>,
-) -> (Vec<i32>, Vec<i32>, Vec<f64>) {
+    schur: HostCsrRef<'_, T>,
+) -> (Vec<i32>, Vec<i32>, Vec<T>) {
     let mut row_ptr = vec![0_i32; n + 1];
     let mut col_idx = Vec::with_capacity(schur.nnz());
     let mut values = Vec::with_capacity(schur.nnz());
@@ -964,17 +1081,23 @@ pub fn embed_pressure_schur_with_velocity_identity(
     (row_ptr, col_idx, values)
 }
 
-fn upload_pressure_mask<B: Backend>(
+fn upload_pressure_mask<B: Backend, T: DeviceScalar>(
     backend: &B,
     n: usize,
     velocity_block_size: usize,
-) -> crate::BackendResult<PersistentDeviceCsr<B, f64>> {
+) -> crate::BackendResult<PersistentDeviceCsr<B, T>> {
     let _n_i32 = i32::try_from(n).map_err(|_| crate::BackendError::InvalidArgument {
         operation: "pressure_mask_upload",
         reason: format!("matrix dimension {n} exceeds i32 CSR index range"),
     })?;
-    let values_host: Vec<f64> = (0..n)
-        .map(|row| if row < velocity_block_size { 0.0 } else { 1.0 })
+    let values_host: Vec<T> = (0..n)
+        .map(|row| {
+            if row < velocity_block_size {
+                T::zero()
+            } else {
+                T::one()
+            }
+        })
         .collect();
     PersistentDeviceCsr::try_from_host_diagonal(backend, &values_host)
 }
@@ -1075,6 +1198,87 @@ mod tests {
         assert!((host[0] - 0.0).abs() < 1.0e-12);
         assert!((host[1] - 0.0).abs() < 1.0e-12);
         assert!((host[2] - 1.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn f32_backend_apply_matches_f64_within_precision() {
+        // The mixed-precision (f32) saddle preconditioner must reproduce
+        // the f64 action to f32 accuracy on every backend (the code is
+        // backend-generic, so the CPU backend proves the arithmetic for
+        // CUDA and Metal as well).
+        let backend = CpuBackend::new();
+        let row_ptr = vec![0, 2, 4, 5];
+        let col_idx = vec![0, 2, 1, 2, 2];
+        let values = vec![4.0_f64, 1.0, 4.0, 1.0, 0.1];
+        let schur_row_ptrs = vec![0_usize, 1];
+        let schur_col_indices = vec![0_usize];
+        let schur_values = vec![1.0_f64];
+        for pressure_kind in [
+            PressureSchurBackendKind::Polynomial,
+            PressureSchurBackendKind::Chebyshev,
+        ] {
+            let config = SaddlePointJacobiSchurBackendConfig {
+                velocity_block_size: 2,
+                velocity_degree: 2,
+                velocity_damping: 0.9,
+                pressure_degree: 2,
+                pressure_damping: 0.9,
+                pressure_kind,
+                pressure_chebyshev_degree: 5,
+                pressure_chebyshev_eigenvalue_ratio: 30.0,
+            };
+            let a64 = BackendCsr::from_host(&backend, 3, 3, &row_ptr, &col_idx, &values);
+            let precond64 = SaddlePointJacobiSchurBackend::try_from_csr_host_parts(
+                &backend,
+                &a64,
+                &row_ptr,
+                &col_idx,
+                &values,
+                HostCsrRef::new(1, 1, &schur_row_ptrs, &schur_col_indices, &schur_values),
+                config,
+            )
+            .expect("f64 saddle construction");
+            let mut r64 = backend.raw_alloc::<f64>(3).unwrap();
+            backend.copy_h2d(&[1.0_f64, -2.0, 0.5], &mut r64);
+            let mut z64 = backend.raw_alloc::<f64>(3).unwrap();
+            precond64.apply(&backend, &r64, &mut z64);
+            let mut host64 = vec![0.0_f64; 3];
+            backend.copy_d2h(&z64, &mut host64);
+
+            let values32: Vec<f32> = values.iter().map(|&v| v as f32).collect();
+            let schur_values32: Vec<f32> = schur_values.iter().map(|&v| v as f32).collect();
+            let a32 = BackendCsr::from_host(&backend, 3, 3, &row_ptr, &col_idx, &values32);
+            let precond32 =
+                SaddlePointJacobiSchurBackend::try_from_csr_host_parts_f32(
+                    &backend,
+                    &a32,
+                    &row_ptr,
+                    &col_idx,
+                    &values32,
+                    HostCsrRef::new(
+                        1,
+                        1,
+                        &schur_row_ptrs,
+                        &schur_col_indices,
+                        &schur_values32,
+                    ),
+                    config,
+                )
+                .expect("f32 saddle construction");
+            let mut r32 = backend.raw_alloc::<f32>(3).unwrap();
+            backend.copy_h2d(&[1.0_f32, -2.0, 0.5], &mut r32);
+            let mut z32 = backend.raw_alloc::<f32>(3).unwrap();
+            precond32.apply(&backend, &r32, &mut z32);
+            let mut host32 = vec![0.0_f32; 3];
+            backend.copy_d2h(&z32, &mut host32);
+
+            for (index, (&got, &want)) in host32.iter().zip(&host64).enumerate() {
+                assert!(
+                    (f64::from(got) - want).abs() <= 1.0e-5 * (1.0 + want.abs()),
+                    "f32 saddle apply differs from f64 at {index} ({pressure_kind:?}): {got} vs {want}"
+                );
+            }
+        }
     }
 
     #[test]

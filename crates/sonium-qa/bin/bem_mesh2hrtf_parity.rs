@@ -1,30 +1,16 @@
-//! Mesh2HRTF parity gate (Stage-1 exit-criterion item).
+//! Native rigid-sphere BEM accuracy against analytical Mie pressure.
 //!
-//! Mesh2HRTF (Ziegelwanger et al., 2015 / 2016 — Acta Acustica) is the
-//! reference open-source BEM toolkit for head-related transfer function
-//! computation. Its published validation cases exercise rigid-sphere
-//! scattering against analytic Mie at specific `ka` values, and report
-//! BEM-vs-Mie L² errors of the order of `1-3 %` for their default mesh
-//! resolutions and constant-element BEM formulation.
+//! The canonical command is `qa-bem-rigid-sphere-mie-accuracy`. The historical
+//! `qa-bem-mesh2hrtf-parity` command remains a compatibility alias. Both run
+//! native Burton--Miller solves and compare complex pressure with Mie; neither
+//! executes Mesh2HRTF nor imports external solver output.
 //!
-//! This binary reproduces the *same* validation pattern with `sonium-bem`
-//! (rigid-sphere scattering + Burton-Miller + Mie reference) and asserts
-//! the L² error stays inside the Mesh2HRTF-published band. That gives us
-//! a stable "comparable to Mesh2HRTF" reference for the Stage-1 exit
-//! criterion without bundling external mesh data or wiring an FFI to the
-//! Mesh2HRTF C++ binary.
-//!
-//! Cases tracked here mirror the Mesh2HRTF tutorial validation:
-//!   - `kD ∈ {1, 2, 5}` (small / mid / mid-high frequency),
-//!   - rigid-sphere scattering with plane-wave incidence along +z,
-//!   - icosphere mesh at the lowest resolution that Mesh2HRTF documents
-//!     as "useful" (≈ 6-10 elements / wavelength),
-//!   - far-field evaluation at `r = 2 · radius` over a 9-point θ sweep.
-//!
-//! Acceptance band is set per `kD` to match Mesh2HRTF's reported behaviour
-//! (sub-percent at low `kD`, growing to a few percent as the wavelength
-//! approaches element size).
+//! Cases use `ka = k*radius` of 1, 2 and 5, 1280 triangular panels and nine
+//! exterior evaluation points at radius 2. The existing 1%/1.5% complex L2
+//! tolerances are retained as native analytical-accuracy bounds. This fixed
+//! resolution gate makes no external parity or mesh-convergence claim.
 
+// Rust guideline compliant 2026-02-21
 use num_complex::Complex64;
 use sonium_bem::analytical::sphere_scattering_3d;
 use sonium_bem::core::bem_solver::BoundaryConditionType;
@@ -33,6 +19,7 @@ use sonium_bem::core::mesh::generators::generate_icosphere_mesh;
 use sonium_bem::core::types::PhysicsParams;
 use sonium_bem::core::{BemProblem, BemSolver, SolverMethod};
 use sonium_bem::testing::ErrorMetrics;
+use sonium_qa::QaResult;
 use std::f64::consts::PI;
 use std::time::Instant;
 
@@ -47,21 +34,17 @@ fn theta_grid() -> Vec<f64> {
     (0..=8).map(|i| i as f64 * PI / 8.0).collect()
 }
 
-struct M2hCase {
+struct SphereCase {
     label: &'static str,
     /// `ka = k · radius` with the unit-radius convention.
     ka: f64,
-    /// Icosphere subdivision level. Picked to match Mesh2HRTF's
-    /// "useful" elements-per-wavelength baseline at this `ka`.
+    /// Icosphere subdivision level for the fixed native mesh.
     subdivisions: usize,
-    /// Mesh2HRTF-style L² acceptance band. The value reflects the
-    /// constant-element BEM ceiling at the chosen mesh resolution and
-    /// matches the tolerance ranges Mesh2HRTF documents in its tutorial
-    /// validation tables.
+    /// Native complex-pressure L2 bound against the analytical Mie solution.
     threshold_l2: f64,
 }
 
-fn run_case(case: &M2hCase) -> Result<(), String> {
+fn run_case(case: &SphereCase) -> Result<QaResult, String> {
     let radius = 1.0;
     let frequency = freq_for_ka(case.ka, radius);
     let k = 2.0 * PI * frequency / SPEED_OF_SOUND;
@@ -71,7 +54,7 @@ fn run_case(case: &M2hCase) -> Result<(), String> {
     let physics = PhysicsParams::new(frequency, SPEED_OF_SOUND, DENSITY, false);
 
     println!(
-        "\n=== {} : kD = {:.1}, subdiv = {}, DOFs = {} ===",
+        "\n=== {} : ka = {:.1}, subdiv = {}, DOFs = {} ===",
         case.label, case.ka, case.subdivisions, n_elem
     );
     let wavelength = 2.0 * PI / k;
@@ -108,7 +91,7 @@ fn run_case(case: &M2hCase) -> Result<(), String> {
     let metrics = ErrorMetrics::compute(&analytical.pressure, &bem_p);
 
     println!(
-        "  L² rel err  : {:.4} ({:.2}%)  [Mesh2HRTF-style band ≤ {:.2}%]",
+        "  L² rel err  : {:.4} ({:.2}%)  [analytical accuracy bound ≤ {:.2}%]",
         metrics.l2_relative,
         metrics.l2_relative * 100.0,
         case.threshold_l2 * 100.0
@@ -124,39 +107,54 @@ fn run_case(case: &M2hCase) -> Result<(), String> {
     }
     if metrics.l2_relative > case.threshold_l2 {
         return Err(format!(
-            "{}: L² {:.4} exceeds Mesh2HRTF-style band {:.4}",
+            "{}: L² {:.4} exceeds analytical accuracy bound {:.4}",
             case.label, metrics.l2_relative, case.threshold_l2
         ));
     }
-    Ok(())
+    Ok(QaResult::passed(format!(
+        "bem.rigid-sphere-mie-accuracy-ka{}.v1",
+        case.ka as usize
+    ))
+    .requested_backend("cpu")
+    .actual_backend("cpu")
+    .seed(format!(
+        "rigid-sphere:a1:ka{}:icosphere3:theta9:r2",
+        case.ka
+    ))
+    .reference("analytical rigid-sphere Mie pressure; no Mesh2HRTF output")
+    .reference_checksum("analytic:rigid-sphere-mie-exterior:v1")
+    .formulation("native triangular Burton-Miller BEM; complex exterior pressure accuracy")
+    .metric("relative_complex_l2_error", metrics.l2_relative)
+    .maximum("relative_complex_l2_error", case.threshold_l2)
+    .metric("numerical_solve_executed", 1.0)
+    .minimum("numerical_solve_executed", 1.0)
+    .metric("external_reference_executed", 0.0)
+    .maximum("external_reference_executed", 0.0))
 }
 
-fn main() {
-    println!("=== Mesh2HRTF parity validation ===");
+/// Run native rigid-sphere accuracy against analytical Mie fields.
+pub(crate) fn main() {
+    println!("=== Rigid-sphere BEM analytical Mie accuracy ===");
     println!(
-        "Reproduces the Mesh2HRTF tutorial rigid-sphere validation pattern \
-         with sonium-bem and asserts L² error stays inside the published band."
+        "Native Sonium solve compared with analytical Mie pressure; external_reference_executed=0."
     );
 
-    // Cases mirror the Mesh2HRTF tutorial validation table at standard
-    // mesh resolutions. Bands per `ka` are calibrated to the constant-
-    // element BEM ceiling Mesh2HRTF documents (sub-percent at low `kD`,
-    // growing as elements/λ shrinks).
-    let cases: &[M2hCase] = &[
-        M2hCase {
-            label: "kD=1  (Mesh2HRTF tutorial small-ka)",
+    // Preserve the existing native resolution and accuracy thresholds.
+    let cases: &[SphereCase] = &[
+        SphereCase {
+            label: "ka=1",
             ka: 1.0,
             subdivisions: 3, // ≈ 1280 elements, ~63 elements/λ
             threshold_l2: 0.010,
         },
-        M2hCase {
-            label: "kD=2  (Mesh2HRTF tutorial mid-ka)",
+        SphereCase {
+            label: "ka=2",
             ka: 2.0,
             subdivisions: 3, // ≈ 1280 elements, ~32 elements/λ
             threshold_l2: 0.015,
         },
-        M2hCase {
-            label: "kD=5  (Mesh2HRTF tutorial mid-high-ka)",
+        SphereCase {
+            label: "ka=5",
             ka: 5.0,
             subdivisions: 3, // ≈ 1280 elements, ~13 elements/λ
             threshold_l2: 0.015,
@@ -165,7 +163,10 @@ fn main() {
 
     let mut failures: Vec<String> = Vec::new();
     for c in cases {
-        if let Err(e) = run_case(c) {
+        if let Err(e) = run_case(c)
+            .and_then(|record| record.to_json_line())
+            .map(|line| println!("QA_RESULT: {line}"))
+        {
             failures.push(e);
         }
     }
