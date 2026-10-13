@@ -157,7 +157,9 @@ fn main() {
     let rt = sonium_solvers_sys::runtime::runtime();
     println!(
         "spmv_host_scale parallelism={} compute_threads={} bandwidth_threads={} rayon_current_main={}",
-        std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
+        std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1),
         rt.compute_threads,
         rt.bandwidth_threads,
         rayon::current_num_threads(),
