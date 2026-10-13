@@ -7,14 +7,14 @@ validated cases, not every runnable QA binary.
 
 ## Summary
 
-- Registered Cargo QA binaries: 982
-- Manifest-backed validation cases: 779
+- Registered Cargo QA binaries: 983
+- Manifest-backed validation cases: 780
 
 | Tier | Cases |
 | --- | ---: |
 | accelerator-gate | 8 |
 | contract-gate | 41 |
-| physics-gate | 370 |
+| physics-gate | 371 |
 | reference-only | 100 |
 | smoke | 155 |
 | solver-gate | 105 |
@@ -229,6 +229,7 @@ validated cases, not every runnable QA binary.
 | fem.complex-dirichlet-elimination.v1 | sonium-fem | `qa-fem-complex-dirichlet-elimination` | physics-gate | transactional prescribed-value column correction and row/column elimination |
 | fem.compressible-conservation-3d.v1 | fem | `qa-fem-compressible-conservation-3d` | physics-gate | nonuniform smooth P1 DG state advanced by SSPRK3 in a closed slip-wall box |
 | fem.compressible-navier-stokes-3d.v1 | fem | `qa-fem-compressible-ns-3d` | physics-gate | P1 DG free-stream, SSPRK3 positivity, and Sutherland transport gate |
+| fem.compressible-shear-wave-3d.v1 | fem | `qa-fem-compressible-ns-3d` | physics-gate | nonlinear rotating shear decay: native DG spatial refinement and public SSPRK3 temporal refinement |
 | fem.conjugate-heat-transfer-3d-interface-mms.v1 | sonium-fem | `qa-fem-conjugate-heat-transfer-3d` | physics-gate | native region-routed conduction/capacity/fluid-advection blocks, CN history and sparse LU; independent two-sided interface gradient integration |
 | fem.conjugate-heat-transfer-3d.v1 | fem | `qa-fem-conjugate-heat-transfer-3d` | contract-gate | assembly-contract: prescribed x+y energy identities and row sums; no numerical field solve |
 | fem.crash-box-impact-harvest.v1 | sonium-qa | `qa-fem-crash-shells` | physics-gate | native original Q4 shell explicit dynamics, LAW2 layer evolution, tied contact, rigid-body constraints and original point mass |

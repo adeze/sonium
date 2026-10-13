@@ -3114,6 +3114,25 @@ required_hardware = "cpu"
 artifacts = "QA_RESULT JSONL DG conservation/transport metrics"
 
 [[case]]
+id = "fem.compressible-shear-wave-3d.v1"
+owner = "fem"
+crate = "sonium-qa"
+bin = "qa-fem-compressible-ns-3d"
+entry_point = "CompressibleDgOperator + CompressibleDgSolver"
+method = "nonlinear rotating shear decay: native DG spatial refinement and public SSPRK3 temporal refinement"
+scalar = "f64"
+dimension = "3D tetrahedra: 2/4/6 subdivisions"
+reference = "rho=1; u=A0 exp(-mu pi^2 t)(cos(pi z),sin(pi z),0); constant total energy and viscous heating"
+reference_checksum = "analytic:rotating-shear:A0.4:mu0.2:gamma1.4:R1:T1:t0.1"
+norm = "quadrature L2 velocity/amplitude, pressure and density; conservative-state temporal self-convergence"
+tolerance = "fine velocity <=3%, pressure/density <=0.003; spatial order >=1; public SSPRK3 order 2.8..3.5; timestep sensitivity <=1e-4; 100x reduced-viscosity control mismatch >=10%"
+tier = "physics-gate"
+timeout_seconds = 180
+required_hardware = "cpu"
+features = ["qa-binaries"]
+artifacts = "QA_RESULT JSONL: three spatial meshes, four public temporal solves, transport sensitivity and timestep-refinement control"
+
+[[case]]
 id = "fem.battery-3d.v1"
 owner = "fem"
 crate = "sonium-qa"

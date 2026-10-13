@@ -36,6 +36,12 @@ fn exact(z: f64, time: f64) -> ConservativeState {
     }
 }
 
+// Evaluate the reference EOS independently of the production state helper.
+fn exact_pressure(time: f64) -> f64 {
+    let a = AMPLITUDE * (-VISCOSITY * PI * PI * time).exp();
+    (GAS.gamma - 1.0) * (ENERGY - 0.5 * a * a)
+}
+
 fn config(mesh: &Mesh, time: f64, viscosity: f64) -> CompressibleDgConfig {
     let mut config = CompressibleDgConfig {
         gas: GAS,
@@ -154,13 +160,13 @@ fn errors(mesh: &Mesh, state: &CompressibleDgState) -> [f64; 3] {
             let value = ConservativeState::from_array(value);
             let reference = exact(z, END);
             sums[0] += value
-                .momentum
+                .velocity()
                 .iter()
-                .zip(reference.momentum)
+                .zip(reference.velocity())
                 .map(|(v, r)| (v - r).powi(2))
                 .sum::<f64>()
-                / reference.momentum.iter().map(|v| v * v).sum::<f64>();
-            sums[1] += (value.pressure(GAS) - reference.pressure(GAS)).powi(2);
+                / reference.velocity().iter().map(|v| v * v).sum::<f64>();
+            sums[1] += (value.pressure(GAS) - exact_pressure(END)).powi(2);
             sums[2] += (value.density - 1.0).powi(2);
         }
     }
@@ -173,12 +179,29 @@ fn native_time(mesh: &Mesh, steps: usize) -> Result<CompressibleDgState, String>
     let mut state = CompressibleDgState::from_function(mesh, |p| exact(p[2], 0.0))
         .map_err(|e| format!("native state: {e:?}"))?;
     let dt = END / steps as f64;
-    for _ in 0..steps {
+    for step in 0..steps {
+        // Compare one public step with the unmodified native RHS stages. This
+        // proves the smooth-flow order test actually leaves the limiter idle.
+        let unlimited = if step == 0 {
+            let s1 = euler(&solver.operator, &state, dt)?;
+            let s2 = combine(&state, 0.75, &euler(&solver.operator, &s1, dt)?, 0.25);
+            Some(combine(
+                &state,
+                1.0 / 3.0,
+                &euler(&solver.operator, &s2, dt)?,
+                2.0 / 3.0,
+            ))
+        } else {
+            None
+        };
         let report = solver
             .step(&mut state, dt)
             .map_err(|e| format!("native step: {e:?}"))?;
         if report.retries != 0 || (report.accepted_time_step - dt).abs() > 1e-14 {
             return Err("temporal refinement changed the requested timestep".into());
+        }
+        if unlimited.is_some_and(|s| difference(&s, &state) > 1e-13) {
+            return Err("limiter changed the smooth-flow temporal test".into());
         }
     }
     Ok(state)
@@ -200,12 +223,16 @@ fn difference(a: &CompressibleDgState, b: &CompressibleDgState) -> f64 {
 }
 
 pub(super) fn run() -> Result<QaResult, String> {
+    let started = std::time::Instant::now();
     let mut result = QaResult::passed("fem.compressible-shear-wave-3d.v1")
         .requested_backend("cpu").actual_backend("cpu")
         .seed("rotating-shear:rho1:A0.4:kpi:mu0.2:T1:t0.1")
+        .input_checksum("unit-cube:tetra-p1:n2/4/6:rho1:A0.4:mu0.2:gamma1.4:R1:T1:t0.1")
+        .reference_checksum("analytic:rotating-shear:A0.4:mu0.2:gamma1.4:R1:T1:t0.1")
         .reference("exact nonlinear rotating shear: A=A0 exp(-mu pi^2 t), rho=1, total energy constant")
         .formulation("native P1 DG Euler/stress/heat/SIPG; stage-time face traces; separate public SSPRK3 time refinement");
     let mut velocity_errors = Vec::new();
+    let mut fine_errors = [0.0; 3];
     for n in [2, 4, 6] {
         let mesh = mesh(n);
         let state = solve_wave(&mesh, 100, VISCOSITY)?;
@@ -218,6 +245,7 @@ pub(super) fn run() -> Result<QaResult, String> {
             result = result.metric(format!("{name}_error_n{n}"), value);
         }
         velocity_errors.push(error[0]);
+        fine_errors = error;
     }
     let spatial_rate = (velocity_errors[1] / velocity_errors[2]).ln() / (1.5_f64).ln();
     let mesh = mesh(2);
@@ -230,16 +258,104 @@ pub(super) fn run() -> Result<QaResult, String> {
         .map(|s| difference(&s[0], &s[1]))
         .collect();
     let temporal_rate = (deltas[1] / deltas[2]).log2();
+    let coarse_temporal_rate = (deltas[0] / deltas[1]).log2();
     let control_mesh = self::mesh(6);
     let control = solve_wave(&control_mesh, 100, VISCOSITY * 0.01)?;
     let control_error = errors(&control_mesh, &control)[0];
+    let time_refined = solve_wave(&control_mesh, 200, VISCOSITY)?;
+    let fine = solve_wave(&control_mesh, 100, VISCOSITY)?;
+    let spatial_time_error = difference(&fine, &time_refined) / AMPLITUDE;
     println!(
         "shear spatial_rate={spatial_rate} temporal_deltas={deltas:?} temporal_rate={temporal_rate} control_error={control_error}"
     );
     result = result
         .metric("spatial_rate", spatial_rate)
         .metric("temporal_rate", temporal_rate)
-        .metric("transport_control_error", control_error);
-    // Acceptance thresholds are added after checking the development run.
+        .metric("coarse_temporal_rate", coarse_temporal_rate)
+        .metric("transport_control_error", control_error)
+        .metric("spatial_time_refinement_error", spatial_time_error)
+        .metric("temporal_delta_coarse", deltas[0])
+        .metric("temporal_delta_medium", deltas[1])
+        .metric("temporal_delta_fine", deltas[2])
+        .metric("native_spatial_solves", 6.0)
+        .metric("native_spatial_steps", 700.0)
+        .metric("public_temporal_solves", 4.0)
+        .metric("public_temporal_steps", 300.0)
+        .metric(
+            "exact_viscous_amplitude_decay",
+            1.0 - (-VISCOSITY * PI * PI * END).exp(),
+        )
+        .elapsed_ms(started.elapsed().as_millis() as u64);
+    // Face-constant prescribed traces limit this small-mesh spatial test to
+    // approximately first order. The documented 3% velocity tolerance is
+    // deliberately separate from the original uniform-state tolerance.
+    for (name, value, bound) in [
+        ("velocity_error_n6", fine_errors[0], 0.03),
+        ("pressure_error_n6", fine_errors[1], 0.003),
+        ("density_error_n6", fine_errors[2], 0.003),
+        ("spatial_time_refinement_error", spatial_time_error, 1e-4),
+    ] {
+        if !value.is_finite() || value > bound {
+            return Err(format!("{name}={value} exceeds {bound}"));
+        }
+        result = result.maximum(name, bound);
+    }
+    for (name, value, bound) in [
+        ("spatial_rate", spatial_rate, 1.0),
+        ("temporal_rate", temporal_rate, 2.8),
+        ("coarse_temporal_rate", coarse_temporal_rate, 2.8),
+        ("transport_control_error", control_error, 0.1),
+        ("temporal_delta_fine", deltas[2], 1e-10),
+    ] {
+        if !value.is_finite() || value < bound {
+            return Err(format!("{name}={value} is below {bound}"));
+        }
+        result = result.minimum(name, bound);
+    }
+    if velocity_errors.windows(2).any(|e| e[1] >= e[0])
+        || !(2.8..=3.5).contains(&temporal_rate)
+        || !(2.8..=3.5).contains(&coarse_temporal_rate)
+    {
+        return Err("shear-wave spatial/time refinement is not convergent".into());
+    }
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Independent differential identity for all five conservative equations.
+    // This checks the exact benchmark, including nonlinear viscous heating.
+    #[test]
+    fn exact_wave_satisfies_nonlinear_viscous_balance() {
+        let t = 0.037;
+        let z = 0.31;
+        let epsilon = 1e-5;
+        let flux = |z: f64| {
+            let state = exact(z, t);
+            let a = AMPLITUDE * (-VISCOSITY * PI * PI * t).exp();
+            let derivative = [-PI * a * (PI * z).sin(), PI * a * (PI * z).cos()];
+            // Only the z flux has nonzero divergence. Advective velocity in
+            // that direction is zero; the stress and work terms remain.
+            [
+                0.0,
+                -VISCOSITY * derivative[0],
+                -VISCOSITY * derivative[1],
+                exact_pressure(t),
+                -VISCOSITY
+                    * (state.momentum[0] * derivative[0] + state.momentum[1] * derivative[1]),
+            ]
+        };
+        let before = exact(z, t - epsilon).as_array();
+        let after = exact(z, t + epsilon).as_array();
+        let left = flux(z - epsilon);
+        let right = flux(z + epsilon);
+        for equation in 0..5 {
+            let residual = (after[equation] - before[equation] + right[equation] - left[equation])
+                / (2.0 * epsilon);
+            assert!(residual.abs() < 1e-7, "equation {equation}: {residual}");
+        }
+        assert!(exact_pressure(END) > exact_pressure(0.0));
+    }
 }

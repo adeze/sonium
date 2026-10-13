@@ -12,8 +12,8 @@
 
 use clap::ValueEnum;
 use sonium_qa::rad::TimeHistory;
-use sonium_qa::rad::{engine_exe, resolve_engine_pair};
 use sonium_qa::rad::oc_golden::resolve_scratch_root;
+use sonium_qa::rad::{engine_exe, resolve_engine_pair};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -233,7 +233,12 @@ pub struct TimedOutput {
 ///
 /// Stdout/stderr drain on reader threads while the parent blocks in
 /// `wait4`, so large vendor logs never deadlock the pipes. `ru_maxrss`
-/// is that child's own peak, unlike the cumulative `RUSAGE_CHILDREN`.
+/// is that child's own peak, unlike the cumulative `RUSAGE_CHILDREN`,
+/// with one caveat: Linux `fork` copies the parent's RSS hiwater into
+/// the child and `exec` does not reset it, so a child forked after an
+/// allocation-heavy phase reports at least the parent's peak. Run
+/// process arms before allocation-heavy in-process arms so vendor
+/// footprints stay honest.
 pub fn run_timed(
     exe: &Path,
     args: &[String],
@@ -469,11 +474,7 @@ pub fn vendor_env(exec_dir: &Path, omp_threads: usize) -> Vec<(String, String)> 
 }
 
 /// Engine argv for one deck under the resolved launch mode.
-pub fn engine_argv(
-    launch: &EngineLaunch,
-    engine_exe: &Path,
-    deck: &str,
-) -> (PathBuf, Vec<String>) {
+pub fn engine_argv(launch: &EngineLaunch, engine_exe: &Path, deck: &str) -> (PathBuf, Vec<String>) {
     match launch.flavor {
         FlavorOpt::Mpi => (
             PathBuf::from("mpirun"),

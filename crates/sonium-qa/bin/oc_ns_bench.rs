@@ -32,17 +32,16 @@ mod oc_engine;
 
 use clap::{Parser, ValueEnum};
 use oc_engine::{
-    EngineCtx, FlavorOpt, Probe, RepeatSample, SampleRule, aggregate_repeats, cpu_model,
-    engine_argv, engine_context, first_existing, load_th_history, maybe_clean, out_candidates,
-    plateau_mean, read_probe_file, repeat_scratch, resolve_ns_decks, resolve_repeats,
-    resolve_sides, run_rootname, run_vendor_stage, self_peak_rss_bytes, starter_argv, th_candidates,
-    total_cycles, SideOpt, deck_dof,
+    EngineCtx, FlavorOpt, Probe, RepeatSample, SampleRule, SideOpt, aggregate_repeats, cpu_model,
+    deck_dof, engine_argv, engine_context, first_existing, load_th_history, maybe_clean,
+    out_candidates, plateau_mean, read_probe_file, repeat_scratch, resolve_ns_decks,
+    resolve_repeats, resolve_sides, run_rootname, run_vendor_stage, self_peak_rss_bytes,
+    starter_argv, th_candidates, total_cycles,
 };
 use sonium_bench::oc_compare::{
     BUNDLE_SCHEMA, BenchBundle, BenchRow, HardwareInfo, PROTOCOL_CORRECTNESS, ProtocolInfo, Side,
     bundle_json, render_bundle_markdown,
 };
-use sonium_fem::LinearSolverBackend;
 use sonium_fem::basis::PolynomialDegree;
 use sonium_fem::boundary::locate_dofs_geometrical;
 use sonium_fem::mesh::Mesh;
@@ -53,6 +52,10 @@ use sonium_fem::physics::fluid::stokes::navier_stokes::{
 use sonium_fem::physics::fluid::stokes::time_stepping::{BdfConfig, BdfState};
 use sonium_fem::physics::fluid::stokes::workspace::BdfWorkspace;
 use sonium_fem::spaces::{FunctionSpace, H1Space, VectorH1Space};
+use sonium_fem::{
+    BackendPreconditionerKind, BackendPressureSchurPreconditionerKind, LinearSolverBackend,
+    LinearSolverCpuPreconditionerKind, LinearSolverKind,
+};
 use sonium_qa::analytical::{
     ghia_lid_cavity_re100_u, interp_sorted_samples, ns_taylor_green_vortex,
 };
@@ -80,11 +83,20 @@ const CAVITY_GHIA_MAX_ERROR: f64 = 0.03;
 /// Taylor-Green kinematic viscosity; U=L=1 gives Re=100.
 const TG_NU: f64 = 0.01;
 /// Taylor-Green mesh subdivisions per side over `[0, 2pi]^2`.
-const TG_MESH_N: usize = 64;
+///
+/// 128 subdivisions give 49,923 velocity+pressure dofs and 22-second
+/// rows: enough timing weight for stable medians without making each
+/// benchmark row a multi-minute commitment.
+const TG_MESH_N: usize = 128;
 /// Taylor-Green BDF2 step size in seconds.
 const TG_DT: f64 = 0.1;
-/// Taylor-Green BDF2 step count; `TG_DT * TG_STEPS = 5` seconds.
-const TG_STEPS: usize = 50;
+/// Taylor-Green BDF2 step count; `TG_DT * TG_STEPS = 1` second.
+///
+/// A 1-second march keeps the frozen-boundary modeling error out of
+/// the interior gate: the boundary state overstates the decayed field
+/// by only 2% at t=1 (vs 9.5% at t=5), and advection carries it ~1
+/// unit into the 6.28-unit domain, short of the interior mask.
+const TG_STEPS: usize = 10;
 /// Taylor-Green interior gate margin from each wall.
 ///
 /// Dirichlet boundaries hold the frozen t=0 analytic state while the
@@ -94,10 +106,12 @@ const TG_STEPS: usize = 50;
 const TG_INTERIOR_MARGIN: f64 = 0.5;
 /// Taylor-Green interior max-velocity-error gate.
 ///
-/// Bring-up bound: the frozen-boundary march is expected to hold the
-/// interior within 10% of the analytic decay; tighten after the grid
-/// study in the baseline step measures the true discretization error.
-const TG_MAX_VELOCITY_ERROR: f64 = 0.10;
+/// Calibrated 3x over the measured frozen-boundary floor: the interior
+/// error sits at 0.0163-0.0167 across mesh (n=64/128) and dt (0.1/0.05)
+/// variations, so it is the frozen-boundary modeling error, not
+/// discretization, and no refinement will reduce it. The gate clears
+/// that floor with margin while still catching solver regressions.
+const TG_MAX_VELOCITY_ERROR: f64 = 0.05;
 /// Geometric tolerance for boundary DOF location on the unit cavity.
 const CAVITY_GEOM_TOL: f64 = 1e-10;
 /// Relative residual tolerance for each linearized solve.
@@ -109,14 +123,31 @@ const CAVITY_GEOM_TOL: f64 = 1e-10;
 /// above this: Picard converges the nonlinear problem to 1e-6 relative
 /// change regardless. The accuracy gates still bind every row.
 const LINEAR_SOLVER_TOLERANCE: f64 = 1e-8;
+// CPU preconditioner for the steady cavity rows: the steady Oseen
+// matrix suits monolithic ILU(0) + GMRES. It converges every Picard
+// step at n=64 and solves each step 27% faster than the block
+// ILUT-Schur alternative (measured 55.6s vs 71.2s per full solve).
+// The unsteady Taylor-Green rows need the Schur path instead (see the
+// comment at the Taylor-Green config below).
 
 /// Sonium linear-solve backend for the timed rows.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum BackendOpt {
     /// In-house BLAS-1 + ILU GMRES on the CPU.
     Cpu,
-    /// CUDA GMRES with the polynomial Jacobi preconditioner.
+    /// CUDA GMRES with the selected GPU preconditioner.
     Cuda,
+}
+
+/// GPU preconditioner for `--backend cuda` rows (CPU rows ignore it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum GpuPrecondOpt {
+    /// Polynomial Jacobi (baseline; weakest, cheapest per iteration).
+    Poly,
+    /// Chebyshev (stronger smoothers, needs eigenvalue bounds).
+    Chebyshev,
+    /// Block Jacobi-Schur with AMG on the pressure block (strongest).
+    SchurAmg,
 }
 
 #[derive(Parser, Debug)]
@@ -168,18 +199,48 @@ struct Args {
     /// Sonium linear-solve backend for the timed rows.
     #[arg(long, value_enum, default_value_t = BackendOpt::Cpu)]
     backend: BackendOpt,
+    /// GPU preconditioner for `--backend cuda` rows; CPU rows ignore it.
+    #[arg(long, value_enum, default_value_t = GpuPrecondOpt::Poly)]
+    backend_precond: GpuPrecondOpt,
+    /// Route the GPU inner Krylov through f32 (FGMRES-IR); f64 outer
+    /// refinement keeps f64 accuracy. CUDA rows only.
+    #[arg(long)]
+    gpu_mixed: bool,
     /// Lid-cavity mesh subdivisions per side; defaults to 64.
     #[arg(long)]
     mesh_n: Option<usize>,
-    /// Taylor-Green mesh subdivisions per side; defaults to 64.
+    /// Taylor-Green mesh subdivisions per side; defaults to 128.
     #[arg(long)]
     tg_n: Option<usize>,
     /// Taylor-Green BDF step size in seconds; defaults to 0.1.
     #[arg(long)]
     tg_dt: Option<f64>,
-    /// Taylor-Green BDF step count; defaults to 50.
+    /// Taylor-Green BDF step count; defaults to 10.
     #[arg(long)]
     tg_steps: Option<usize>,
+}
+
+/// Maps the CLI GPU preconditioner to solver config kinds.
+fn gpu_precond_kinds(
+    opt: GpuPrecondOpt,
+) -> (
+    BackendPreconditionerKind,
+    BackendPressureSchurPreconditionerKind,
+) {
+    match opt {
+        GpuPrecondOpt::Poly => (
+            BackendPreconditionerKind::PolynomialJacobi,
+            BackendPressureSchurPreconditionerKind::Polynomial,
+        ),
+        GpuPrecondOpt::Chebyshev => (
+            BackendPreconditionerKind::Chebyshev,
+            BackendPressureSchurPreconditionerKind::Chebyshev,
+        ),
+        GpuPrecondOpt::SchurAmg => (
+            BackendPreconditionerKind::JacobiSchur,
+            BackendPressureSchurPreconditionerKind::Amg,
+        ),
+    }
 }
 
 /// Lid-driven cavity model, built once per row outside the timing.
@@ -212,6 +273,8 @@ fn cavity_bc(x: f64, y: f64, _z: f64) -> Vec<f64> {
 fn build_cavity_model(
     mesh_n: usize,
     backend: LinearSolverBackend,
+    gpu_precond: GpuPrecondOpt,
+    gpu_mixed: bool,
 ) -> Result<CavityModel, String> {
     if mesh_n == 0 {
         return Err("--mesh-n must be positive".to_string());
@@ -221,8 +284,7 @@ fn build_cavity_model(
     let p_space = H1Space::new(PolynomialDegree::P1);
     let n_v = v_space.num_global_dofs(&mesh);
     let n_p = p_space.num_global_dofs(&mesh);
-    let dof = u64::try_from(n_v + n_p)
-        .map_err(|_| "cavity dof count overflows u64".to_string())?;
+    let dof = u64::try_from(n_v + n_p).map_err(|_| "cavity dof count overflows u64".to_string())?;
     let bc_dofs = locate_dofs_geometrical(&mesh, &v_space, |x, y, _z| {
         x < CAVITY_GEOM_TOL
             || (1.0 - x) < CAVITY_GEOM_TOL
@@ -241,7 +303,15 @@ fn build_cavity_model(
         use_direct_solver: false,
         linear_solver_max_iterations: 3000,
         linear_solver_tolerance: LINEAR_SOLVER_TOLERANCE,
+        linear_solver_cpu_preconditioner: LinearSolverCpuPreconditionerKind::Ilu,
         linear_solver_backend: backend,
+        linear_solver_backend_preconditioner: gpu_precond_kinds(gpu_precond).0,
+        linear_solver_schur_preconditioner: gpu_precond_kinds(gpu_precond).1,
+        linear_solver_kind: if gpu_mixed {
+            LinearSolverKind::MixedF32F64
+        } else {
+            LinearSolverKind::F64
+        },
         ..Default::default()
     };
     Ok(CavityModel {
@@ -384,6 +454,8 @@ fn build_tg_model(
     dt: f64,
     steps: usize,
     backend: LinearSolverBackend,
+    gpu_precond: GpuPrecondOpt,
+    gpu_mixed: bool,
 ) -> Result<TgModel, String> {
     if mesh_n == 0 {
         return Err("--tg-n must be positive".to_string());
@@ -404,17 +476,14 @@ fn build_tg_model(
     let p_space = H1Space::new(PolynomialDegree::P1);
     let n_v = v_space.num_global_dofs(&mesh);
     let n_p = p_space.num_global_dofs(&mesh);
-    let dof = u64::try_from(n_v + n_p)
-        .map_err(|_| "Taylor-Green dof count overflows u64".to_string())?;
+    let dof =
+        u64::try_from(n_v + n_p).map_err(|_| "Taylor-Green dof count overflows u64".to_string())?;
     // Boundary location tolerance scales with the period: node
     // coordinates are exact multiples of period/n, so 1e-9 brackets
     // rounding without admitting interior nodes.
     let geom_tol = 1e-9;
     let bc_dofs = locate_dofs_geometrical(&mesh, &v_space, |x, y, _z| {
-        x < geom_tol
-            || (period - x) < geom_tol
-            || y < geom_tol
-            || (period - y) < geom_tol
+        x < geom_tol || (period - x) < geom_tol || y < geom_tol || (period - y) < geom_tol
     });
     if bc_dofs.is_empty() {
         return Err("Taylor-Green boundary location found no DOFs".to_string());
@@ -425,7 +494,20 @@ fn build_tg_model(
         use_direct_solver: false,
         linear_solver_max_iterations: 3000,
         linear_solver_tolerance: LINEAR_SOLVER_TOLERANCE,
+        // The unsteady mass-dominated saddle system defeats monolithic
+        // ILU(0): measured Arnoldi breakdown at 1.5e-8/1.5e-10 after
+        // thousands of GMRES iterations on the n=32 step. The block
+        // ILUT-Schur preconditioner is the production saddle-point path
+        // (speaker-port fine-3D precedent): 25 iterations to 5e-9.
+        linear_solver_cpu_preconditioner: LinearSolverCpuPreconditionerKind::IlutSchur,
         linear_solver_backend: backend,
+        linear_solver_backend_preconditioner: gpu_precond_kinds(gpu_precond).0,
+        linear_solver_schur_preconditioner: gpu_precond_kinds(gpu_precond).1,
+        linear_solver_kind: if gpu_mixed {
+            LinearSolverKind::MixedF32F64
+        } else {
+            LinearSolverKind::F64
+        },
         ..Default::default()
     };
     let bdf = BdfConfig::bdf2(dt, steps);
@@ -474,10 +556,7 @@ fn build_tg_model(
 }
 
 /// One timed Taylor-Green repeat: BDF march plus analytic gate.
-fn tg_repeat(
-    model: &TgModel,
-    want_backend: LinearSolverBackend,
-) -> Result<RepeatSample, String> {
+fn tg_repeat(model: &TgModel, want_backend: LinearSolverBackend) -> Result<RepeatSample, String> {
     let start = std::time::Instant::now();
     let n_v = model.velocity_coords.len();
     let n_p = model.pressure_coords.len();
@@ -491,6 +570,12 @@ fn tg_repeat(
         let (_, _, p) = ns_taylor_green_vortex(point[0], point[1], 0.0, TG_NU);
         state.pressure[dof] = p;
     }
+    // Per-step backend audit: every BDF solve should resolve to the
+    // requested backend. A unanimous fallback still records a row with
+    // correct=false (cavity precedent); mixed backends fail the row too.
+    let mut resolved_backend: Option<LinearSolverBackend> = None;
+    let mut mixed_backends = false;
+    let mut failed_step: Option<usize> = None;
     for step in 0..model.bdf.num_steps {
         if !solve_bdf_step_cached(
             &model.mesh,
@@ -504,7 +589,19 @@ fn tg_repeat(
             &[],
             &model.workspace,
         ) {
-            return Err(format!("Taylor-Green BDF solve failed at step {step}"));
+            // A failed case still records a correct=false row (cavity
+            // precedent); only internal corruption aborts the binary.
+            failed_step = Some(step);
+            break;
+        }
+        let resolved = model
+            .workspace
+            .last_linear_solve_telemetry()
+            .map(|telemetry| telemetry.resolved_linear_solver_backend);
+        match (resolved_backend, resolved) {
+            (None, Some(first)) => resolved_backend = Some(first),
+            (Some(seen), Some(now)) if seen == now => {}
+            _ => mixed_backends = true,
         }
     }
     let wall_s = start.elapsed().as_secs_f64();
@@ -520,10 +617,19 @@ fn tg_repeat(
     if !max_err.is_finite() {
         return Err("Taylor-Green velocity error is non-finite".to_string());
     }
-    // The BDF path reports no per-step backend today; the row backend
-    // is pinned by construction and the cavity arm audits resolution.
-    let _ = want_backend;
     let mut failures = Vec::new();
+    if let Some(step) = failed_step {
+        failures.push(format!("Taylor-Green BDF solve failed at step {step}"));
+    }
+    if mixed_backends {
+        failures.push(format!(
+            "mixed linear-solver backends across BDF steps (requested {want_backend:?})"
+        ));
+    } else if resolved_backend != Some(want_backend) {
+        failures.push(format!(
+            "backend mismatch: requested {want_backend:?}, resolved {resolved_backend:?}"
+        ));
+    }
     println!("Taylor-Green interior max error: {max_err:.4} (gate {TG_MAX_VELOCITY_ERROR})");
     if max_err > TG_MAX_VELOCITY_ERROR {
         failures.push(format!(
@@ -534,7 +640,7 @@ fn tg_repeat(
         println!("FAIL: {failure}");
     }
     println!(
-        "sonium ns_taylor_green: wall {wall_s:.3}s, steps {}, dof {}, rss {} bytes, correct {}",
+        "sonium ns_taylor_green: wall {wall_s:.3}s, steps {}, dof {}, resolved {resolved_backend:?}, rss {} bytes, correct {}",
         model.bdf.num_steps,
         model.dof,
         self_peak_rss_bytes(),
@@ -555,12 +661,7 @@ fn tg_repeat(
 /// The model is built once per row outside the timing; each repeat
 /// re-solves from the same initial state so iteration counts stay
 /// deterministic across repeats.
-fn run_sonium_arm(
-    args: &Args,
-    deck: &str,
-    repeats: u32,
-    warmup: u32,
-) -> Result<BenchRow, String> {
+fn run_sonium_arm(args: &Args, deck: &str, repeats: u32, warmup: u32) -> Result<BenchRow, String> {
     // Safety: no other thread reads the environment concurrently at
     // this point (single-threaded startup before any spawn).
     unsafe {
@@ -577,11 +678,13 @@ fn run_sonium_arm(
     let mut samples = Vec::new();
     match deck {
         "ns_lid_cavity" => {
-            let model = build_cavity_model(args.mesh_n.unwrap_or(CAVITY_MESH_N), backend)?;
-            println!(
-                "sonium {deck}: dof {}, backend {backend:?}",
-                model.dof,
-            );
+            let model = build_cavity_model(
+                args.mesh_n.unwrap_or(CAVITY_MESH_N),
+                backend,
+                args.backend_precond,
+                args.gpu_mixed,
+            )?;
+            println!("sonium {deck}: dof {}, backend {backend:?}", model.dof,);
             for warmup_index in 0..warmup {
                 println!("sonium {deck}: warmup {}/{}", warmup_index + 1, warmup);
                 let _ = cavity_repeat(&model, backend)?;
@@ -597,6 +700,8 @@ fn run_sonium_arm(
                 args.tg_dt.unwrap_or(TG_DT),
                 args.tg_steps.unwrap_or(TG_STEPS),
                 backend,
+                args.backend_precond,
+                args.gpu_mixed,
             )?;
             println!(
                 "sonium {deck}: dof {}, steps {}, backend {backend:?}",
@@ -665,11 +770,7 @@ fn check_ns_probes(history: &TimeHistory, probes: &[Probe]) -> Vec<String> {
 }
 
 /// One timed NS engine repeat: stage, starter, timed engine, probes.
-fn engine_ns_repeat(
-    ctx: &EngineCtx,
-    deck: &str,
-    index: usize,
-) -> Result<RepeatSample, String> {
+fn engine_ns_repeat(ctx: &EngineCtx, deck: &str, index: usize) -> Result<RepeatSample, String> {
     let dir = repeat_scratch(&ctx.scratch_root, deck, "engine", index);
     if dir.exists() {
         std::fs::remove_dir_all(&dir)
@@ -686,11 +787,7 @@ fn engine_ns_repeat(
 }
 
 /// Inner NS repeat so failures keep scratch for forensics.
-fn engine_ns_repeat_inner(
-    ctx: &EngineCtx,
-    deck: &str,
-    dir: &Path,
-) -> Result<RepeatSample, String> {
+fn engine_ns_repeat_inner(ctx: &EngineCtx, deck: &str, dir: &Path) -> Result<RepeatSample, String> {
     let decks = resolve_ns_decks(deck)?;
     let probes = read_probe_file(&decks.probes)?;
     let starter_name = format!("{deck}_0000.rad");
@@ -746,12 +843,14 @@ fn engine_ns_repeat_inner(
 }
 
 /// Runs the engine arm over warmup plus timed repeats.
-fn run_engine_arm(
-    args: &Args,
-    deck: &str,
-    repeats: u32,
-    warmup: u32,
-) -> Result<BenchRow, String> {
+fn run_engine_arm(args: &Args, deck: &str, repeats: u32, warmup: u32) -> Result<BenchRow, String> {
+    if deck == "ns_taylor_green" {
+        return Err(
+            "engine arm supports ns_lid_cavity only; Taylor-Green needs a spatially-varying \
+             initial velocity and OpenCourant offers only uniform-per-group /INIVEL"
+                .to_string(),
+        );
+    }
     let ctx = engine_context(
         args.exe.clone(),
         args.threads.max(1),
@@ -805,12 +904,14 @@ fn render_ns_verdict(bundle: &BenchBundle) -> String {
     }
     let mut any = false;
     for (deck, threads) in groups {
-        let sonium = bundle.rows.iter().find(|row| {
-            row.deck == deck && row.threads == threads && row.side == Side::Sonium
-        });
-        let engine = bundle.rows.iter().find(|row| {
-            row.deck == deck && row.threads == threads && row.side == Side::Engine
-        });
+        let sonium = bundle
+            .rows
+            .iter()
+            .find(|row| row.deck == deck && row.threads == threads && row.side == Side::Sonium);
+        let engine = bundle
+            .rows
+            .iter()
+            .find(|row| row.deck == deck && row.threads == threads && row.side == Side::Engine);
         let (Some(sonium), Some(engine)) = (sonium, engine) else {
             continue;
         };
@@ -836,22 +937,28 @@ fn render_ns_verdict(bundle: &BenchBundle) -> String {
 
 fn run() -> Result<(), String> {
     let args = Args::parse();
-    let deck = args.deck.clone().unwrap_or_else(|| DEFAULT_DECK.to_string());
+    let deck = args
+        .deck
+        .clone()
+        .unwrap_or_else(|| DEFAULT_DECK.to_string());
     if deck.trim().is_empty() {
         return Err("--deck must not be empty".to_string());
     }
-    let (run_sonium, run_engine) =
-        resolve_sides(args.sonium_only, args.engine_only, args.side)?;
+    let (run_sonium, run_engine) = resolve_sides(args.sonium_only, args.engine_only, args.side)?;
     let (repeats, warmup) = resolve_repeats(args.repeats, args.quick)?;
     if args.threads == 0 {
         return Err("--threads must be positive".to_string());
     }
     let mut rows = Vec::new();
-    if run_sonium {
-        rows.push(run_sonium_arm(&args, &deck, repeats, warmup)?);
-    }
+    // Engine first: forked vendor children inherit this process's RSS
+    // hiwater, so the engine arm must run before the allocation-heavy
+    // sonium solves (measured: engine reported the sonium 306 MB peak
+    // instead of its own 49 MB when ordered second).
     if run_engine {
         rows.push(run_engine_arm(&args, &deck, repeats, warmup)?);
+    }
+    if run_sonium {
+        rows.push(run_sonium_arm(&args, &deck, repeats, warmup)?);
     }
     let bundle = BenchBundle {
         schema: BUNDLE_SCHEMA.to_string(),

@@ -1,0 +1,71 @@
+{
+  "case": "ns_lid_cavity",
+  "engine": "OpenCourant linux64_gf 2026-10-12 CommitID 33e68517",
+  "units": "SI",
+  "note": "expected = linear interpolation of Ghia Re=100 centerline u at the TH node stations. Calibrated 2026-10-12 on the settled t=30 run (90054 cycles, late drift 5.3e-5): max probe error 0.0264 at y=0.875, every probe passes with >=3.9x margin.",
+  "probes": [
+    {
+      "label": "centerline u y=0.0000",
+      "channel": "VX/33",
+      "expected": 0.0,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.1250",
+      "channel": "VX/553",
+      "expected": -0.0766823613086771,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.2500",
+      "channel": "VX/1073",
+      "expected": -0.1408355575868373,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.3750",
+      "channel": "VX/1593",
+      "expected": -0.1862153084982538,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.5000",
+      "channel": "VX/2113",
+      "expected": -0.2058,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.6250",
+      "channel": "VX/2633",
+      "expected": -0.1271025597269624,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.7500",
+      "channel": "VX/3153",
+      "expected": 0.033674744027303666,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=0.8750",
+      "channel": "VX/3673",
+      "expected": 0.3365579310344827,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    },
+    {
+      "label": "centerline u y=1.0000",
+      "channel": "VX/4193",
+      "expected": 1.0,
+      "abs_tol": 0.02,
+      "rel_tol": 0.25
+    }
+  ]
+}

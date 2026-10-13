@@ -1,14 +1,15 @@
-//! Compressible Navier-Stokes uniform-state smoke gate (3D).
+//! Compressible Navier-Stokes smoke and nonuniform viscous accuracy gates.
 //!
-//! Thin wrapper over [`sonium_qa::fem_physics_3d::run_compressible_case`]. Scope
-//! is deliberately limited to uniform-flow invariants: free-stream residual on
-//! triangles/tetrahedra, one SSPRK3 step that preserves positive density and
-//! pressure, and the Sutherland transport reference value. It solves no
-//! nonuniform viscous flow and measures no spatial or temporal accuracy.
+//! The original uniform-flow record checks free-stream preservation, positive
+//! thermodynamics, and Sutherland viscosity. A separate rotating shear-wave
+//! record solves a nonuniform exact viscous benchmark on three tetrahedral
+//! meshes and checks temporal convergence through the public SSPRK3 solver.
 //!
-//! Do not cite this binary as compressible-flow accuracy evidence; that
-//! requires a nonuniform manufactured or benchmark solution with
-//! spatial/time convergence, which this gate does not run.
+//! The spatial driver supplies exact boundary traces at SSPRK3 stage times.
+//! The public solver's temporal test uses fixed traces and self-convergence;
+//! it does not claim time-dependent boundary support in the production API.
+
+// Rust guideline compliant 2026-02-21
 fn main() {
     sonium_qa::fem_physics_3d::run_compressible_case();
     match compressible_shear::run().and_then(|r| r.to_json_line()) {
@@ -17,6 +18,14 @@ fn main() {
             println!("SUCCESS");
         }
         Err(error) => {
+            if let Ok(line) =
+                sonium_qa::QaResult::failed("fem.compressible-shear-wave-3d.v1", &error)
+                    .requested_backend("cpu")
+                    .actual_backend("cpu")
+                    .to_json_line()
+            {
+                println!("QA_RESULT: {line}");
+            }
             eprintln!("FAILED: {error}");
             std::process::exit(1);
         }

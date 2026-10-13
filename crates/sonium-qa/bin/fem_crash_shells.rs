@@ -596,21 +596,21 @@ fn main() -> ExitCode {
         integrity.status = sonium_qa::QaStatus::Failed;
     }
     match integrity.to_json_line() {
-        Ok(line) => println!("{line}"),
+        Ok(line) => println!("QA_RESULT: {line}"),
         Err(e) => {
             eprintln!("integrity reporting failed: {e}");
             failed += 1;
         }
     }
     match shell_plate_golden::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
-        Ok(line) => println!("{line}"),
+        Ok(line) => println!("QA_RESULT: {line}"),
         Err(e) => {
             eprintln!("native shell gate failed: {e}");
             failed += 1;
         }
     }
     match crash_box_golden::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
-        Ok(line) => println!("{line}"),
+        Ok(line) => println!("QA_RESULT: {line}"),
         Err(e) => {
             eprintln!("native original impact gate failed: {e}");
             failed += 1;

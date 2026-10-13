@@ -22,10 +22,16 @@ fn main() {
         Ok(()) => {
             match necking_bar::run().and_then(|r| r.to_json_line().map_err(|e| e.to_string())) {
                 Ok(line) => {
-                    println!("{line}");
+                    println!("QA_RESULT: {line}");
                     println!("SUCCESS: qa-fem-necking-bar");
                 }
                 Err(error) => {
+                    if let Ok(line) =
+                        sonium_qa::QaResult::failed("fem.necking-bar-spatial.v1", &error)
+                            .to_json_line()
+                    {
+                        println!("QA_RESULT: {line}");
+                    }
                     eprintln!("FAILED: native bar: {error}");
                     std::process::exit(1);
                 }
