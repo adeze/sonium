@@ -859,10 +859,59 @@ impl<T: ComplexField> Ilu0Factors<T> {
     }
 }
 
+/// Row-level schedule for one triangular factor: `rows[starts[l]..starts[l + 1]]`
+/// are the rows of level `l`. Every dependency of a level-`l` row lives in
+/// an earlier level, so rows within a level can be solved concurrently and
+/// each row sum keeps its serial accumulation order (bit-identical results
+/// at any thread count and on any architecture).
+fn compute_level_schedule(
+    col_indices: &[u32],
+    row_ptrs: &[usize],
+    n: usize,
+    reverse: bool,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut level_of = vec![0usize; n];
+    let visit = |i: usize, level_of: &mut [usize]| {
+        let mut deepest = 0usize;
+        for &j in &col_indices[row_ptrs[i]..row_ptrs[i + 1]] {
+            deepest = deepest.max(level_of[j as usize] + 1);
+        }
+        level_of[i] = deepest;
+    };
+    if reverse {
+        for i in (0..n).rev() {
+            visit(i, &mut level_of);
+        }
+    } else {
+        for i in 0..n {
+            visit(i, &mut level_of);
+        }
+    }
+    let level_count = level_of.iter().copied().max().map_or(0, |m| m + 1);
+    let mut starts = vec![0usize; level_count + 1];
+    for &level in &level_of {
+        starts[level + 1] += 1;
+    }
+    for level in 0..level_count {
+        starts[level + 1] += starts[level];
+    }
+    let mut rows = vec![0usize; n];
+    let mut cursor = starts[..level_count].to_vec();
+    for (row, &level) in level_of.iter().enumerate() {
+        rows[cursor[level]] = row;
+        cursor[level] += 1;
+    }
+    (rows, starts)
+}
+
 /// ILU(0) preconditioner
 ///
 /// Computes an incomplete LU factorization where the sparsity pattern
 /// of L and U is the same as the original matrix.
+///
+/// Applies run serially on one thread and through a level-scheduled
+/// wavefront on multiple threads; both paths accumulate each row sum in
+/// the same order, so results are bit-identical at any thread count.
 #[derive(Debug, Clone)]
 pub struct IluPreconditioner<T: ComplexField> {
     /// Canonical ILU(0) factors of the (possibly permuted) matrix.
@@ -870,6 +919,37 @@ pub struct IluPreconditioner<T: ComplexField> {
     /// Fill-reducing permutation applied before factorization,
     /// `perm[new_index] = old_index`. `None` for natural ordering.
     perm: Option<Vec<usize>>,
+    /// Forward (L) level offsets over the factored ordering
+    /// (length = levels + 1); only the level count gates the wavefront.
+    forward_level_starts: Vec<usize>,
+    /// Backward (U) level offsets over the factored ordering
+    /// (length = levels + 1); only the level count gates the wavefront.
+    backward_level_starts: Vec<usize>,
+}
+
+impl<T: ComplexField> IluPreconditioner<T> {
+    /// Assemble a preconditioner from factors, deriving the level
+    /// schedules used by the parallel triangular apply.
+    fn assemble(factors: Ilu0Factors<T>, perm: Option<Vec<usize>>) -> Self {
+        let (_, forward_level_starts) = compute_level_schedule(
+            &factors.l_col_indices,
+            &factors.l_row_ptrs,
+            factors.n,
+            false,
+        );
+        let (_, backward_level_starts) = compute_level_schedule(
+            &factors.u_col_indices,
+            &factors.u_row_ptrs,
+            factors.n,
+            true,
+        );
+        Self {
+            factors,
+            perm,
+            forward_level_starts,
+            backward_level_starts,
+        }
+    }
 }
 
 impl<T: ComplexField> IluPreconditioner<T> {
@@ -878,7 +958,7 @@ impl<T: ComplexField> IluPreconditioner<T> {
         perm: Option<Vec<usize>>,
     ) -> Result<Self, sonium_solvers_core::traits::SolverError> {
         validate_checkpoint_factors(&factors, perm.as_deref())?;
-        Ok(Self { factors, perm })
+        Ok(Self::assemble(factors, perm))
     }
 
     pub(crate) fn into_factors(self) -> (Ilu0Factors<T>, Option<Vec<usize>>) {
@@ -1040,7 +1120,7 @@ impl<T: ComplexField> IluPreconditioner<T> {
             },
         };
         validate_checkpoint_factors(&factors, perm.as_deref())?;
-        Ok(Self { factors, perm })
+        Ok(Self::assemble(factors, perm))
     }
 
     /// Create ILU(0) preconditioner from a CSR matrix
@@ -1086,14 +1166,11 @@ impl<T: ComplexField> IluPreconditioner<T> {
     /// ILU(0) factorization of `matrix`, optionally recording the permutation
     /// that was used to produce it.
     fn factorize(matrix: &CsrMatrix<T>, perm: Option<Vec<usize>>, pivot_tolerance: f64) -> Self {
-        Self {
-            factors: ilu0_factorize_with_tolerance(matrix, pivot_tolerance),
-            perm,
-        }
+        Self::assemble(ilu0_factorize_with_tolerance(matrix, pivot_tolerance), perm)
     }
 }
 
-impl<T: ComplexField> Preconditioner<T> for IluPreconditioner<T> {
+impl<T: ComplexField + Send + Sync> Preconditioner<T> for IluPreconditioner<T> {
     fn apply(&self, r: &[T]) -> Vec<T> {
         let mut x = r.to_vec();
         self.apply_into(r, &mut x);
@@ -1150,12 +1227,237 @@ impl<T: ComplexField> Preconditioner<T> for IluPreconditioner<T> {
     }
 }
 
-impl<T: ComplexField> IluPreconditioner<T> {
+/// Smallest matrix dimension eligible for the level-wavefront apply.
+///
+/// Measured on a chiplet x86 (Threadripper PRO 3995WX) with 2D FEM
+/// saddle systems: the wavefront loses to the serial kernel at every
+/// tested size (12k, 50k, 120k rows) and thread count, because freshly
+/// written dependency values cross die boundaries at full coherence
+/// latency while the serial kernel stays cache-resident. The gate
+/// therefore only admits very large, DRAM-resident systems, where the
+/// balance can flip (and uniform-latency architectures, e.g. ARM
+/// servers, where cross-core latency is lower). Validated sizes keep
+/// the bit-identical serial kernel.
+const LEVEL_WAVEFRONT_MIN_N: usize = 1_048_576;
+/// Minimum average rows per level for wavefront synchronization to pay.
+const LEVEL_WAVEFRONT_MIN_AVG_WIDTH: usize = 32;
+
+impl<T: ComplexField + Send + Sync> IluPreconditioner<T> {
     /// Forward/backward substitution in-place on a mutable slice.
+    ///
+    /// With multiple threads and a wide enough schedule this uses a
+    /// level-scheduled wavefront; otherwise it uses the serial factor
+    /// kernel. Both accumulate each row sum in CSR order, so results are
+    /// bit-identical at any thread count.
     #[inline]
     fn solve_in_place(&self, s: &mut [T]) {
-        self.factors.solve_in_place(s);
+        if self.use_level_wavefront() {
+            self.solve_level_wavefront(s);
+        } else {
+            self.factors.solve_in_place(s);
+        }
     }
+
+    /// Whether the level wavefront should replace the serial kernel.
+    fn use_level_wavefront(&self) -> bool {
+        let n = self.factors.n;
+        if n < LEVEL_WAVEFRONT_MIN_N || rayon::current_num_threads() < 2 {
+            return false;
+        }
+        let forward_levels = self.forward_level_starts.len().saturating_sub(1);
+        let backward_levels = self.backward_level_starts.len().saturating_sub(1);
+        forward_levels > 0
+            && backward_levels > 0
+            && forward_levels * LEVEL_WAVEFRONT_MIN_AVG_WIDTH <= n
+            && backward_levels * LEVEL_WAVEFRONT_MIN_AVG_WIDTH <= n
+    }
+
+    /// Level-scheduled forward and backward substitution.
+    fn solve_level_wavefront(&self, s: &mut [T]) {
+        self.run_sliced_sweep(
+            &self.factors.l_values,
+            &self.factors.l_col_indices,
+            &self.factors.l_row_ptrs,
+            None,
+            false,
+            s,
+        );
+        self.run_sliced_sweep(
+            &self.factors.u_values,
+            &self.factors.u_col_indices,
+            &self.factors.u_row_ptrs,
+            Some(&self.factors.u_diag_inv),
+            true,
+            s,
+        );
+    }
+
+    /// One triangular sweep in natural row order, sliced into one
+    /// contiguous row range per worker. A worker solves its slice in
+    /// dependency order (in-slice dependencies are satisfied by that
+    /// order, and contiguous ranges keep the worker's data cache-local)
+    /// and spins only on cross-slice dependencies, tracked by per-worker
+    /// progress counters. Dependencies always point into earlier slices
+    /// (forward) or later slices (backward), so waits form a DAG and
+    /// cannot deadlock; one fork/join covers the whole sweep.
+    #[allow(clippy::too_many_arguments)]
+    fn run_sliced_sweep(
+        &self,
+        values: &[T],
+        col_indices: &[u32],
+        row_ptrs: &[usize],
+        diag_inv: Option<&[T]>,
+        reverse: bool,
+        s: &mut [T],
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        // Shared mutable access to the solution buffer. A row reads only
+        // rows at earlier positions (earlier levels) and writes only its
+        // own entry; progress counters make those writes visible
+        // (release/acquire) before any dependent read.
+        #[derive(Clone, Copy)]
+        struct SharedSlice<U>(*mut U);
+        unsafe impl<U: Send> Send for SharedSlice<U> {}
+        unsafe impl<U: Send> Sync for SharedSlice<U> {}
+        impl<U: Copy> SharedSlice<U> {
+            fn get(&self, i: usize) -> U {
+                unsafe { *self.0.add(i) }
+            }
+            fn set(&self, i: usize, value: U) {
+                unsafe { *self.0.add(i) = value }
+            }
+        }
+
+        let n = s.len();
+        if n == 0 {
+            return;
+        }
+        let shared = SharedSlice(s.as_mut_ptr());
+        let solve_row = |i: usize| {
+            let mut sum = T::zero();
+            for idx in row_ptrs[i]..row_ptrs[i + 1] {
+                let j = col_indices[idx] as usize;
+                sum += values[idx] * shared.get(j);
+            }
+            match diag_inv {
+                None => shared.set(i, shared.get(i) - sum),
+                Some(diag) => shared.set(i, (shared.get(i) - sum) * diag[i]),
+            }
+        };
+        let workers = rayon::current_num_threads().max(1).min(n);
+        if workers <= 1 {
+            if reverse {
+                for i in (0..n).rev() {
+                    solve_row(i);
+                }
+            } else {
+                for i in 0..n {
+                    solve_row(i);
+                }
+            }
+            return;
+        }
+        let slice = n.div_ceil(workers);
+        // Frontier counters, one padded slot per worker. Forward:
+        // progress[w] is the next unsolved row of slice w. Backward:
+        // progress[w] is the lowest unsolved row of slice w. Publishing
+        // every PROGRESS_PUBLISH_INTERVAL rows is safe (waiting slightly
+        // longer never breaks a dependency) and keeps the counters from
+        // becoming a coherence bottleneck of their own.
+        #[repr(align(128))]
+        struct ProgressSlot(AtomicUsize);
+        const PROGRESS_PUBLISH_INTERVAL: usize = 32;
+        let progress: Vec<ProgressSlot> = (0..workers)
+            .map(|w| {
+                let lo = w * slice;
+                let hi = ((w + 1) * slice).min(n);
+                ProgressSlot(AtomicUsize::new(if reverse { hi } else { lo }))
+            })
+            .collect();
+        // Bounded spin: yields only after a generous cap so an
+        // oversubscribed pool cannot starve the worker being awaited.
+        let wait_for = |slot: &AtomicUsize, ready: &dyn Fn(usize) -> bool| {
+            let mut spins = 0u32;
+            while !ready(slot.load(Ordering::Acquire)) {
+                std::hint::spin_loop();
+                spins += 1;
+                if spins >= 1_000_000 {
+                    std::thread::yield_now();
+                    spins = 0;
+                }
+            }
+        };
+
+        rayon::scope(|scope| {
+            for w in 0..workers {
+                let progress = &progress;
+                let wait_for = &wait_for;
+                scope.spawn(move |_| {
+                    let lo = w * slice;
+                    let hi = ((w + 1) * slice).min(n);
+                    // Locally cached frontiers: a remote counter is only
+                    // re-read when a dependency reaches past the cached
+                    // value (dependencies advance monotonically through
+                    // the slice), so satisfied checks stay local. The
+                    // confirmation is fused into the gather: each
+                    // cross-slice value is waited on immediately before
+                    // it is read.
+                    if reverse {
+                        let mut known: Vec<usize> = (0..workers)
+                            .map(|owner| ((owner + 1) * slice).min(n))
+                            .collect();
+                        for (done, i) in (lo..hi).rev().enumerate() {
+                            let mut sum = T::zero();
+                            for idx in row_ptrs[i]..row_ptrs[i + 1] {
+                                let j = col_indices[idx] as usize;
+                                if j >= hi && known[j / slice] > j {
+                                    let owner = j / slice;
+                                    wait_for(&progress[owner].0, &|frontier| frontier <= j);
+                                    known[owner] = progress[owner].0.load(Ordering::Acquire);
+                                }
+                                sum += values[idx] * shared.get(j);
+                            }
+                            match diag_inv {
+                                None => shared.set(i, shared.get(i) - sum),
+                                Some(diag) => shared.set(i, (shared.get(i) - sum) * diag[i]),
+                            }
+                            if (done + 1) % PROGRESS_PUBLISH_INTERVAL == 0 || done + 1 == hi - lo
+                            {
+                                progress[w].0.store(i, Ordering::Release);
+                            }
+                        }
+                    } else {
+                        let mut known: Vec<usize> =
+                            (0..workers).map(|owner| owner * slice).collect();
+                        for (done, i) in (lo..hi).enumerate() {
+                            let mut sum = T::zero();
+                            for idx in row_ptrs[i]..row_ptrs[i + 1] {
+                                let j = col_indices[idx] as usize;
+                                if j < lo && known[j / slice] <= j {
+                                    let owner = j / slice;
+                                    wait_for(&progress[owner].0, &|frontier| frontier > j);
+                                    known[owner] = progress[owner].0.load(Ordering::Acquire);
+                                }
+                                sum += values[idx] * shared.get(j);
+                            }
+                            match diag_inv {
+                                None => shared.set(i, shared.get(i) - sum),
+                                Some(diag) => shared.set(i, (shared.get(i) - sum) * diag[i]),
+                            }
+                            if (done + 1) % PROGRESS_PUBLISH_INTERVAL == 0 || done + 1 == hi - lo
+                            {
+                                progress[w].0.store(i + 1, Ordering::Release);
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }
+}
+
+impl<T: ComplexField> IluPreconditioner<T> {
 
     /// Shared driver for the transpose/Hermitian applies: gather into the
     /// (optional) permuted ordering, run the adjoint factor solve, scatter
@@ -1912,5 +2214,152 @@ mod tests {
 
         let got = precond.apply_hermitian(&r);
         assert_vec_close(&got, &expected, 1e-8, "exact ILUᴴ vs dense Aᴴ solve");
+    }
+
+    /// Toy Stokes saddle system on an `nx` by `ny` grid: velocity unknown
+    /// per node (5-point diffusion) plus one pressure per node, with a
+    /// discrete gradient coupling. Mirrors the NS cavity sparsity (wide
+    /// dependency graph, empty pressure diagonal block).
+    fn saddle_test_matrix(nx: usize, ny: usize) -> CsrMatrix<f64> {
+        let nodes = nx * ny;
+        let n = 2 * nodes;
+        let mut rows: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+        let node = |i: usize, j: usize| j * nx + i;
+        for j in 0..ny {
+            for i in 0..nx {
+                let u = node(i, j);
+                let p = nodes + u;
+                rows[u].push((u, 4.0));
+                if i > 0 {
+                    rows[u].push((node(i - 1, j), -1.0));
+                    rows[u].push((p, 0.5));
+                    rows[p].push((node(i - 1, j), -0.5));
+                }
+                if i + 1 < nx {
+                    rows[u].push((node(i + 1, j), -1.0));
+                    rows[u].push((p, -0.5));
+                    rows[p].push((node(i + 1, j), 0.5));
+                }
+                if j > 0 {
+                    rows[u].push((node(i, j - 1), -1.0));
+                }
+                if j + 1 < ny {
+                    rows[u].push((node(i, j + 1), -1.0));
+                }
+                rows[p].push((p, 0.0));
+                rows[u].sort_by_key(|&(c, _)| c);
+                rows[p].sort_by_key(|&(c, _)| c);
+            }
+        }
+        let mut row_ptrs = Vec::with_capacity(n + 1);
+        let mut col_indices = Vec::new();
+        let mut values = Vec::new();
+        row_ptrs.push(0);
+        for row in &rows {
+            for &(c, v) in row {
+                col_indices.push(c);
+                values.push(v);
+            }
+            row_ptrs.push(col_indices.len());
+        }
+        CsrMatrix::from_raw_parts(n, n, row_ptrs, col_indices, values)
+    }
+
+    fn saddle_rhs(n: usize) -> Vec<f64> {
+        // Deterministic xorshift values in [-1, 1).
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        (0..n)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                (state % 2000) as f64 / 1000.0 - 1.0
+            })
+            .collect()
+    }
+
+    #[test]
+    fn level_schedule_respects_dependencies() {
+        let matrix = saddle_test_matrix(16, 16);
+        let precond = IluPreconditioner::from_csr(&matrix);
+        let factors = &precond.factors;
+        let level_of = |col_indices: &[u32], row_ptrs: &[usize], reverse: bool| {
+            let (rows, starts) = compute_level_schedule(col_indices, row_ptrs, factors.n, reverse);
+            // The schedule covers every row exactly once.
+            assert_eq!(rows.len(), factors.n);
+            let mut level = vec![usize::MAX; rows.len()];
+            for (l, w) in starts.windows(2).enumerate() {
+                for &row in &rows[w[0]..w[1]] {
+                    level[row] = l;
+                }
+            }
+            level
+        };
+        let fwd = level_of(&factors.l_col_indices, &factors.l_row_ptrs, false);
+        for i in 0..factors.n {
+            for &j in &factors.l_col_indices[factors.l_row_ptrs[i]..factors.l_row_ptrs[i + 1]] {
+                assert!(
+                    fwd[j as usize] < fwd[i],
+                    "forward dependency {j} -> {i} not in an earlier level"
+                );
+            }
+        }
+        let bwd = level_of(&factors.u_col_indices, &factors.u_row_ptrs, true);
+        for i in 0..factors.n {
+            for &j in &factors.u_col_indices[factors.u_row_ptrs[i]..factors.u_row_ptrs[i + 1]] {
+                assert!(
+                    bwd[j as usize] < bwd[i],
+                    "backward dependency {j} -> {i} not in an earlier level"
+                );
+            }
+        }
+    }
+
+
+    #[test]
+    fn level_wavefront_apply_is_bit_identical_across_thread_counts() {
+        let matrix = saddle_test_matrix(48, 48);
+        let precond = IluPreconditioner::from_csr(&matrix);
+        let rhs = saddle_rhs(matrix.num_rows);
+        eprintln!(
+            "saddle 48x48: n={}, forward levels={}, backward levels={}",
+            matrix.num_rows,
+            precond.forward_level_starts.len() - 1,
+            precond.backward_level_starts.len() - 1,
+        );
+        // Reference: the serial factor kernel.
+        let mut serial = rhs.clone();
+        precond.factors.solve_in_place(&mut serial);
+        for threads in [2usize, 4, 8] {
+            // Drive the wavefront directly so the heuristic gate cannot
+            // silently substitute the serial path.
+            let mut parallel = rhs.clone();
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(threads)
+                .build()
+                .expect("worker pool")
+                .install(|| precond.solve_level_wavefront(&mut parallel));
+            assert_eq!(parallel.len(), serial.len());
+            for (index, (got, want)) in parallel.iter().zip(&serial).enumerate() {
+                assert_eq!(
+                    got.to_bits(),
+                    want.to_bits(),
+                    "wavefront result differs from serial at index {index} ({threads} threads)"
+                );
+            }
+        }
+        // The public apply must agree with the serial kernel at one thread.
+        let applied = rayon::ThreadPoolBuilder::new()
+            .num_threads(1)
+            .build()
+            .expect("one-thread pool")
+            .install(|| precond.apply(&rhs));
+        for (index, (got, want)) in applied.iter().zip(&serial).enumerate() {
+            assert_eq!(
+                got.to_bits(),
+                want.to_bits(),
+                "public apply differs from serial at index {index}"
+            );
+        }
     }
 }
