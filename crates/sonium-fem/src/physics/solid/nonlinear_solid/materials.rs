@@ -788,7 +788,10 @@ mod tests {
         // Mooney-Rivlin keeps the default provided method (heap + copy).
         let mooney = MooneyRivlin::new(0.3e6, 0.1e6, 100.0e6);
         for f in cases {
-            for mat in [&neo as &dyn HyperelasticMaterial, &mooney as &dyn HyperelasticMaterial] {
+            for mat in [
+                &neo as &dyn HyperelasticMaterial,
+                &mooney as &dyn HyperelasticMaterial,
+            ] {
                 let heap = mat.stress(&f);
                 let mut stack = [0.0; 9];
                 mat.stress_into(&f, &mut stack);

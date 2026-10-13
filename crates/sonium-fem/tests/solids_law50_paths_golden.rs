@@ -180,8 +180,7 @@ fn law50_paths_match_wolfram() {
     check_all(&doc, "ax3_epbar_st", &ax3.epbar_stations);
     assert!(ax3.yielding.iter().any(|&y| y), "axis 3 must crush");
     assert!(
-        ax3.sigma[2].abs() > ax2.sigma[1].abs()
-            && ax2.sigma[1].abs() > ax1.sigma[0].abs(),
+        ax3.sigma[2].abs() > ax2.sigma[1].abs() && ax2.sigma[1].abs() > ax1.sigma[0].abs(),
         "directional crush emphasis must order the axes"
     );
 

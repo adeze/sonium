@@ -1166,111 +1166,85 @@ pub fn rigid_wall_contact(
     pairs
 }
 
-/// Kinematic contact record for one constrained slave node.
+/// Exact multiplier contact of slaves against a rigid plane.
 ///
-/// Mirrors [`PenaltyPair`](super::candidates::PenaltyPair) for the
-/// projection path: the pre-projection gap plus the recovered
-/// constraint force on the node.
-#[derive(Debug, Clone, Copy)]
-pub struct KinematicPair {
-    /// Slave node index.
-    pub slave: usize,
-    /// Signed pre-projection gap in m (negative = penetrating).
-    pub gap: f64,
-    /// Unit wall normal in wall-to-body direction.
-    pub normal: [f64; 3],
-    /// Constraint force on the node in N (compressive along `normal`).
-    pub force: [f64; 3],
-}
-
-/// Outcome of one kinematic wall projection step.
-#[derive(Debug, Clone)]
-pub struct KinematicWallStep {
-    /// One record per constrained slave node.
-    pub pairs: Vec<KinematicPair>,
-    /// Constraint-force work `F*v_wall*dt` over the step, in J.
-    /// Diagnostic only: drivers that apply the recovered force
-    /// through their own force channel ledger that work themselves.
-    pub force_work: f64,
-    /// Kinetic jump from velocity adoptions over the step, in J.
-    /// Ledgers add this to the driver's drift, which cannot see it.
-    pub kinetic_jump: f64,
-}
-
-/// Kinematic contact of slave nodes against a rigid plane.
+/// Applies each engaged slave's constraint force `F = m*a_wall -
+/// (F_int + F_running)` along the normal directly into the
+/// external channel under assembly. With lumped (diagonal) mass
+/// this force is explicit: it cancels the bulk load exactly, so
+/// the constrained node follows the prescribed wall acceleration
+/// with zero residual stiffness and no contact CFL limit. There
+/// is no spring (`penalty` ignored) and no lag (bulk forces are
+/// the current evaluation's), hence no stiffness-driven or
+/// delay-driven instability.
 ///
-/// Constrains penetrating slaves at the velocity level: approaching
-/// nodes adopt the wall normal velocity (frictionless, inelastic:
-/// engine RWALL semantics) while positions stay continuous, so no
-/// teleportation work pumps the bulk (a position snap against bulk
-/// stiffness is the classic explicit-contact instability). Each
-/// node's constraint force recovers from the free-step force
-/// channels as `F = m*a_wall - (F_int + F_ext - F_applied)` along
-/// the normal, where `F_applied` is the lagged contact force the
-/// driver already applied this step. A slave constrains when its
-/// recovered force is compressive or it approaches the wall
-/// (initial touch carries no force yet but must not tunnel);
-/// separating slaves with a tensile force release. Unlike
-/// [`rigid_wall_contact`], no penalty stiffness enters the
-/// dynamics, so the global step stays at the bulk CFL limit.
-///
-/// Callers close the loop by applying the recovered force through
-/// the driver's external channel on the next step (lagged contact
-/// force): a prescribed force adds no stiffness, so the step stays
-/// CFL-limited, while the force itself cancels the bulk load and
-/// the adoption kills residual drift. The wall `point` must be
-/// evaluated at the current time (callers add `velocity * time` for
-/// moving walls); `penalty` and friction are ignored.
+/// Engagement is persistent per slave: a free slave engages when
+/// touching (`gap <= 0`) with a compressive force, or while
+/// approaching even forceless (first touch carries no bulk load
+/// yet; the caller's adoption bootstraps it). An engaged slave
+/// releases on a tensile force while leaving, or when separated
+/// and leaving. Callers adopt engaging velocities separately
+/// (one inelastic reset per transition) and pass cloads plus
+/// prior walls' multipliers as `running` so shared corner nodes
+/// converge Gauss-Seidel style. The wall `point` must be
+/// evaluated at the current time.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use sonium_fem::physics::solid::contact::explicit::{RigidWall, rigid_wall_project};
+/// use sonium_fem::physics::solid::contact::explicit::{RigidWall, rigid_wall_multiplier};
 ///
 /// let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
 /// let masses = vec![2.0];
 /// let positions = vec![0.0, 0.0, -0.01];
-/// let mut velocities = vec![0.0, 0.0, -1.0];
-/// // Free-step net force pushes the node into the wall.
+/// let velocities = vec![0.0; 3];
+/// // Bulk presses the node into the wall with 10 N.
 /// let internal = vec![0.0, 0.0, -10.0];
-/// let external = vec![0.0; 3];
-/// let applied = vec![0.0; 3];
-/// let step = rigid_wall_project(
+/// let running = vec![0.0; 3];
+/// let mut engaged = vec![false];
+/// let mut transitions = Vec::new();
+/// let mut forces = vec![0.0; 3];
+/// let on_wall = rigid_wall_multiplier(
 ///     &wall,
 ///     [0.0; 3],
 ///     &[0],
 ///     &masses,
 ///     &positions,
-///     &mut velocities,
+///     &velocities,
 ///     &internal,
-///     &external,
-///     &applied,
-///     1.0e-6,
+///     &running,
+///     &mut engaged,
+///     &mut transitions,
+///     &mut forces,
 /// );
-/// assert_eq!(step.pairs.len(), 1);
-/// // Positions stay continuous; the normal velocity is stopped.
-/// assert!((positions[2] + 0.01).abs() < 1e-15);
-/// assert!(velocities[2].abs() < 1e-15);
-/// assert!((step.pairs[0].force[2] - 10.0).abs() < 1e-12);
+/// assert!(engaged[0]);
+/// assert_eq!(transitions, vec![0]);
+/// assert!((forces[2] - 10.0).abs() < 1e-12);
+/// assert!((on_wall[2] + 10.0).abs() < 1e-12);
 /// ```
 ///
 /// # Panics
 ///
-/// Panics when the normal is not unit length, `dt` is not positive
-/// and finite, a slave mass is not positive and finite, or a buffer
-/// is shorter than the referenced nodes.
-pub fn rigid_wall_project(
+/// Panics when the normal is not unit length, friction is set
+/// (this solve is frictionless), a slave mass is not positive and
+/// finite, `engaged` misaligns with the slaves, or a buffer is
+/// shorter than the referenced nodes.
+// Assembly kernel over caller-owned flat buffers: bundling
+// would only add indirection, so the arity stays.
+#[allow(clippy::too_many_arguments)]
+pub fn rigid_wall_multiplier(
     wall: &RigidWall,
     wall_acceleration: [f64; 3],
     slave_nodes: &[usize],
     masses: &[f64],
     positions: &[f64],
-    velocities: &mut [f64],
+    velocities: &[f64],
     internal_force: &[f64],
-    external_force: &[f64],
-    applied_contact: &[f64],
-    dt: f64,
-) -> KinematicWallStep {
+    running_external: &[f64],
+    engaged: &mut [bool],
+    transitions: &mut Vec<usize>,
+    forces: &mut [f64],
+) -> [f64; 3] {
     let normal_length = (wall.normal[0] * wall.normal[0]
         + wall.normal[1] * wall.normal[1]
         + wall.normal[2] * wall.normal[2])
@@ -1280,8 +1254,12 @@ pub fn rigid_wall_project(
         "rigid wall normal must be unit length"
     );
     assert!(
-        dt.is_finite() && dt > 0.0,
-        "kinematic wall step needs positive finite dt"
+        wall.friction_coefficient == 0.0,
+        "multiplier wall solve is frictionless"
+    );
+    assert!(
+        engaged.len() == slave_nodes.len(),
+        "multiplier engagement flags must align with the slaves"
     );
     if let Some(&max_slave) = slave_nodes.iter().max() {
         assert!(
@@ -1289,92 +1267,64 @@ pub fn rigid_wall_project(
                 && positions.len() >= 3 * (max_slave + 1)
                 && velocities.len() >= 3 * (max_slave + 1)
                 && internal_force.len() >= 3 * (max_slave + 1)
-                && external_force.len() >= 3 * (max_slave + 1)
-                && applied_contact.len() >= 3 * (max_slave + 1),
-            "kinematic wall buffers too short for the slave nodes"
+                && running_external.len() >= 3 * (max_slave + 1)
+                && forces.len() >= 3 * (max_slave + 1),
+            "multiplier wall buffers too short for the slave nodes"
         );
     }
     let normal = wall.normal;
-    let wall_normal_speed =
-        normal[0] * wall.velocity[0] + normal[1] * wall.velocity[1] + normal[2] * wall.velocity[2];
     let wall_normal_acc = normal[0] * wall_acceleration[0]
         + normal[1] * wall_acceleration[1]
         + normal[2] * wall_acceleration[2];
-    let mut pairs = Vec::new();
-    let mut force_work = 0.0;
-    let mut kinetic_jump = 0.0;
-    for &slave in slave_nodes {
-        let position = [
+    let mut on_wall = [0.0; 3];
+    for (slot, &slave) in slave_nodes.iter().enumerate() {
+        let gap = wall.gap([
             positions[3 * slave],
             positions[3 * slave + 1],
             positions[3 * slave + 2],
-        ];
-        let gap = wall.gap(position);
-        if gap >= 0.0 {
-            continue;
-        }
+        ]);
         let mass = masses[slave];
         assert!(
             mass.is_finite() && mass > 0.0,
-            "kinematic wall needs positive finite slave mass"
+            "multiplier wall needs positive finite slave mass"
         );
-        // Bulk net force: the lagged applied contact force is part
-        // of the external channel, so subtract it before recovering
-        // the fresh constraint force (else it double-counts).
-        let net_normal = (internal_force[3 * slave] + external_force[3 * slave]
-            - applied_contact[3 * slave])
-            * normal[0]
-            + (internal_force[3 * slave + 1] + external_force[3 * slave + 1]
-                - applied_contact[3 * slave + 1])
-                * normal[1]
-            + (internal_force[3 * slave + 2] + external_force[3 * slave + 2]
-                - applied_contact[3 * slave + 2])
-                * normal[2];
-        // Constraint force on the node along +normal: what the
-        // bulk forces lack to keep the node on the wall.
-        let normal_force = mass * wall_normal_acc - net_normal;
-        let approach = (velocities[3 * slave] - wall.velocity[0]) * normal[0]
+        let bulk = (internal_force[3 * slave] + running_external[3 * slave]) * normal[0]
+            + (internal_force[3 * slave + 1] + running_external[3 * slave + 1]) * normal[1]
+            + (internal_force[3 * slave + 2] + running_external[3 * slave + 2]) * normal[2];
+        // Exact multiplier along +normal: what the bulk lacks to
+        // track the prescribed wall acceleration.
+        let multiplier = mass * wall_normal_acc - bulk;
+        let relative = (velocities[3 * slave] - wall.velocity[0]) * normal[0]
             + (velocities[3 * slave + 1] - wall.velocity[1]) * normal[1]
             + (velocities[3 * slave + 2] - wall.velocity[2]) * normal[2];
-        if normal_force <= 0.0 && approach >= 0.0 {
-            // Tensile and separating: the contact opens, release.
+        if !engaged[slot] {
+            // Engage on touch with a compressive force, or while
+            // approaching even forceless (first touch carries no
+            // bulk load yet; the adoption then bootstraps it).
+            if gap > 0.0 || (multiplier <= 0.0 && relative >= 0.0) {
+                continue;
+            }
+            engaged[slot] = true;
+            transitions.push(slot);
+        } else if multiplier <= 0.0 && relative >= 0.0 {
+            // Tensile and leaving: the contact opens.
+            engaged[slot] = false;
+            continue;
+        } else if gap > 0.0 && relative >= 0.0 {
+            // Separated and leaving: release.
+            engaged[slot] = false;
             continue;
         }
-        // Velocity level only: positions stay continuous (no snap
-        // work against the bulk); the applied lagged force carries
-        // the bulk load while the adoption kills residual drift.
-        if approach < 0.0 {
-            let before = velocities[3 * slave] * velocities[3 * slave]
-                + velocities[3 * slave + 1] * velocities[3 * slave + 1]
-                + velocities[3 * slave + 2] * velocities[3 * slave + 2];
-            velocities[3 * slave] -= approach * normal[0];
-            velocities[3 * slave + 1] -= approach * normal[1];
-            velocities[3 * slave + 2] -= approach * normal[2];
-            let after = velocities[3 * slave] * velocities[3 * slave]
-                + velocities[3 * slave + 1] * velocities[3 * slave + 1]
-                + velocities[3 * slave + 2] * velocities[3 * slave + 2];
-            kinetic_jump += 0.5 * mass * (after - before);
-        }
-        // Contact cannot pull: a tensile recovery constrains the
-        // motion but reports zero force and work.
-        let reported = normal_force.max(0.0);
-        force_work += reported * wall_normal_speed * dt;
-        pairs.push(KinematicPair {
-            slave,
-            gap,
-            normal,
-            force: [
-                reported * normal[0],
-                reported * normal[1],
-                reported * normal[2],
-            ],
-        });
+        // Contact cannot pull: hold forceless while tensile.
+        let applied = multiplier.max(0.0);
+        forces[3 * slave] += applied * normal[0];
+        forces[3 * slave + 1] += applied * normal[1];
+        forces[3 * slave + 2] += applied * normal[2];
+        on_wall[0] -= applied * normal[0];
+        on_wall[1] -= applied * normal[1];
+        on_wall[2] -= applied * normal[2];
     }
-    KinematicWallStep {
-        pairs,
-        force_work,
-        kinetic_jump,
-    }
+    on_wall
 }
 
 /// Symmetric two-pass penalty contact (TYPE7-ward hook).
@@ -1809,217 +1759,207 @@ mod tests {
     }
 
     #[test]
-    fn kinematic_project_constrains_and_recovers_force() {
+    fn multiplier_engages_and_cancels_bulk_exactly() {
         let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
         let masses = vec![2.0];
         let positions = vec![0.0, 0.0, -0.01];
-        let mut velocities = vec![0.5, 0.0, -1.0];
-        // Net force presses the node into the wall.
-        let internal = vec![0.0, 0.0, -7.0];
-        let external = vec![0.0, 0.0, -3.0];
-        let applied = vec![0.0; 3];
-        let step = rigid_wall_project(
+        let velocities = vec![0.0; 3];
+        let internal = vec![1.5, -2.5, -10.0];
+        let running = vec![0.5, 0.5, -4.0];
+        let mut engaged = vec![false];
+        let mut transitions = Vec::new();
+        let mut forces = vec![0.0; 3];
+        let on_wall = rigid_wall_multiplier(
             &wall,
             [0.0; 3],
             &[0],
             &masses,
             &positions,
-            &mut velocities,
+            &velocities,
             &internal,
-            &external,
-            &applied,
-            1.0e-6,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
         );
-        assert_eq!(step.pairs.len(), 1);
-        // Positions stay continuous, normal velocity stopped,
-        // tangential untouched.
-        assert!((positions[2] + 0.01).abs() < 1e-15);
-        assert!(velocities[2].abs() < 1e-15);
-        assert!((velocities[0] - 0.5).abs() < 1e-15);
-        // Reaction balances the pressing force exactly.
-        assert!((step.pairs[0].force[2] - 10.0).abs() < 1e-12);
-        assert_eq!(step.pairs[0].slave, 0);
-        // Fixed wall absorbs the stopped normal kinetic energy.
-        assert!((step.kinetic_jump + 1.0).abs() < 1e-15);
-        assert_eq!(step.force_work, 0.0);
+        assert!(engaged[0]);
+        assert_eq!(transitions, vec![0]);
+        // Multiplier balances bulk plus running along the normal.
+        assert!((forces[2] - 14.0).abs() < 1e-12);
+        assert!(forces[0].abs() < 1e-15 && forces[1].abs() < 1e-15);
+        // Net nodal force is zero: exact cancellation identity.
+        assert!((internal[2] + running[2] + forces[2]).abs() < 1e-12);
+        assert!((on_wall[2] + 14.0).abs() < 1e-12);
+        // Second call stays engaged without re-recording.
+        transitions.clear();
+        rigid_wall_multiplier(
+            &wall,
+            [0.0; 3],
+            &[0],
+            &masses,
+            &positions,
+            &velocities,
+            &internal,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
+        );
+        assert!(engaged[0]);
+        assert!(transitions.is_empty());
     }
 
     #[test]
-    fn kinematic_project_releases_tensile_contact() {
+    fn multiplier_ignores_tensile_graze() {
+        // Touching but the bulk pulls away: no engagement, no force.
         let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
         let masses = vec![2.0];
         let positions = vec![0.0, 0.0, -1.0e-9];
-        let mut velocities = vec![0.0, 0.0, 1.0];
-        // Net force pulls the node off the wall: contact opens.
+        let velocities = vec![0.0, 0.0, 1.0];
         let internal = vec![0.0, 0.0, 5.0];
-        let external = vec![0.0; 3];
-        let applied = vec![0.0; 3];
-        let before = positions.clone();
-        let step = rigid_wall_project(
+        let running = vec![0.0; 3];
+        let mut engaged = vec![false];
+        let mut transitions = Vec::new();
+        let mut forces = vec![0.0; 3];
+        let on_wall = rigid_wall_multiplier(
             &wall,
             [0.0; 3],
             &[0],
             &masses,
             &positions,
-            &mut velocities,
+            &velocities,
             &internal,
-            &external,
-            &applied,
-            1.0e-6,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
         );
-        assert!(step.pairs.is_empty());
-        assert_eq!(positions, before);
-        assert_eq!(step.kinetic_jump, 0.0);
-        assert_eq!(step.force_work, 0.0);
+        assert!(!engaged[0]);
+        assert!(transitions.is_empty());
+        assert_eq!(forces, vec![0.0; 3]);
+        assert_eq!(on_wall, [0.0; 3]);
     }
 
     #[test]
-    fn kinematic_project_ignores_separated_slaves() {
+    fn multiplier_engages_forceless_first_touch() {
+        // First touch carries no bulk load yet but approaches:
+        // engage with zero applied force, bootstrapped by the
+        // caller's adoption.
         let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
         let masses = vec![2.0];
-        let positions = vec![0.0, 0.0, 0.1];
-        let mut velocities = vec![0.0, 0.0, -1.0];
-        let internal = vec![0.0, 0.0, -10.0];
-        let external = vec![0.0; 3];
-        let applied = vec![0.0; 3];
-        let step = rigid_wall_project(
-            &wall,
-            [0.0; 3],
-            &[0],
-            &masses,
-            &positions,
-            &mut velocities,
-            &internal,
-            &external,
-            &applied,
-            1.0e-6,
-        );
-        assert!(step.pairs.is_empty());
-        assert_eq!(positions[2], 0.1);
-    }
-
-    #[test]
-    fn kinematic_project_accounts_moving_wall_work() {
-        // Crusher geometry: plane at x = 0.2, body on the -x side,
-        // wall advancing into the body at 0.1 m/s.
-        let mut wall = RigidWall::new([0.2, 0.0, 0.0], [-1.0, 0.0, 0.0], 0.0);
-        wall.velocity = [-0.1, 0.0, 0.0];
-        let masses = vec![1.5];
-        let positions = vec![0.201, 0.0, 0.0];
-        let mut velocities = vec![-0.1, 0.0, 0.0];
-        // Bulk pushes back along +x; the wall supplies -x force.
-        let internal = vec![4.0e6, 0.0, 0.0];
-        let external = vec![0.0; 3];
-        let applied = vec![0.0; 3];
-        let dt = 2.5e-6;
-        let step = rigid_wall_project(
-            &wall,
-            [0.0; 3],
-            &[0],
-            &masses,
-            &positions,
-            &mut velocities,
-            &internal,
-            &external,
-            &applied,
-            dt,
-        );
-        assert_eq!(step.pairs.len(), 1);
-        assert!((step.pairs[0].force[0] + 4.0e6).abs() < 1.0);
-        // Work = F * v_wall * dt is positive: the wall drives the node
-        // along its own motion.
-        assert!((step.force_work - 4.0e6 * 0.1 * dt).abs() < 1e-9);
-        assert_eq!(step.kinetic_jump, 0.0);
-        // Node already tracks the wall: velocity unchanged.
-        assert!((velocities[0] + 0.1).abs() < 1e-15);
-    }
-
-    #[test]
-    fn kinematic_project_constrains_initial_touch_without_force() {
-        // First contact instant: the wall just reached the resting
-        // node, so no bulk force exists yet, but the node approaches
-        // and must not tunnel.
-        let mut wall = RigidWall::new([0.2, 0.0, 0.0], [-1.0, 0.0, 0.0], 0.0);
-        wall.velocity = [-0.1, 0.0, 0.0];
-        let masses = vec![1.5];
-        let positions = vec![0.2 + 3.0e-7, 0.0, 0.0];
-        let mut velocities = vec![0.0; 3];
+        let positions = vec![0.0, 0.0, -1.0e-9];
+        let velocities = vec![0.0, 0.0, -10.0];
         let internal = vec![0.0; 3];
-        let external = vec![0.0; 3];
-        let applied = vec![0.0; 3];
-        let step = rigid_wall_project(
+        let running = vec![0.0; 3];
+        let mut engaged = vec![false];
+        let mut transitions = Vec::new();
+        let mut forces = vec![0.0; 3];
+        let on_wall = rigid_wall_multiplier(
             &wall,
             [0.0; 3],
             &[0],
             &masses,
             &positions,
-            &mut velocities,
+            &velocities,
             &internal,
-            &external,
-            &applied,
-            3.0e-6,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
         );
-        assert_eq!(step.pairs.len(), 1);
-        // Positions stay continuous; the node adopts the wall
-        // velocity with zero reported constraint force.
-        assert!((positions[0] - 0.2 - 3.0e-7).abs() < 1e-15);
-        assert!((velocities[0] + 0.1).abs() < 1e-15);
-        assert_eq!(step.pairs[0].force, [0.0; 3]);
-        // Wall supplies the adoption kinetic energy: 0.5*1.5*0.1^2.
-        assert!((step.kinetic_jump - 0.0075).abs() < 1e-15);
-        assert_eq!(step.force_work, 0.0);
+        assert!(engaged[0]);
+        assert_eq!(transitions, vec![0]);
+        assert_eq!(forces, vec![0.0; 3]);
+        assert_eq!(on_wall, [0.0; 3]);
     }
 
     #[test]
-    fn kinematic_project_subtracts_applied_lagged_force() {
-        // The driver already applied +6 N this step (lagged force is
-        // part of the external channel); the bulk still lacks +10 N,
-        // so the fresh recovery is 10, not 4.
+    fn multiplier_releases_tensile_and_departed() {
+        let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
+        let masses = vec![2.0, 2.0, 2.0];
+        // Slave 0 stays (compressive), 1 turns tensile, 2 left.
+        let positions = vec![0.0, 0.0, -0.01, 0.0, 0.0, -0.01, 0.0, 0.0, 0.1];
+        let velocities = vec![0.0; 9];
+        let internal = vec![0.0, 0.0, -10.0, 0.0, 0.0, 7.0, 0.0, 0.0, -3.0];
+        let running = vec![0.0; 9];
+        let mut engaged = vec![true, true, true];
+        let mut transitions = Vec::new();
+        let mut forces = vec![0.0; 9];
+        rigid_wall_multiplier(
+            &wall,
+            [0.0; 3],
+            &[0, 1, 2],
+            &masses,
+            &positions,
+            &velocities,
+            &internal,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
+        );
+        assert_eq!(engaged, vec![true, false, false]);
+        // Slave 2 separates with zero relative velocity: released.
+        assert!(transitions.is_empty());
+        assert!((forces[2] - 10.0).abs() < 1e-12);
+        assert_eq!(forces[5], 0.0);
+        assert_eq!(forces[8], 0.0);
+    }
+
+    #[test]
+    fn multiplier_holds_approaching_flicker() {
+        // Gap opened a hair but the node still approaches: hold.
         let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
         let masses = vec![2.0];
-        let positions = vec![0.0, 0.0, -0.01];
-        let mut velocities = vec![0.0; 3];
+        let positions = vec![0.0, 0.0, 1.0e-9];
+        let velocities = vec![0.0, 0.0, -1.0];
         let internal = vec![0.0, 0.0, -10.0];
-        let external = vec![0.0, 0.0, 6.0];
-        let applied = vec![0.0, 0.0, 6.0];
-        let step = rigid_wall_project(
+        let running = vec![0.0; 3];
+        let mut engaged = vec![true];
+        let mut transitions = Vec::new();
+        let mut forces = vec![0.0; 3];
+        rigid_wall_multiplier(
             &wall,
             [0.0; 3],
             &[0],
             &masses,
             &positions,
-            &mut velocities,
+            &velocities,
             &internal,
-            &external,
-            &applied,
-            1.0e-6,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
         );
-        assert_eq!(step.pairs.len(), 1);
-        assert!((step.pairs[0].force[2] - 10.0).abs() < 1e-12);
+        assert!(engaged[0]);
+        assert!((forces[2] - 10.0).abs() < 1e-12);
     }
 
     #[test]
-    fn kinematic_project_includes_wall_acceleration() {
+    fn multiplier_tracks_wall_acceleration() {
+        // Accelerating wall: the multiplier carries m*a on top.
         let wall = RigidWall::new([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 0.0);
         let masses = vec![2.0];
         let positions = vec![0.0, 0.0, -0.01];
-        let mut velocities = vec![0.0; 3];
+        let velocities = vec![0.0; 3];
         let internal = vec![0.0, 0.0, -10.0];
-        let external = vec![0.0; 3];
-        let applied = vec![0.0; 3];
-        let step = rigid_wall_project(
+        let running = vec![0.0; 3];
+        let mut engaged = vec![false];
+        let mut transitions = Vec::new();
+        let mut forces = vec![0.0; 3];
+        rigid_wall_multiplier(
             &wall,
             [0.0, 0.0, 3.0],
             &[0],
             &masses,
             &positions,
-            &mut velocities,
+            &velocities,
             &internal,
-            &external,
-            &applied,
-            1.0e-6,
+            &running,
+            &mut engaged,
+            &mut transitions,
+            &mut forces,
         );
-        // F = m*a - F_net = 2*3 + 10.
-        assert!((step.pairs[0].force[2] - 16.0).abs() < 1e-12);
+        assert!((forces[2] - 16.0).abs() < 1e-12);
     }
 }

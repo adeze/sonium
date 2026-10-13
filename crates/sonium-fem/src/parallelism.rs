@@ -6,8 +6,8 @@
 //! through [`ParallelPolicy`]:
 //!
 //! - default: `work_items >= items_per_thread * threads`, where `threads`
-//!   is [`std::thread::available_parallelism`]. Single-threaded processes
-//!   always run serially;
+//!   is the effective rayon pool size. Single-threaded pools always run
+//!   serially;
 //! - `SONIUM_FEM_PAR_THRESHOLD=<n>`: absolute work-item override for tuning,
 //!   benches, and forced-path tests (units are the call site's work items —
 //!   triplets for [`MERGE_TRIPLETS_PER_THREAD`]);
@@ -38,10 +38,14 @@ pub struct ParallelPolicy {
 impl ParallelPolicy {
     /// Resolve from the process environment (see module docs).
     pub fn from_env() -> Self {
+        // Size to the effective rayon pool, not the machine: pool dispatch
+        // pays off relative to the workers that will run it. Sizing to
+        // machine parallelism instead prices mid-size meshes out of
+        // threading on many-core machines even when the pool is small.
+        // `RAYON_NUM_THREADS` is honored because the global pool sizes
+        // itself from it at first use.
         Self {
-            threads: std::thread::available_parallelism()
-                .map(usize::from)
-                .unwrap_or(1),
+            threads: rayon::current_num_threads(),
             force_serial: serial_override(),
             threshold_override: env_threshold("SONIUM_FEM_PAR_THRESHOLD"),
         }

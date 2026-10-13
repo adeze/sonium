@@ -16,11 +16,11 @@
       "side": "engine",
       "flavor": "smp",
       "threads": 4,
-      "wall_s": 27.035969004,
+      "wall_s": 27.932748354,
       "cycles": 137513,
       "dof": 1455,
-      "ns_per_dof_cycle": 135.12483907613307,
-      "peak_rss_bytes": 43110400,
+      "ns_per_dof_cycle": 139.606911286588,
+      "peak_rss_bytes": 44003328,
       "correctness_passed": true
     }
   ]

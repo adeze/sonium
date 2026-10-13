@@ -153,12 +153,7 @@ fn drive_fixed(
 }
 
 /// Drives axial increments with the lateral solve, recording stations.
-fn drive_axial(
-    law: &Law62,
-    state: &mut Law62State,
-    des: &[f64],
-    stations: &[usize],
-) -> PathResult {
+fn drive_axial(law: &Law62, state: &mut Law62State, des: &[f64], stations: &[usize]) -> PathResult {
     let mut yielding = Vec::new();
     let mut epbar_stations = Vec::new();
     let mut branch_stations = Vec::new();
@@ -201,12 +196,7 @@ fn law62_paths_match_wolfram() {
     // Uniaxial extension with solved lateral strain.
     let de = EMAX / STEPS_PER_LEG as f64;
     let mut state = Law62State::new(law.prony.len());
-    let uni = drive_axial(
-        &law,
-        &mut state,
-        &vec![de; STEPS_PER_LEG],
-        &stations_100,
-    );
+    let uni = drive_axial(&law, &mut state, &vec![de; STEPS_PER_LEG], &stations_100);
     check_all(&doc, "uni_sigma", &uni.sigma);
     check_flags(&doc, "uni_yielding", &uni.yielding);
     check_all(&doc, "uni_epbar_st", &uni.epbar_stations);

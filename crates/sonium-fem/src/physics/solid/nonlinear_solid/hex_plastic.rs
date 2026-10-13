@@ -470,7 +470,16 @@ mod tests {
     fn law36_caps_at_tabulated_yield() {
         let geom = unit_cube();
         let curve = RateCurve::new(0.0, vec![0.0, 0.5], vec![250.0e6, 250.0e6], 1.0).unwrap();
-        let material = Law36::new(200.0e9, 0.3, vec![curve], 0.0, 1.0e20, 1.0e20, 2.0e20, 3.0e20);
+        let material = Law36::new(
+            200.0e9,
+            0.3,
+            vec![curve],
+            0.0,
+            1.0e20,
+            1.0e20,
+            2.0e20,
+            3.0e20,
+        );
         let mut state = HexExplicitState::new(Law36State::new());
         let params = steel_params();
         // One percent uniaxial strain at 1/s: far past yield.

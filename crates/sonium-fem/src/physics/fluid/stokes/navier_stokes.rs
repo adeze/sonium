@@ -918,6 +918,14 @@ where
     let mut last_linearization = None;
     let mut last_newton_linearization = None;
     let mut resolved_linear_solver_backend = LinearSolverBackend::Cpu;
+    // The row claims an accelerator only when every linear solve ran on
+    // it: any fallback taints the report permanently (last-wins would
+    // let one accelerated solve whitewash many CPU fallbacks).
+    let requested_backend = match config.linear_solver_backend {
+        LinearSolverBackend::Auto => LinearSolverBackend::resolve_auto(),
+        other => other,
+    };
+    let mut backend_fell_back = false;
 
     // The algebraic eddy-viscosity model uses a global peak velocity. Its exact
 
@@ -925,28 +933,33 @@ where
 
     // ties and the zero state remain deliberately fail-closed.
     let publish_newton_linearization = config.use_newton_refinement || initial_velocity.is_some();
+    // Per-iteration timing spans for performance work. Timers always run
+    // (nanosecond cost); only the report line is gated.
+    let profile_ns = std::env::var("SONIUM_NS_PROFILE").as_deref() == Ok("1");
+    // BVH velocity topology, built once and shared: every Picard
+    // iteration re-queries it against the current iterate instead of
+    // rebuilding (and linear-scanning) a per-iteration interpolator.
+    // Arc-shared because the assembly closures require 'static data.
+    let velocity_topology =
+        std::sync::Arc::new(super::workspace::ElementVelocityTopology::new(mesh, v_space));
 
     for iter in 0..config.max_picard_iterations {
-        // Build velocity field from current iterate.
-        // Pre-compute node velocities for the closure (avoids borrowing mesh).
-        let node_vels: Vec<[f64; 3]> = (0..mesh.num_nodes())
-            .map(|ni| {
-                let mut v = [0.0; 3];
-                for (d, vd) in v.iter_mut().enumerate().take(dim) {
-                    let dof = ni * dim + d;
-                    if dof < velocity.len() {
-                        *vd = velocity[dof];
-                    }
-                }
-                v
-            })
-            .collect();
+        let iter_start = std::time::Instant::now();
 
         // Peak velocity magnitude across all FE nodes — feeds the
-        // algebraic turbulence closure.
-        let velocity_magnitude_max = node_vels
-            .iter()
-            .map(|v| (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt())
+        // algebraic turbulence closure. Vertex DOFs only, matching the
+        // historical node-velocity max exactly.
+        let velocity_magnitude_max = (0..mesh.num_nodes())
+            .map(|ni| {
+                let mut sum = 0.0;
+                for d in 0..dim {
+                    let dof = ni * dim + d;
+                    if dof < velocity.len() {
+                        sum += velocity[dof] * velocity[dof];
+                    }
+                }
+                sum.sqrt()
+            })
             .fold(0.0_f64, f64::max);
         let mu_eff = config
             .effective_dynamic_viscosity_and_speed_derivative(velocity_magnitude_max)
@@ -977,8 +990,13 @@ where
         let kinematic_viscosity = mu_eff / stabilisation_rho;
         let viscous = super::forms::StokesViscousForm::new(mu_eff);
 
-        let velocity_field =
-            std::sync::Arc::new(VelocityFieldInterpolator::new(mesh, node_vels, dim));
+        // Own a snapshot of the iterate: the assembly closures are
+        // 'static, so the evaluator cannot borrow `velocity`.
+        let velocity_field = std::sync::Arc::new(PicardVelocityField {
+            topology: std::sync::Arc::clone(&velocity_topology),
+            values: velocity.clone(),
+            dim,
+        });
         let convection_velocity_field = std::sync::Arc::clone(&velocity_field);
         let convection = OseenConvectionForm::new(config.rho, move |coords: [f64; 3]| {
             convection_velocity_field.velocity_components_at(coords)
@@ -1091,6 +1109,8 @@ where
             2,
         );
 
+        let forms_elapsed = iter_start.elapsed();
+        let rest_start = std::time::Instant::now();
         // Build monolithic system manually with our combined a00
         let mut mono = crate::assembly::TripletMatrix::new(n_total, n_total);
         // Block (0,0): A = μK + C + SUPG + LSIC
@@ -1276,11 +1296,17 @@ where
         }
 
         // Apply symmetric Dirichlet BCs
+        let rest_elapsed = rest_start.elapsed();
+        let merge_start = std::time::Instant::now();
         let mut csr = mono.to_csr();
         apply_dirichlet_to_csr(&mut csr, &mut rhs, &is_bc, &bc_values);
+        let merge_elapsed = merge_start.elapsed();
+        let assemble_elapsed = iter_start.elapsed();
 
         // Solve
         let b: Vec<f64> = rhs;
+        let solve_start = std::time::Instant::now();
+        let mut linear_iterations: usize = 0;
 
         let x: Vec<f64> = if config.use_direct_solver {
             match sonium_solvers::direct::SparseLuFactorization::factorize(&csr)
@@ -1320,8 +1346,16 @@ where
                 n_v,
                 schur_csr.as_ref(),
             ) {
-                Some((x, backend, _iterations)) => {
-                    resolved_linear_solver_backend = backend;
+                Some((x, backend, iterations)) => {
+                    if backend != requested_backend {
+                        backend_fell_back = true;
+                    }
+                    resolved_linear_solver_backend = if backend_fell_back {
+                        LinearSolverBackend::Cpu
+                    } else {
+                        backend
+                    };
+                    linear_iterations = iterations;
                     x
                 }
                 None => {
@@ -1338,6 +1372,20 @@ where
                 }
             }
         };
+
+        let solve_elapsed = solve_start.elapsed();
+        if profile_ns {
+            eprintln!(
+                "NS_PROFILE picard={} assemble_ms={:.1} forms_ms={:.1} rest_ms={:.1} merge_ms={:.1} solve_ms={:.1} linear_iters={}",
+                iter + 1,
+                assemble_elapsed.as_secs_f64() * 1000.0,
+                forms_elapsed.as_secs_f64() * 1000.0,
+                rest_elapsed.as_secs_f64() * 1000.0,
+                merge_elapsed.as_secs_f64() * 1000.0,
+                solve_elapsed.as_secs_f64() * 1000.0,
+                linear_iterations,
+            );
+        }
 
         // Extract velocity and pressure, then under-relax the nonlinear update.
         let solved_velocity: Vec<f64> = x.iter().take(n_v).copied().collect();
@@ -2689,57 +2737,27 @@ fn apply_dirichlet_to_csr(
     }
 }
 
-#[derive(Debug, Clone)]
-struct VelocityFieldInterpolator {
+/// Picard-iterate velocity evaluator backed by the BVH topology.
+///
+/// Thin adapter over [`super::workspace::ElementVelocityTopology`] so the
+/// Oseen/stabilisation/body-force assembly closures share one evaluator
+/// with the BDF path. Queries resolve in O(log n) instead of the
+/// historical per-query linear mesh scan; a query outside the mesh fails
+/// closed (assembly quadrature points are always interior). Fully owned
+/// (`Arc` topology plus a per-iteration value snapshot) because the
+/// assembly closures require `'static` data.
+struct PicardVelocityField {
+    topology: std::sync::Arc<super::workspace::ElementVelocityTopology>,
+    values: Vec<f64>,
     dim: usize,
-    node_coords: Vec<[f64; 3]>,
-    node_vels: Vec<[f64; 3]>,
-    elements: Vec<VelocityInterpolationElement>,
 }
 
-impl VelocityFieldInterpolator {
-    fn new(mesh: &crate::mesh::Mesh, node_vels: Vec<[f64; 3]>, dim: usize) -> Self {
-        let node_coords = mesh
-            .nodes
-            .iter()
-            .map(|p| [p.x, p.y, p.z])
-            .collect::<Vec<_>>();
-        let elements = mesh
-            .elements
-            .iter()
-            .filter_map(|element| {
-                let vertex_count = element.element_type.num_vertices();
-                let vertices = element.vertices().to_vec();
-                if vertices.len() != vertex_count
-                    || !matches!(
-                        element.element_type,
-                        crate::mesh::ElementType::Triangle | crate::mesh::ElementType::Tetrahedron
-                    )
-                {
-                    return None;
-                }
-
-                let vertex_coords = vertices
-                    .iter()
-                    .map(|&vertex| node_coords[vertex])
-                    .collect::<Vec<_>>();
-                let (bbox_min, bbox_max) = bounding_box(&vertex_coords);
-                Some(VelocityInterpolationElement {
-                    element_type: element.element_type,
-                    vertices,
-                    vertex_coords,
-                    bbox_min,
-                    bbox_max,
-                })
-            })
-            .collect();
-
-        Self {
-            dim,
-            node_coords,
-            node_vels,
-            elements,
-        }
+impl PicardVelocityField {
+    fn velocity_at(&self, coords: [f64; 3]) -> [f64; 3] {
+        self.topology
+            .field(&self.values)
+            .velocity_at(coords)
+            .expect("Picard quadrature point was not located in its velocity mesh")
     }
 
     fn velocity_components_at(&self, coords: [f64; 3]) -> Vec<f64> {
@@ -2747,82 +2765,8 @@ impl VelocityFieldInterpolator {
     }
 
     fn velocity_magnitude_at(&self, coords: [f64; 3]) -> f64 {
-        self.velocity_at(coords)[..self.dim]
-            .iter()
-            .map(|component| component * component)
-            .sum::<f64>()
-            .sqrt()
-    }
-
-    fn velocity_at(&self, coords: [f64; 3]) -> [f64; 3] {
-        for element in &self.elements {
-            if !element.contains_in_bounding_box(coords) {
-                continue;
-            }
-            if let Some(weights) = element.barycentric_weights(coords) {
-                return self.interpolate_element_velocity(element, &weights);
-            }
-        }
-
-        self.nearest_node_velocity(coords)
-    }
-
-    fn interpolate_element_velocity(
-        &self,
-        element: &VelocityInterpolationElement,
-        weights: &[f64],
-    ) -> [f64; 3] {
-        let mut velocity = [0.0; 3];
-        for (&weight, &vertex) in weights.iter().zip(element.vertices.iter()) {
-            if let Some(node_velocity) = self.node_vels.get(vertex) {
-                for d in 0..self.dim {
-                    velocity[d] += weight * node_velocity[d];
-                }
-            }
-        }
-        velocity
-    }
-
-    fn nearest_node_velocity(&self, coords: [f64; 3]) -> [f64; 3] {
-        let best_idx = self
-            .node_coords
-            .iter()
-            .enumerate()
-            .min_by(|(_, a), (_, b)| {
-                squared_distance(coords, **a).total_cmp(&squared_distance(coords, **b))
-            })
-            .map(|(index, _)| index)
-            .unwrap_or(0);
-
-        self.node_vels.get(best_idx).copied().unwrap_or([0.0; 3])
-    }
-}
-
-#[derive(Debug, Clone)]
-struct VelocityInterpolationElement {
-    element_type: crate::mesh::ElementType,
-    vertices: Vec<usize>,
-    vertex_coords: Vec<[f64; 3]>,
-    bbox_min: [f64; 3],
-    bbox_max: [f64; 3],
-}
-
-impl VelocityInterpolationElement {
-    fn contains_in_bounding_box(&self, coords: [f64; 3]) -> bool {
-        const TOLERANCE: f64 = 1.0e-10;
-        (0..3).all(|d| {
-            coords[d] >= self.bbox_min[d] - TOLERANCE && coords[d] <= self.bbox_max[d] + TOLERANCE
-        })
-    }
-
-    fn barycentric_weights(&self, coords: [f64; 3]) -> Option<Vec<f64>> {
-        match self.element_type {
-            crate::mesh::ElementType::Triangle => triangle_barycentric(&self.vertex_coords, coords),
-            crate::mesh::ElementType::Tetrahedron => {
-                tetrahedron_barycentric(&self.vertex_coords, coords)
-            }
-            _ => None,
-        }
+        let v = self.velocity_at(coords);
+        (0..self.dim).map(|d| v[d] * v[d]).sum::<f64>().sqrt()
     }
 }
 
@@ -3031,7 +2975,10 @@ fn solve_iterative_cpu(
                 tolerance: config.linear_solver_tolerance,
                 ..Default::default()
             };
+            let setup_start = std::time::Instant::now();
             let preconditioner = sonium_solvers::IluPreconditioner::from_csr(csr);
+            let setup_elapsed = setup_start.elapsed();
+            let gmres_start = std::time::Instant::now();
             let result = sonium_solvers::gmres_preconditioned_with_guess(
                 &operator,
                 &preconditioner,
@@ -3039,6 +2986,15 @@ fn solve_iterative_cpu(
                 x0,
                 &solve_config,
             );
+            let gmres_elapsed = gmres_start.elapsed();
+            if std::env::var("SONIUM_NS_PROFILE").as_deref() == Ok("1") {
+                eprintln!(
+                    "NS_PROFILE linear ilu_setup_ms={:.1} gmres_ms={:.1} iters={}",
+                    setup_elapsed.as_secs_f64() * 1000.0,
+                    gmres_elapsed.as_secs_f64() * 1000.0,
+                    result.iterations,
+                );
+            }
             let iterations = result.iterations;
             finite_converged_solution(result.x, result.converged)
                 .map(|solution| (solution, false, iterations))
@@ -3253,7 +3209,7 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
         LinearSolverKind::F64 => {
             let status_result = match config.linear_solver_backend_preconditioner {
                 BackendPreconditionerKind::PolynomialJacobi => {
-                    let precond = PolynomialJacobiBackend::from_csr_host(
+                    let precond = match PolynomialJacobiBackend::try_from_csr_host(
                         backend,
                         &device_csr,
                         &row_ptr_host,
@@ -3261,7 +3217,20 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                         &csr.values,
                         config.linear_solver_polynomial_degree.max(1),
                         config.linear_solver_polynomial_damping,
-                    );
+                    ) {
+                        Ok(preconditioner) => preconditioner,
+                        Err(err) => {
+                            eprintln!("WARNING: backend polynomial preconditioner setup failed ({err}); falling back to CPU");
+                            return solve_iterative_cpu(
+                                config,
+                                csr,
+                                b,
+                                x0,
+                                velocity_block_size,
+                                pressure_schur,
+                            );
+                        }
+                    };
                     gmres_backend_preconditioned(
                         backend,
                         &device_csr,
@@ -3273,7 +3242,7 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     )
                 }
                 BackendPreconditionerKind::Chebyshev => {
-                    let precond = ChebyshevBackend::from_csr_host(
+                    let precond = match ChebyshevBackend::try_from_csr_host(
                         backend,
                         &device_csr,
                         &row_ptr_host,
@@ -3281,7 +3250,20 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                         &csr.values,
                         config.linear_solver_chebyshev_degree.max(1),
                         config.linear_solver_chebyshev_eigenvalue_ratio.max(1.0),
-                    );
+                    ) {
+                        Ok(preconditioner) => preconditioner,
+                        Err(err) => {
+                            eprintln!("WARNING: backend Chebyshev preconditioner setup failed ({err}); falling back to CPU");
+                            return solve_iterative_cpu(
+                                config,
+                                csr,
+                                b,
+                                x0,
+                                velocity_block_size,
+                                pressure_schur,
+                            );
+                        }
+                    };
                     gmres_backend_preconditioned(
                         backend,
                         &device_csr,
@@ -3448,7 +3430,7 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
             // Honour the configured preconditioner kind on the f32 inner.
             let status_result = match config.linear_solver_backend_preconditioner {
                 BackendPreconditionerKind::PolynomialJacobi => {
-                    let pc_f32 = PolynomialJacobiBackendF32::from_csr_f32(
+                    let pc_f32 = match PolynomialJacobiBackendF32::try_from_csr_host(
                         backend,
                         &a_f32,
                         &row_ptr_host,
@@ -3456,7 +3438,20 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                         &values_f32,
                         config.linear_solver_polynomial_degree.max(1),
                         config.linear_solver_polynomial_damping as f32,
-                    );
+                    ) {
+                        Ok(preconditioner) => preconditioner,
+                        Err(err) => {
+                            eprintln!("WARNING: mixed-precision backend polynomial preconditioner setup failed ({err}); falling back to CPU");
+                            return solve_iterative_cpu(
+                                config,
+                                csr,
+                                b,
+                                x0,
+                                velocity_block_size,
+                                pressure_schur,
+                            );
+                        }
+                    };
                     gmres_ir_backend_preconditioned(
                         backend,
                         &device_csr,
@@ -3469,7 +3464,7 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     )
                 }
                 BackendPreconditionerKind::Chebyshev => {
-                    let pc_f32 = ChebyshevBackendF32::from_csr_f32(
+                    let pc_f32 = match ChebyshevBackendF32::try_from_csr_host(
                         backend,
                         &a_f32,
                         &row_ptr_host,
@@ -3477,7 +3472,20 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                         &values_f32,
                         config.linear_solver_chebyshev_degree.max(1),
                         config.linear_solver_chebyshev_eigenvalue_ratio.max(1.0) as f32,
-                    );
+                    ) {
+                        Ok(preconditioner) => preconditioner,
+                        Err(err) => {
+                            eprintln!("WARNING: mixed-precision backend Chebyshev preconditioner setup failed ({err}); falling back to CPU");
+                            return solve_iterative_cpu(
+                                config,
+                                csr,
+                                b,
+                                x0,
+                                velocity_block_size,
+                                pressure_schur,
+                            );
+                        }
+                    };
                     gmres_ir_backend_preconditioned(
                         backend,
                         &device_csr,
@@ -3544,91 +3552,10 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
     Some((x_host, true, total_iterations))
 }
 
-fn bounding_box(points: &[[f64; 3]]) -> ([f64; 3], [f64; 3]) {
-    let mut min = [f64::MAX; 3];
-    let mut max = [f64::MIN; 3];
-    for point in points {
-        for d in 0..3 {
-            min[d] = min[d].min(point[d]);
-            max[d] = max[d].max(point[d]);
-        }
-    }
-    (min, max)
-}
-
-fn triangle_barycentric(vertices: &[[f64; 3]], coords: [f64; 3]) -> Option<Vec<f64>> {
-    let vertex_array: &[[f64; 3]; 3] = vertices.try_into().ok()?;
-    let [p0, p1, p2] = *vertex_array;
-    let v0 = [p1[0] - p0[0], p1[1] - p0[1]];
-    let v1 = [p2[0] - p0[0], p2[1] - p0[1]];
-    let v2 = [coords[0] - p0[0], coords[1] - p0[1]];
-
-    let d00 = v0[0] * v0[0] + v0[1] * v0[1];
-    let d01 = v0[0] * v1[0] + v0[1] * v1[1];
-    let d11 = v1[0] * v1[0] + v1[1] * v1[1];
-    let d20 = v2[0] * v0[0] + v2[1] * v0[1];
-    let d21 = v2[0] * v1[0] + v2[1] * v1[1];
-
-    let denom = d00 * d11 - d01 * d01;
-    if denom.abs() < 1.0e-30 {
-        return None;
-    }
-
-    let l1 = (d11 * d20 - d01 * d21) / denom;
-    let l2 = (d00 * d21 - d01 * d20) / denom;
-    let l0 = 1.0 - l1 - l2;
-    barycentric_if_inside(vec![l0, l1, l2])
-}
-
-fn tetrahedron_barycentric(vertices: &[[f64; 3]], coords: [f64; 3]) -> Option<Vec<f64>> {
-    let vertex_array: &[[f64; 3]; 4] = vertices.try_into().ok()?;
-    let [p0, p1, p2, p3] = *vertex_array;
-    let t = [
-        [p1[0] - p0[0], p2[0] - p0[0], p3[0] - p0[0]],
-        [p1[1] - p0[1], p2[1] - p0[1], p3[1] - p0[1]],
-        [p1[2] - p0[2], p2[2] - p0[2], p3[2] - p0[2]],
-    ];
-    let rhs = [coords[0] - p0[0], coords[1] - p0[1], coords[2] - p0[2]];
-    let det = det3(t);
-    if det.abs() < 1.0e-30 {
-        return None;
-    }
-
-    let l1 = det3([
-        [rhs[0], t[0][1], t[0][2]],
-        [rhs[1], t[1][1], t[1][2]],
-        [rhs[2], t[2][1], t[2][2]],
-    ]) / det;
-    let l2 = det3([
-        [t[0][0], rhs[0], t[0][2]],
-        [t[1][0], rhs[1], t[1][2]],
-        [t[2][0], rhs[2], t[2][2]],
-    ]) / det;
-    let l3 = det3([
-        [t[0][0], t[0][1], rhs[0]],
-        [t[1][0], t[1][1], rhs[1]],
-        [t[2][0], t[2][1], rhs[2]],
-    ]) / det;
-    let l0 = 1.0 - l1 - l2 - l3;
-    barycentric_if_inside(vec![l0, l1, l2, l3])
-}
-
-fn barycentric_if_inside(weights: Vec<f64>) -> Option<Vec<f64>> {
-    const TOLERANCE: f64 = -1.0e-8;
-    weights
-        .iter()
-        .all(|&weight| weight >= TOLERANCE)
-        .then_some(weights)
-}
-
 fn det3(matrix: [[f64; 3]; 3]) -> f64 {
     matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
         - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
         + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0])
-}
-
-fn squared_distance(a: [f64; 3], b: [f64; 3]) -> f64 {
-    (a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)
 }
 
 // ---------------------------------------------------------------------------
@@ -4044,8 +3971,17 @@ fn backend_btdiagb_schur_cached(
         LinearSolverBackend::Auto => LinearSolverBackend::resolve_auto(),
         backend => backend,
     };
+    // A GPU solve that fails setup falls back to the CPU path, which
+    // needs the Schur product when the CPU preconditioner is a Schur
+    // variant. Build it in that case so the fallback can succeed.
+    let fallback_needs_schur = matches!(
+        config.linear_solver_cpu_preconditioner,
+        LinearSolverCpuPreconditionerKind::JacobiSchur
+            | LinearSolverCpuPreconditionerKind::IlutSchur
+    );
     if matches!(resolved_backend, LinearSolverBackend::Cpu)
-        || config.linear_solver_backend_preconditioner != BackendPreconditionerKind::JacobiSchur
+        || (config.linear_solver_backend_preconditioner != BackendPreconditionerKind::JacobiSchur
+            && !fallback_needs_schur)
     {
         return None;
     }
@@ -5612,26 +5548,36 @@ mod tests {
     }
 
     #[test]
-    fn test_velocity_interpolator_uses_element_local_barycentric_values() {
+    fn test_picard_velocity_field_uses_element_local_barycentric_values() {
         let mut mesh = Mesh::new(3);
         let n0 = mesh.add_node(Point::new_3d(0.0, 0.0, 0.0));
         let n1 = mesh.add_node(Point::new_3d(1.0, 0.0, 0.0));
         let n2 = mesh.add_node(Point::new_3d(0.0, 1.0, 0.0));
         let n3 = mesh.add_node(Point::new_3d(0.0, 0.0, 1.0));
         mesh.add_element(ElementType::Tetrahedron, vec![n0, n1, n2, n3]);
-        let node_vels = vec![
-            [0.0, 0.0, 0.0],
-            [1.0, 0.0, 0.0],
-            [0.0, 2.0, 0.0],
-            [0.0, 0.0, 3.0],
-        ];
-        let interpolator = VelocityFieldInterpolator::new(&mesh, node_vels, 3);
+        let v_space = VectorH1Space::new(PolynomialDegree::P1, 3);
+        let topology = std::sync::Arc::new(
+            crate::physics::fluid::stokes::workspace::ElementVelocityTopology::new(&mesh, &v_space),
+        );
+        let field = PicardVelocityField {
+            topology,
+            values: vec![
+                0.0, 0.0, 0.0, //
+                1.0, 0.0, 0.0, //
+                0.0, 2.0, 0.0, //
+                0.0, 0.0, 3.0, //
+            ],
+            dim: 3,
+        };
 
-        let velocity = interpolator.velocity_at([0.25, 0.25, 0.25]);
+        let at = field.velocity_at([0.25, 0.25, 0.25]);
 
-        assert!((velocity[0] - 0.25).abs() < 1.0e-12);
-        assert!((velocity[1] - 0.50).abs() < 1.0e-12);
-        assert!((velocity[2] - 0.75).abs() < 1.0e-12);
+        assert!((at[0] - 0.25).abs() < 1.0e-12);
+        assert!((at[1] - 0.50).abs() < 1.0e-12);
+        assert!((at[2] - 0.75).abs() < 1.0e-12);
+        let comps = field.velocity_components_at([0.25, 0.25, 0.25]);
+        assert_eq!(comps.len(), 3);
+        assert!((field.velocity_magnitude_at([0.25, 0.25, 0.25]) - 0.25f64.hypot(0.50).hypot(0.75)).abs() < 1.0e-12);
     }
 
     #[test]

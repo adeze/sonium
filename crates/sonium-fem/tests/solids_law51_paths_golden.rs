@@ -153,10 +153,7 @@ fn law51_paths_match_wolfram() {
         &stations_100,
     );
     check_leg(&doc, "uni", &uni);
-    assert!(
-        uni.yielding.iter().all(|&y| !y),
-        "the mixture never yields"
-    );
+    assert!(uni.yielding.iter().all(|&y| !y), "the mixture never yields");
     assert!(
         uni.pressure < law.unreacted.pressure(0.0, E0),
         "tension must depressurize below virgin"

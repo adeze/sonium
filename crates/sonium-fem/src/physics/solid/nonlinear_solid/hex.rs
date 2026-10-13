@@ -184,11 +184,7 @@ pub fn q1_element_residual(
     // The 3x3 deformation gradient below indexes nine stress entries; a
     // 2D material would previously panic on the short heap vector, so
     // fail closed with the same strictness on the stack spelling.
-    assert_eq!(
-        material.dim(),
-        3,
-        "q1_element_residual needs a 3D material"
-    );
+    assert_eq!(material.dim(), 3, "q1_element_residual needs a 3D material");
     let coords = mesh.element_coords(elem_idx);
     let mut residual = [0.0; 24];
     for (natural, weight) in hex_quadrature() {

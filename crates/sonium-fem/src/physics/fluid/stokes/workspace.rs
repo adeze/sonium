@@ -727,7 +727,7 @@ pub(crate) struct ElementVelocityField<'a> {
 }
 
 impl ElementVelocityTopology {
-    fn new<VSpace: crate::spaces::FunctionSpace>(
+    pub(crate) fn new<VSpace: crate::spaces::FunctionSpace>(
         mesh: &crate::mesh::Mesh,
         v_space: &VSpace,
     ) -> Self {

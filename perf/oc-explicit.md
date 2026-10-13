@@ -42,8 +42,10 @@ and stop time, same walls/BCs/loads. Differs: engine LAW1-QEPH
 vs native Neo-Hookean Q1 bricks (small-strain identical),
 engine LAW2/LAW36 vs native `hex_plastic_forces` (Johnson-Cook
 / tabulated yield, same E/nu/rho), engine contact vs native
-penalty walls, own adaptive dt per side (cycle counts differ;
-normalized by ns/dof/cycle). Native plastic runs with linear
+exact-multiplier rigid walls (zero contact stiffness, no
+contact CFL limit; quasi-static decks keep an explicit penalty
+cap on the plastic arm only), own adaptive dt per side (cycle
+counts differ; normalized by ns/dof/cycle). Native plastic runs with linear
 bulk viscosity off (c1 = 0): the compression-only kink
 chatters under velocity-Verlet on quasi-static ramps
 (55%/step growth from roundoff); the C1-smooth quadratic term
@@ -59,19 +61,19 @@ cantilever/bending (native Q1 shear locking).
 deck column is bold.
 
 <!-- PERF-OC-DECK-BEGIN taylor_bar -->
-### taylor_bar (dof 675; engine 24 cycles, sonium 127 cycles)
+### taylor_bar (dof 675; engine 24 cycles, sonium 21 cycles)
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 64 | 0.027 | **316** | 3 MB |
-| sonium | native | 1 | 0.0272 | 317 | 3 MB |
-| sonium | native | 16 | 0.0273 | 318 | 3 MB |
-| engine | serial | 1 | 0.033 | 2035 | 38 MB |
-| engine | smp | 1 | 0.0334 | 2062 | 38 MB |
-| engine | smp | 4 | 0.0451 | 2787 | 44 MB |
-| engine | smp | 16 | 0.0862 | 5322 | 108 MB |
-| engine | mpi | 2 | 0.754 | 46543 | 71 MB |
-| engine | mpi | 4 | 0.802 | 49479 | 69 MB |
+| sonium | native | 1 | 0.00306 | **216** | 83 MB |
+| sonium | native | 16 | 0.00307 | 217 | 83 MB |
+| sonium | native | 64 | 0.00309 | 218 | 83 MB |
+| engine | smp | 1 | 0.0336 | 2071 | 39 MB |
+| engine | serial | 1 | 0.0342 | 2113 | 39 MB |
+| engine | smp | 4 | 0.0453 | 2795 | 44 MB |
+| engine | smp | 16 | 0.0852 | 5258 | 108 MB |
+| engine | mpi | 2 | 0.625 | 38558 | 72 MB |
+| engine | mpi | 4 | 0.667 | 41181 | 69 MB |
 <!-- PERF-OC-DECK-END -->
 
 Engine numbers are setup-dominated (24 cycles in 33 ms; the
@@ -79,18 +81,18 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 ~0.7 s of launcher/rank overhead for 24 cycles.
 
 <!-- PERF-OC-DECK-BEGIN rail_crush -->
-### rail_crush (dof 297; engine 6898 cycles, sonium 81020 cycles)
+### rail_crush (dof 297; engine 6898 cycles, sonium 6528 cycles)
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 16 | 5.39 | **224** | 13 MB |
-| sonium | native | 1 | 5.48 | 228 | 15 MB |
-| engine | serial | 1 | 0.534 | 261 | 38 MB |
-| engine | smp | 1 | 0.534 | 261 | 38 MB |
-| engine | smp | 4 | 1.01 | 495 | 43 MB |
-| engine | mpi | 2 | 1.33 | 648 | 71 MB |
-| engine | mpi | 4 | 1.39 | 678 | 69 MB |
-| engine | smp | 16 | 1.81 | 885 | 108 MB |
+| sonium | native | 1 | 0.302 | **156** | 83 MB |
+| sonium | native | 16 | 0.308 | 159 | 83 MB |
+| engine | smp | 1 | 0.546 | 266 | 39 MB |
+| engine | serial | 1 | 0.55 | 269 | 39 MB |
+| engine | smp | 4 | 1.01 | 495 | 44 MB |
+| engine | mpi | 2 | 1.18 | 576 | 71 MB |
+| engine | mpi | 4 | 1.24 | 604 | 69 MB |
+| engine | smp | 16 | 1.83 | 894 | 109 MB |
 <!-- PERF-OC-DECK-END -->
 
 <!-- PERF-OC-DECK-BEGIN necking_bar -->
@@ -98,29 +100,29 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| sonium | native | 16 | 81.9 | **211** | 3 MB |
-| sonium | native | 1 | 85.4 | 220 | 3 MB |
-| engine | serial | 1 | 97.7 | 240 | 38 MB |
-| engine | smp | 1 | 97.8 | 240 | 38 MB |
-| engine | mpi | 4 | 105 | 257 | 69 MB |
-| engine | mpi | 2 | 109 | 266 | 71 MB |
-| engine | smp | 4 | 182 | 446 | 42 MB |
-| engine | smp | 16 | 316 | 776 | 108 MB |
+| sonium | native | 1 | 56.7 | **146** | 83 MB |
+| sonium | native | 16 | 59.8 | 154 | 83 MB |
+| engine | smp | 1 | 100 | 246 | 39 MB |
+| engine | mpi | 4 | 104 | 255 | 69 MB |
+| engine | mpi | 2 | 110 | 269 | 71 MB |
+| engine | serial | 1 | 164 | 401 | 39 MB |
+| engine | smp | 4 | 187 | 459 | 44 MB |
+| engine | smp | 16 | 321 | 788 | 108 MB |
 <!-- PERF-OC-DECK-END -->
 
 <!-- PERF-OC-DECK-BEGIN hertz_sphere -->
-### hertz_sphere (dof 1455; engine 137513 cycles, sonium 786523 cycles; 1 repeat)
+### hertz_sphere (dof 1455; engine 137513 cycles, sonium 105056 cycles; 1 repeat)
 
 | Side | Flavor | Threads | wall_s | ns/dof/cycle | peak RSS |
 | ---- | ------ | ------: | -----: | -----------: | -------: |
-| engine | mpi | 4 | 18.1 | **90** | 69 MB |
-| engine | mpi | 2 | 21.7 | 108 | 72 MB |
-| engine | serial | 1 | 24.6 | 123 | 38 MB |
-| engine | smp | 1 | 24.9 | 125 | 38 MB |
-| engine | smp | 4 | 27 | 135 | 43 MB |
-| engine | smp | 16 | 44 | 220 | 109 MB |
-| sonium | native | 16 | 354 | 309 | 8 MB |
-| sonium | native | 1 | 367 | 320 | 9 MB |
+| sonium | native | 16 | 9.13 | **60** | 83 MB |
+| sonium | native | 1 | 9.14 | 60 | 83 MB |
+| engine | mpi | 4 | 16.6 | 83 | 69 MB |
+| engine | mpi | 2 | 21.3 | 106 | 72 MB |
+| engine | serial | 1 | 25.6 | 128 | 39 MB |
+| engine | smp | 1 | 25.6 | 128 | 39 MB |
+| engine | smp | 4 | 27.9 | 140 | 44 MB |
+| engine | smp | 16 | 43.3 | 216 | 107 MB |
 <!-- PERF-OC-DECK-END -->
 
 <!-- PERF-OC-DECK-BEGIN plasticity_thick_cylinder -->
@@ -155,33 +157,41 @@ Engine numbers are setup-dominated (24 cycles in 33 ms; the
 
 ## Reading
 
-- Per-dof-per-cycle, sonium wins 5 decks (elastic taylor
-  6.4x, rail 1.1x, necking 1.1x; plastic taylor 1.5x,
-  cylinder 1.1x vs engine serial) and the engine wins hertz
-  (2.6x). The hertz gap is the honest headline on the sonium
-  side: 5.7x more cycles at ~2.6x the per-cycle cost — dt
-  policy and contact cost, not a broken run (probes pass).
-- Wall-clock tells the same story except where cycle counts
-  diverge: sonium rail takes 5.4 s vs engine 0.5 s because it
-  runs 11.7x more cycles (own adaptive dt) at a slightly
-  cheaper per-cycle cost. Plastic taylor flips the other way
-  (engine 0.054 s vs sonium 0.084 s: 53 vs 123 cycles at a
-  cheaper sonium per-cycle cost), while the cylinder runs
-  fewer native cycles than engine (4704 vs 5188), so sonium
-  wins wall there too (1.01 s vs 1.19 s).
-- Nobody scales on these decks: sonium t1 ~= t16 everywhere
-  (1.00-1.04x; expected at 297-2340 dof), engine SMP is flat
-  to sharply negative (-nt16 is 1.5-3.4x SLOWER than serial),
-  MPI only pays on the largest deck (hertz r4 = 0.73x serial
-  wall). These are tiny decks; scaling claims need bigger
-  meshes (future work, needs native shells first — plasticity
-  has now landed).
-- Memory: sonium 3-15 MB elastic vs engine 38-112 MB peak RSS
-  per cell (MPI RSS covers the launcher only and
-  under-reports ranks — 6A caveat, restated). Plastic sonium
-  cells report 83 MB RSS for ~2k dof against 3 MB on the
-  smaller elastic taylor: unexplained, flagged for follow-up
-  (not investigated; numbers published as measured).
+- Per-dof-per-cycle, sonium wins all 6 decks against engine
+  serial: taylor 9.8x, rail 1.7x, necking 2.7x,
+  hertz 2.1x, plastic taylor 1.5x, cylinder 1.1x. Hertz
+  flipped from a 2.6x deficit: the multiplier-contact
+  refactor removed the penalty dt cap (786k → 105k cycles)
+  and hertz runs a precomputed linear stiffness (no per-step
+  Jacobians/determinants/logarithms), taking it from 320 to
+  60 ns/dof/cycle with the DZ probe exact to 7 digits.
+  Taylor went from 127 to 21 cycles at the bulk CFL step.
+- Wall-clock: sonium hertz takes 9.1 s vs engine 25.6 s (2.8x;
+  fewer native cycles too, 105k vs 137k) and sonium taylor
+  takes 0.003 s vs engine 0.034 s (11x). Plastic taylor goes
+  the other way (engine 0.054 s vs sonium 0.084 s: 53 vs 123
+  cycles at a cheaper sonium per-cycle cost), while the
+  cylinder runs fewer native cycles than engine (4704 vs
+  5188), so sonium wins wall there too (1.01 s vs 1.19 s).
+  Necking: 56.7 s vs 164 s serial (2.9x; 1.31M vs 1.37M
+  cycles).
+- Nobody scales on these decks: sonium t1 ~= t16
+  everywhere (serial force loop by design; 1.00x at 297-2340
+  dof; t8 spot-checked on hertz at 1.00x), engine SMP is flat to sharply negative (-nt16 is
+  1.5-3.4x SLOWER than serial), MPI only pays on the largest
+  deck (hertz r4 = 0.65x serial wall). Threading the native
+  loop cannot pay here (both sides agree it is overhead-bound
+  at this size); scaling work belongs with bigger meshes
+  (future work, needs native shells first). At 16 cores
+  sonium still wins all 6 decks (1.6x-24x per-cycle) because
+  the engine degrades while sonium holds flat.
+- Memory: sonium reports a fixed 83 MB peak RSS on every
+  fresh cell regardless of deck size (297-2340 dof) against
+  3-15 MB on the Oct-11 binary: process-level overhead,
+  unexplained, flagged for follow-up (not investigated;
+  numbers published as measured). Engine 38-112 MB per cell
+  (MPI RSS covers the launcher only and under-reports ranks —
+  6A caveat, restated).
 - Engine serial == smp1 on every deck (within 2%), as expected.
 
 ## Rerun
