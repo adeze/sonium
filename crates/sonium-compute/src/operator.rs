@@ -793,6 +793,43 @@ impl<B: Backend, T: DeviceScalar> PersistentDeviceCsr<B, T> {
         backend.try_copy_h2d(values_host, &mut matrix.values)
     }
 
+    /// Update the resident CSR values from a higher-precision host slice,
+    /// casting on the way in (device-side cast where the backend supports
+    /// it, see [`Backend::try_copy_h2d_cast`]).
+    ///
+    /// This is the mixed-precision frequency-sweep path: it deletes the
+    /// serial host-side `f64 -> f32` cast loop plus its temporary `N^2`
+    /// buffer. Length, finiteness, and aliasing checks mirror
+    /// [`Self::try_copy_values_from_host`].
+    pub fn try_copy_values_from_host_cast<UpperT>(
+        &mut self,
+        backend: &B,
+        values_host: &[UpperT],
+    ) -> crate::BackendResult<()>
+    where
+        UpperT: LowerPrecision<Lower = T>,
+    {
+        if values_host.len() != self.nnz() {
+            return Err(crate::BackendError::InvalidArgument {
+                operation: "persistent_csr_update_values_cast",
+                reason: format!("expected {} values, got {}", self.nnz(), values_host.len()),
+            });
+        }
+        if values_host.iter().any(|value| !value.is_finite()) {
+            return Err(crate::BackendError::InvalidArgument {
+                operation: "persistent_csr_update_values_cast",
+                reason: "CSR values must be finite".into(),
+            });
+        }
+        let matrix =
+            Arc::get_mut(&mut self.matrix).ok_or_else(|| crate::BackendError::OperationFailed {
+                operation: "persistent_csr_update_values_cast",
+                reason: "resident CSR storage is aliased; descriptor cannot be updated safely"
+                    .into(),
+            })?;
+        backend.try_copy_h2d_cast(values_host, &mut matrix.values)
+    }
+
     pub fn try_apply(
         &self,
         backend: &B,
@@ -3239,5 +3276,58 @@ mod tests {
 
         assert_eq!(row_ptr, persistent.matrix().row_ptr.len());
         assert_eq!(result, [4.0, 5.0]);
+    }
+
+    #[test]
+    fn persistent_csr_cast_update_matches_host_side_cast() {
+        use num_complex::Complex32;
+        let backend = CpuBackend::new();
+        // 2x2 complex system, resident in f32.
+        let init32 = vec![
+            Complex32::new(4.0, 0.0),
+            Complex32::new(0.0, 1.0),
+            Complex32::new(1.0, 0.0),
+            Complex32::new(2.0, 0.0),
+        ];
+        let matrix =
+            DeviceCsr::try_from_host(&backend, 2, 2, &[0, 2, 4], &[0, 1, 0, 1], &init32).unwrap();
+        let mut persistent = PersistentDeviceCsr::try_from_device_csr(&backend, matrix).unwrap();
+        // New f64 values; the production path used to cast these on the
+        // host into a temporary N^2 buffer before upload.
+        let update64 = vec![
+            Complex64::new(8.0, 0.5),
+            Complex64::new(0.0, -2.0),
+            Complex64::new(3.0, 0.0),
+            Complex64::new(1.0, 1.0),
+        ];
+        persistent
+            .try_copy_values_from_host_cast(&backend, &update64)
+            .unwrap();
+        // Length and finiteness gates mirror the same-precision update.
+        assert!(persistent
+            .try_copy_values_from_host_cast(&backend, &update64[..3])
+            .is_err());
+        assert!(persistent
+            .try_copy_values_from_host_cast(
+                &backend,
+                &[
+                    Complex64::new(1.0, 0.0),
+                    Complex64::new(0.0, 1.0),
+                    Complex64::new(0.0, 0.0),
+                    Complex64::new(f64::NAN, 0.0),
+                ]
+            )
+            .is_err());
+
+        let mut x = backend.raw_alloc::<Complex32>(2).unwrap();
+        let mut y = backend.raw_alloc::<Complex32>(2).unwrap();
+        backend.copy_h2d(&[Complex32::new(1.0, 0.0), Complex32::new(0.0, 1.0)], &mut x);
+        persistent.try_apply(&backend, &x, &mut y).unwrap();
+        let mut result = [Complex32::new(0.0, 0.0); 2];
+        backend.copy_d2h(&y, &mut result);
+        // (8+0.5i)*1 + (0-2i)*i = 8+0.5i+2 = 10+0.5i;
+        // 3*1 + (1+i)*i = 3-1+i = 2+i.
+        assert!((result[0] - Complex32::new(10.0, 0.5)).norm() < 1e-5);
+        assert!((result[1] - Complex32::new(2.0, 1.0)).norm() < 1e-5);
     }
 }

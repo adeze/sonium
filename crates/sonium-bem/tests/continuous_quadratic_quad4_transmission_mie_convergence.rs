@@ -192,11 +192,19 @@ pub fn run_continuous_quadratic_quad4_transmission_mie_convergence()
         })
         .collect::<Vec<_>>();
 
-    let (coarse_error, coarse_residual, coarse_solution_error, coarse_dofs, coarse_panels) =
-        solve_level(2, &reference);
-    let (medium_error, medium_residual, medium_solution_error, _, _) = solve_level(4, &reference);
-    let (fine_error, fine_residual, fine_solution_error, fine_dofs, fine_panels) =
-        solve_level(8, &reference);
+    // The three refinement levels are independent full assemblies +
+    // solves (own mesh, locals only); run them concurrently and rejoin
+    // in order. Progress prints stay in schedule order after the join.
+    use rayon::prelude::*;
+    let levels: Vec<(f64, f64, f64, usize, usize)> = [2, 4, 8]
+        .into_par_iter()
+        .map(|face_resolution| solve_level(face_resolution, &reference))
+        .collect();
+    let [
+        (coarse_error, coarse_residual, coarse_solution_error, coarse_dofs, coarse_panels),
+        (medium_error, medium_residual, medium_solution_error, _, _),
+        (fine_error, fine_residual, fine_solution_error, fine_dofs, fine_panels),
+    ] = levels.try_into().expect("three refinement levels");
     println!(
         "Quad4 Mie complex-field L2: {coarse_error:.3e} -> {medium_error:.3e} -> {fine_error:.3e}"
     );

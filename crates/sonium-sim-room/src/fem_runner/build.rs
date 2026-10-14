@@ -33,6 +33,7 @@ use sonium_solvers::iterative::GcroDrSubspace;
 use sonium_solvers::{
     AdditiveSchwarzPreconditioner, AmgPreconditioner, BlockJacobiPreconditioner, CsrMatrix,
     IluColoringPreconditioner, IluFixedPointPreconditioner, IlutConfig, IlutPreconditioner,
+    SweepingSchwarzPreconditioner,
 };
 use sonium_xem::{Point3D, RoomSimulation, Source, SymmetryConfig};
 
@@ -78,6 +79,42 @@ pub(super) fn build_preconditioner(
                 },
             );
             FemPreconditioner::Oras(preconditioner)
+        }
+        FemPreconditionerKind::SweepingSchwarz => {
+            // Geometric x-ordered slabs when the mesh provides them;
+            // otherwise contiguous index slabs. Contiguous slabs carry
+            // no wave-propagation ordering, so the sweep degrades to
+            // an ordered multiplicative Schwarz still stronger than
+            // the additive combination on the same partition.
+            let preconditioner = geometric_partitions.map_or_else(
+                || {
+                    let count =
+                        AdditiveSchwarzPreconditioner::<Complex64>::recommended_subdomain_count(
+                            matrix.num_rows,
+                        )
+                        .max(1);
+                    let layers: Vec<Vec<usize>> = (0..matrix.num_rows)
+                        .collect::<Vec<_>>()
+                        .chunks(matrix.num_rows.div_ceil(count))
+                        .map(<[usize]>::to_vec)
+                        .collect();
+                    SweepingSchwarzPreconditioner::from_csr_layers(
+                        matrix,
+                        &layers,
+                        SCHWARZ_OVERLAP,
+                        k,
+                    )
+                },
+                |partitions| {
+                    SweepingSchwarzPreconditioner::from_csr_layers(
+                        matrix,
+                        partitions,
+                        SCHWARZ_OVERLAP,
+                        k,
+                    )
+                },
+            );
+            FemPreconditioner::SweepingSchwarz(preconditioner)
         }
         FemPreconditionerKind::IluColoring => {
             FemPreconditioner::IluColoring(IluColoringPreconditioner::from_csr(matrix))

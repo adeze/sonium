@@ -31,6 +31,10 @@ pub enum FemPreconditionerKind {
     Oras,
     /// Optimized Schwarz with a second-order HABC-style interface correction.
     Habc,
+    /// Double-sweep multiplicative Schwarz over ordered coordinate layers
+    /// with absorbing Robin transmission (sweeping-style preconditioner
+    /// for high-wavenumber Helmholtz).
+    SweepingSchwarz,
     /// ILU(0) triangular solve with level scheduling.
     IluColoring,
     /// Approximate ILU(0) triangular solve using fixed-point sweeps.
@@ -46,6 +50,7 @@ impl FemPreconditionerKind {
             Self::AdditiveSchwarz => "additive-schwarz",
             Self::Oras => "oras",
             Self::Habc => "habc",
+            Self::SweepingSchwarz => "sweeping-schwarz",
             Self::IluColoring => "ilu-coloring",
             Self::IluFixedPoint => "ilu-fixedpoint",
             Self::Amg => "amg",
@@ -53,7 +58,7 @@ impl FemPreconditionerKind {
     }
 
     pub fn valid_values() -> &'static str {
-        "ilut, block-jacobi, additive-schwarz, oras, habc, ilu-coloring, ilu-fixedpoint, amg"
+        "ilut, block-jacobi, additive-schwarz, oras, habc, sweeping-schwarz, ilu-coloring, ilu-fixedpoint, amg"
     }
 }
 
@@ -75,6 +80,7 @@ impl FromStr for FemPreconditionerKind {
             "oras" | "optimized-schwarz" | "optimised-schwarz" | "optimized-ras"
             | "optimised-ras" => Ok(Self::Oras),
             "habc" | "habc-schwarz" | "second-order-schwarz" => Ok(Self::Habc),
+            "sweeping-schwarz" | "sweeping" | "sweep" => Ok(Self::SweepingSchwarz),
             "ilu-coloring" | "ilucoloring" | "coloring" => Ok(Self::IluColoring),
             "ilu-fixedpoint" | "ilu-fixed-point" | "ilufixedpoint" | "fixedpoint"
             | "fixed-point" => Ok(Self::IluFixedPoint),
@@ -246,6 +252,9 @@ mod tests {
             ("habc", FemPreconditionerKind::Habc),
             ("habc-schwarz", FemPreconditionerKind::Habc),
             ("second-order-schwarz", FemPreconditionerKind::Habc),
+            ("sweeping-schwarz", FemPreconditionerKind::SweepingSchwarz),
+            ("sweeping", FemPreconditionerKind::SweepingSchwarz),
+            ("sweep", FemPreconditionerKind::SweepingSchwarz),
             ("ilu-coloring", FemPreconditionerKind::IluColoring),
             ("coloring", FemPreconditionerKind::IluColoring),
             ("ilu-fixedpoint", FemPreconditionerKind::IluFixedPoint),

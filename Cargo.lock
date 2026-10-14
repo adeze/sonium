@@ -2991,6 +2991,7 @@ dependencies = [
  "sonium-solvers-direct",
  "sonium-solvers-preconditioners",
  "sonium-solvers-sparse",
+ "sonium-solvers-sys",
  "thiserror 2.0.21",
 ]
 

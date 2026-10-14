@@ -328,7 +328,8 @@ pub use preconditioners::{
     SCHWARZ_CHECKPOINT_FORMAT_VERSION, SaddlePointBlockAssumption, SaddlePointBlockAssumptions,
     SaddlePointBlockProvenance, SaddlePointBlockValidation, SaddlePointConfig,
     SaddlePointPreconditioner, SchurStrategy, SchwarzCoarseSetup, SchwarzRuntimeDiagnostics,
-    btdiagb_schur_from_monolithic, has_saddle_point_structure,
+    SweepingSchwarzPreconditioner, btdiagb_schur_from_monolithic, coordinate_layers,
+    has_saddle_point_structure,
 };
 
 // Re-export eigenvalue solvers

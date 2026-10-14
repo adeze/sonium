@@ -198,9 +198,18 @@ pub(super) fn batched_dots_flat_into<T: ComplexField>(
         return;
     }
 
-    out.par_iter_mut()
-        .enumerate()
-        .for_each(|(i, coeff)| *coeff = inner_product(basis.vector(i), w));
+    // Route through the bandwidth-tier pool sized by streamed traffic
+    // (k reductions over n elements each), so wide caller pools do not
+    // fan tiny Arnoldi steps out to all threads. Parallelism lives ONLY
+    // in the outer over-k loop: each dot runs the serial kernel, because
+    // a parallel inner dot would nest a second full-width fan-out (with
+    // its own barrier) inside every outer task.
+    let traffic = n.saturating_mul(k.max(1));
+    sonium_solvers_sys::runtime::with_bandwidth_pool_for_nnz(traffic, || {
+        out.par_iter_mut()
+            .enumerate()
+            .for_each(|(i, coeff)| *coeff = inner_product(basis.vector(i), w));
+    });
 }
 
 /// Compute `w -= sum_i coeffs[i] * basis[i]` for a contiguous basis.
@@ -225,22 +234,27 @@ pub(super) fn batched_project_flat<T: ComplexField>(
         return;
     }
 
-    let nthreads = rayon::current_num_threads().max(1);
-    let chunk = n.div_ceil(nthreads).max(4_096);
+    // Tier-sized pool (see batched_dots_flat_into): each chunk streams
+    // the k-vector basis, so traffic scales like n*k elements.
+    let traffic = n.saturating_mul(k.max(1));
+    sonium_solvers_sys::runtime::with_bandwidth_pool_for_nnz(traffic, || {
+        let nthreads = rayon::current_num_threads().max(1);
+        let chunk = n.div_ceil(nthreads).max(4_096);
 
-    w.par_chunks_mut(chunk)
-        .enumerate()
-        .for_each(|(c_idx, w_chunk)| {
-            let row0 = c_idx * chunk;
-            for (off, w_k) in w_chunk.iter_mut().enumerate() {
-                let row = row0 + off;
-                let mut sum = T::zero();
-                for (i, &coef) in coeffs.iter().enumerate() {
-                    sum += coef * basis.vector(i)[row];
+        w.par_chunks_mut(chunk)
+            .enumerate()
+            .for_each(|(c_idx, w_chunk)| {
+                let row0 = c_idx * chunk;
+                for (off, w_k) in w_chunk.iter_mut().enumerate() {
+                    let row = row0 + off;
+                    let mut sum = T::zero();
+                    for (i, &coef) in coeffs.iter().enumerate() {
+                        sum += coef * basis.vector(i)[row];
+                    }
+                    *w_k -= sum;
                 }
-                *w_k -= sum;
-            }
-        });
+            });
+    });
 }
 
 /// Compute `x += basis * coeffs` in one streamed pass.
@@ -265,22 +279,25 @@ pub(super) fn fused_basis_update_flat<T: ComplexField>(
         return;
     }
 
-    let nthreads = rayon::current_num_threads().max(1);
-    let chunk = n.div_ceil(nthreads).max(4_096);
+    let traffic = n.saturating_mul(k.max(1));
+    sonium_solvers_sys::runtime::with_bandwidth_pool_for_nnz(traffic, || {
+        let nthreads = rayon::current_num_threads().max(1);
+        let chunk = n.div_ceil(nthreads).max(4_096);
 
-    x.par_chunks_mut(chunk)
-        .enumerate()
-        .for_each(|(c_idx, x_chunk)| {
-            let row0 = c_idx * chunk;
-            for (off, x_k) in x_chunk.iter_mut().enumerate() {
-                let row = row0 + off;
-                let mut sum = T::zero();
-                for (i, &coef) in coeffs.iter().enumerate() {
-                    sum += coef * basis.vector(i)[row];
+        x.par_chunks_mut(chunk)
+            .enumerate()
+            .for_each(|(c_idx, x_chunk)| {
+                let row0 = c_idx * chunk;
+                for (off, x_k) in x_chunk.iter_mut().enumerate() {
+                    let row = row0 + off;
+                    let mut sum = T::zero();
+                    for (i, &coef) in coeffs.iter().enumerate() {
+                        sum += coef * basis.vector(i)[row];
+                    }
+                    *x_k += sum;
                 }
-                *x_k += sum;
-            }
-        });
+            });
+    });
 }
 
 /// Krylov operation and byte-budget counters.

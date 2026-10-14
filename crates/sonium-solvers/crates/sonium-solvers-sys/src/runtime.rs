@@ -182,7 +182,7 @@ pub fn bandwidth_threads_for_nnz_with(
     if rt.bandwidth_threads >= rt.compute_threads {
         return rt.compute_threads;
     }
-    if nnz < tiers.mid {
+    let target = if nnz < tiers.mid {
         rt.bandwidth_threads
     } else if nnz < tiers.large {
         rt.bandwidth_threads
@@ -191,7 +191,28 @@ pub fn bandwidth_threads_for_nnz_with(
     } else {
         let upper = ((rt.perf_cores as f64 * tiers.large_frac) as usize).max(rt.bandwidth_threads);
         upper.min(rt.compute_threads)
-    }
+    };
+    // Absolute ceiling: streaming kernels saturate memory bandwidth
+    // with few streams, while per-region barriers and pool wakeups
+    // grow with width (measured 2M futex calls at 128 threads vs 14k
+    // at 16 for identical 336-iteration GMRES work, Oct 2026).
+    target.min(max_bandwidth_threads()).max(1)
+}
+
+/// Absolute ceiling on bandwidth-tier thread counts (default 32).
+///
+/// Env-overridable (`SONIUM_BW_MAX_THREADS`, positive integers only),
+/// cached per process like the other dispatch flags. Set overrides
+/// before process start.
+pub fn max_bandwidth_threads() -> usize {
+    static CACHED: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *CACHED.get_or_init(|| {
+        std::env::var("SONIUM_BW_MAX_THREADS")
+            .ok()
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value >= 1)
+            .unwrap_or(32)
+    })
 }
 
 /// Detect Apple Silicon core topology via sysctl.
@@ -255,6 +276,20 @@ unsafe extern "C" {
 
 static RUNTIME: OnceLock<SolverRuntime> = OnceLock::new();
 static BW_POOL: Mutex<Option<std::sync::Arc<rayon::ThreadPool>>> = Mutex::new(None);
+
+/// Width-keyed pools for the mid/large SpMV tiers (see
+/// [`with_bandwidth_pool_for_nnz`]). Tier targets take only a handful of
+/// distinct values per process (one per tier), so an uncapped map stays
+/// tiny; [`teardown_sized_pools`] releases it.
+static SIZED_POOLS: OnceLock<
+    Mutex<std::collections::HashMap<usize, std::sync::Arc<rayon::ThreadPool>>>,
+> = OnceLock::new();
+
+/// Lazily-initialised width-keyed pool cache.
+fn sized_pools()
+-> &'static Mutex<std::collections::HashMap<usize, std::sync::Arc<rayon::ThreadPool>>> {
+    SIZED_POOLS.get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+}
 
 /// Get or initialise the global runtime configuration.
 ///
@@ -335,22 +370,54 @@ pub fn bandwidth_pool_live() -> bool {
 /// Run a closure on a thread pool sized appropriately for SpMV on a matrix
 /// with `nnz` non-zeros.
 ///
-/// Small problems (`nnz < 500_000`) install on the dedicated bandwidth
-/// pool; larger problems run on the caller's pool (typically the global
-/// compute pool) so they get all P-cores. See [`bandwidth_threads_for_nnz`].
+/// Small problems run on the dedicated narrow bandwidth pool; mid/large
+/// tiers install on a pool sized to the tier target so a 128-thread
+/// caller pool does not fan a bandwidth-bound SpMV out to all threads
+/// (measured solve regression past 16 threads at 1.7M nnz, Oct 2026).
+/// See [`bandwidth_threads_for_nnz`].
 pub fn with_bandwidth_pool_for_nnz<R: Send>(nnz: usize, f: impl FnOnce() -> R + Send) -> R {
     let target = bandwidth_threads_for_nnz(nnz);
     let rt = runtime();
-    // If the caller already has at least `target` workers, just run.
+    // If the caller already has at most `target` workers, just run.
     if target >= rayon::current_num_threads() {
         return f();
     }
-    // Below the small-problem threshold use the narrow BW pool. Above it
-    // run on the global compute pool (already wider).
+    // Below the small-problem threshold use the narrow BW pool.
     if target <= rt.bandwidth_threads {
         return with_bandwidth_pool(f);
     }
-    f()
+    // Mid/large tier on a wider caller pool: narrow to the tier target.
+    sized_pool(target.max(1)).install(f)
+}
+
+/// Cached thread pool of exactly `width` workers for tier-targeted SpMV.
+fn sized_pool(width: usize) -> std::sync::Arc<rayon::ThreadPool> {
+    let mut guard = sized_pools()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some(pool) = guard.get(&width) {
+        return std::sync::Arc::clone(pool);
+    }
+    let pool = std::sync::Arc::new(
+        rayon::ThreadPoolBuilder::new()
+            .num_threads(width)
+            .stack_size(RAYON_WORKER_STACK_SIZE)
+            .thread_name(move |idx| format!("sonium-spmv-{width}-{idx}"))
+            .build()
+            .expect("failed to build sized SpMV thread pool"),
+    );
+    guard.insert(width, std::sync::Arc::clone(&pool));
+    pool
+}
+
+/// Drop all cached sized pools (see [`teardown_bandwidth_pool`]).
+pub fn teardown_sized_pools() {
+    if let Some(pools) = SIZED_POOLS.get() {
+        pools
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
 }
 
 /// Configure rayon's global thread pool for optimal solver performance.
@@ -427,6 +494,29 @@ mod tests {
         assert_eq!(generic_bandwidth_threads(256), 32);
         // Never exceeds the machine itself.
         assert!(generic_bandwidth_threads(3) <= 3);
+    }
+
+    #[test]
+    fn test_bandwidth_pool_narrows_wide_caller_to_tier_target() {
+        // Mid-tier SpMV on a wide caller pool must run narrowed: inside
+        // the closure the pool width is min(tier target, ambient).
+        // (Regression: it used to run inline on all ambient threads,
+        // and FEM solve wall time regressed past 16 threads.)
+        let ambient = rayon::ThreadPoolBuilder::new()
+            .num_threads(32)
+            .build()
+            .expect("32-thread test pool");
+        ambient.install(|| {
+            // 1M nnz sits in the mid tier under default tiers
+            // (500k..2M) on any machine.
+            let target = bandwidth_threads_for_nnz(1_000_000);
+            let seen = with_bandwidth_pool_for_nnz(1_000_000, rayon::current_num_threads);
+            assert_eq!(seen, target.min(32), "tier target {target}");
+            assert!(seen <= 32);
+        });
+        // Only release the width-keyed pools this test created; the
+        // shared bandwidth pool is other tests' state.
+        teardown_sized_pools();
     }
 
     #[test]

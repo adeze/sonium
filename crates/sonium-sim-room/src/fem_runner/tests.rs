@@ -1473,6 +1473,11 @@ fn test_preconditioner_kind_parsing() {
         Ok(FemPreconditionerKind::AdditiveSchwarz)
     );
     assert_eq!("oras".parse(), Ok(FemPreconditionerKind::Oras));
+    assert_eq!(
+        "sweeping-schwarz".parse(),
+        Ok(FemPreconditionerKind::SweepingSchwarz)
+    );
+    assert_eq!("sweep".parse(), Ok(FemPreconditionerKind::SweepingSchwarz));
     assert_eq!("habc-schwarz".parse(), Ok(FemPreconditionerKind::Habc));
     assert_eq!(
         "ilu-coloring".parse(),
@@ -1895,6 +1900,7 @@ fn test_all_preconditioner_kinds_apply() {
         FemPreconditionerKind::AdditiveSchwarz,
         FemPreconditionerKind::Oras,
         FemPreconditionerKind::Habc,
+        FemPreconditionerKind::SweepingSchwarz,
         FemPreconditionerKind::IluColoring,
         FemPreconditionerKind::IluFixedPoint,
         FemPreconditionerKind::Amg,

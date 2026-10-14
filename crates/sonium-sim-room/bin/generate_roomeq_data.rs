@@ -280,7 +280,7 @@ struct Args {
     mesh_fine_radius: f64,
 
     /// FEM preconditioner: ilut, block-jacobi, additive-schwarz, oras, habc,
-    /// ilu-coloring, ilu-fixedpoint, or amg.
+    /// sweeping-schwarz, ilu-coloring, ilu-fixedpoint, or amg.
     #[arg(
         long,
         default_value_t = fem_runner::FemPreconditionerKind::default(),

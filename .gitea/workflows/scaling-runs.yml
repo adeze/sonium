@@ -1,0 +1,55 @@
+# Scaling runs: thread-sweep evidence for the sim + solver stack.
+#
+# Runs the two machine-readable scaling probes at CI-safe sizes and
+# uploads the JSON artifacts. Both cells fail closed (nonzero exit on
+# parity failure or solver error); there is no wall-clock gate because
+# shared runners jitter too much for tight timing bounds (see
+# oc-perf-floor.yml for why timing gates need 10x margins). Scaling
+# regressions are caught by comparing artifacts across runs.
+name: scaling runs
+
+on:
+  pull_request:
+    paths:
+      - ".gitea/workflows/scaling-runs.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-solvers/**"
+      - "crates/sonium-sim-room/**"
+      - "crates/sonium-sim-speaker-modeling/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitea/workflows/scaling-runs.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/sonium-fem/**"
+      - "crates/sonium-solvers/**"
+      - "crates/sonium-sim-room/**"
+      - "crates/sonium-sim-speaker-modeling/**"
+
+jobs:
+  scaling-x86-required:
+    runs-on: [self-hosted, linux, x86_64, avx2, fma]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolved FEM sweep thread scaling (+ parity gate)
+        run: >-
+          mkdir -p target/scaling &&
+          BENCH_CELLS=6 BENCH_REPEATS=1
+          cargo run --release -p sonium-sim-speaker-modeling
+          --example resolved_parallel_scaling --
+          target/scaling/resolved-parallel-scaling.json
+      - name: FEM preconditioner sweep (+ sweeping-schwarz wiring)
+        run: >-
+          cargo run --release -p sonium-sim-room --bin bench-fem-preconditioners --
+          --scenario small_stereo_2_0 --max-freq 100 --num-freqs 6
+          --preconditioners ilut,sweeping-schwarz --rebuild-every 1
+          --json-out target/scaling/fem-preconditioners.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sonium-scaling-runs
+          path: target/scaling/**

@@ -3806,62 +3806,83 @@ pub fn assemble_galerkin_muller_transmission_with_global_dofs(
         });
     }
 
-    let exterior_single_layer = assemble_galerkin_single_layer_with_global_dofs(
-        elements,
-        nodes,
-        exterior,
-        basis,
-        gauss_order,
-        global_dof_count,
-    )
-    .map_err(GalerkinTransmissionAssemblyError::Exterior)?;
-    let interior_single_layer = assemble_galerkin_single_layer_with_global_dofs(
-        elements,
-        nodes,
-        interior,
-        basis,
-        gauss_order,
-        global_dof_count,
-    )
-    .map_err(GalerkinTransmissionAssemblyError::Interior)?;
-    let exterior_double_layer = assemble_galerkin_double_layer_with_global_dofs(
-        elements,
-        nodes,
-        exterior,
-        basis,
-        gauss_order,
-        global_dof_count,
-    )
-    .map_err(GalerkinTransmissionAssemblyError::Exterior)?;
-    let interior_double_layer = assemble_galerkin_double_layer_with_global_dofs(
-        elements,
-        nodes,
-        interior,
-        basis,
-        gauss_order,
-        global_dof_count,
-    )
-    .map_err(GalerkinTransmissionAssemblyError::Interior)?;
-    let exterior_hypersingular = assemble_galerkin_hypersingular_with_global_dofs(
-        elements,
-        nodes,
-        exterior,
-        basis,
-        gauss_order,
-        global_dof_count,
-    )
-    .map_err(GalerkinTransmissionAssemblyError::Exterior)?
-    .hypersingular;
-    let interior_hypersingular = assemble_galerkin_hypersingular_with_global_dofs(
-        elements,
-        nodes,
-        interior,
-        basis,
-        gauss_order,
-        global_dof_count,
-    )
-    .map_err(GalerkinTransmissionAssemblyError::Interior)?
-    .hypersingular;
+    // The six boundary operators are independent assemblies over
+    // read-only inputs; build each same-typed pair concurrently and
+    // rejoin in schedule order. Each assembly is internally serial, so
+    // this adds no nested parallelism. Error mapping preserves schedule
+    // order: the first failing operator in schedule order reports.
+    use rayon::prelude::*;
+    let single_results: Vec<Result<DenseMatrix<Complex64>, GalerkinAssemblyError>> =
+        [exterior, interior]
+            .into_par_iter()
+            .map(|physics| {
+                assemble_galerkin_single_layer_with_global_dofs(
+                    elements,
+                    nodes,
+                    physics,
+                    basis,
+                    gauss_order,
+                    global_dof_count,
+                )
+            })
+            .collect();
+    let mut single_results = single_results.into_iter();
+    let exterior_single_layer = single_results
+        .next()
+        .expect("two single-layer results")
+        .map_err(GalerkinTransmissionAssemblyError::Exterior)?;
+    let interior_single_layer = single_results
+        .next()
+        .expect("two single-layer results")
+        .map_err(GalerkinTransmissionAssemblyError::Interior)?;
+    let double_results: Vec<Result<GalerkinDoubleLayerOperators, GalerkinAssemblyError>> =
+        [exterior, interior]
+            .into_par_iter()
+            .map(|physics| {
+                assemble_galerkin_double_layer_with_global_dofs(
+                    elements,
+                    nodes,
+                    physics,
+                    basis,
+                    gauss_order,
+                    global_dof_count,
+                )
+            })
+            .collect();
+    let mut double_results = double_results.into_iter();
+    let exterior_double_layer = double_results
+        .next()
+        .expect("two double-layer results")
+        .map_err(GalerkinTransmissionAssemblyError::Exterior)?;
+    let interior_double_layer = double_results
+        .next()
+        .expect("two double-layer results")
+        .map_err(GalerkinTransmissionAssemblyError::Interior)?;
+    let hypersingular_results: Vec<Result<GalerkinHypersingularOperators, GalerkinAssemblyError>> =
+        [exterior, interior]
+            .into_par_iter()
+            .map(|physics| {
+                assemble_galerkin_hypersingular_with_global_dofs(
+                    elements,
+                    nodes,
+                    physics,
+                    basis,
+                    gauss_order,
+                    global_dof_count,
+                )
+            })
+            .collect();
+    let mut hypersingular_results = hypersingular_results.into_iter();
+    let exterior_hypersingular = hypersingular_results
+        .next()
+        .expect("two hypersingular results")
+        .map_err(GalerkinTransmissionAssemblyError::Exterior)?
+        .hypersingular;
+    let interior_hypersingular = hypersingular_results
+        .next()
+        .expect("two hypersingular results")
+        .map_err(GalerkinTransmissionAssemblyError::Interior)?
+        .hypersingular;
 
     let mut matrix = DenseMatrix::zeros(2 * global_dof_count, 2 * global_dof_count);
     let mut incident_operator = DenseMatrix::zeros(2 * global_dof_count, 2 * global_dof_count);

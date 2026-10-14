@@ -1764,10 +1764,9 @@ pub(crate) fn solve_bem_adjoint_system_hmatrix(
     rhs: &[Complex64],
     config: &SolverConfig,
 ) -> Result<(Vec<Complex64>, f64), SimulationError> {
-    use sonium_solvers::preconditioners::DiagonalPreconditioner;
+    use sonium_bem::core::assembly::hmatrix::HMatrixBlockJacobi;
 
-    let diag = hmatrix_diagonal(hmatrix);
-    let forward_preconditioner = DiagonalPreconditioner::from_diagonal(&diag);
+    let forward_preconditioner = HMatrixBlockJacobi::from_hmatrix(hmatrix);
     let adjoint_preconditioner = AdjointPreconditioner {
         forward: &forward_preconditioner,
     };
@@ -2089,32 +2088,6 @@ fn relative_residual_hmatrix_adjoint(
     relative_residual_from_applied(&ax, rhs)
 }
 
-/// Extract the diagonal of the underlying TBEM operator from an H-matrix's
-/// diagonal (source == field cluster) dense blocks, for a Jacobi
-/// preconditioner. Unfilled entries default to `1.0`.
-pub(crate) fn hmatrix_diagonal(
-    hmatrix: &sonium_bem::core::assembly::hmatrix::HMatrix,
-) -> Vec<Complex64> {
-    let mut diag = vec![Complex64::new(0.0, 0.0); hmatrix.num_dofs];
-    let mut filled = vec![false; hmatrix.num_dofs];
-    for block in &hmatrix.dense_blocks {
-        if block.source_cluster != block.field_cluster {
-            continue;
-        }
-        let dofs = &hmatrix.cluster_dof_indices[block.source_cluster];
-        for (local, &global) in dofs.iter().enumerate() {
-            diag[global] = block.matrix[[local, local]];
-            filled[global] = true;
-        }
-    }
-    for (i, f) in filled.iter().enumerate() {
-        if !f {
-            diag[i] = Complex64::new(1.0, 0.0);
-        }
-    }
-    diag
-}
-
 /// Solve the forward system `A p = rhs` on an H-matrix operator.
 ///
 /// Returns the solution together with its residual against the compressed
@@ -2138,15 +2111,16 @@ fn solve_bem_system_hmatrix_with_control(
     gcro_dr_subspace: Option<&mut GcroDrSubspace<Complex64>>,
     control: Option<&SimulationControl>,
 ) -> Result<(Vec<Complex64>, f64), SimulationError> {
-    use sonium_solvers::preconditioners::DiagonalPreconditioner;
+    use sonium_bem::core::assembly::hmatrix::HMatrixBlockJacobi;
 
     if let Some(control) = control {
         control.check()?;
     }
 
-    // Build Jacobi preconditioner from H-matrix diagonal
-    let diag = hmatrix_diagonal(hmatrix);
-    let precond = DiagonalPreconditioner::from_diagonal(&diag);
+    // Block-Jacobi over the H-matrix diagonal dense blocks (Jacobi
+    // fallback for uncovered DOFs); strictly stronger than the old
+    // diagonal-only preconditioner whenever a block factors cleanly.
+    let precond = HMatrixBlockJacobi::from_hmatrix(hmatrix);
     let inner_tolerance = config.tolerance * 0.1;
 
     let (x_out, iters, converged, label) = if let Some(sub) = gcro_dr_subspace {
@@ -3774,13 +3748,9 @@ where
         }
 
         let values64 = system.matrix.as_slice();
-        let values32: Vec<num_complex::Complex32> = values64
-            .iter()
-            .map(|value| num_complex::Complex32::new(value.re as f32, value.im as f32))
-            .collect();
         if let Some(matrix) = matrix32.as_mut() {
             matrix
-                .try_copy_values_from_host(&backend, &values32)
+                .try_copy_values_from_host_cast(&backend, values64)
                 .map_err(|error| {
                     SimulationError::new(format!(
                         "GPU CSR value update failed at {frequency:.1} Hz: {error}"
@@ -3788,8 +3758,8 @@ where
                 })?;
             matrix_value_updates += 1;
         } else {
-            let matrix = sonium_compute::DeviceCsr::try_from_host(
-                &backend, n_dofs, n_dofs, &row_ptr, &col_idx, &values32,
+            let matrix = sonium_compute::DeviceCsr::try_from_host_cast(
+                &backend, n_dofs, n_dofs, &row_ptr, &col_idx, values64,
             )
             .map_err(|error| {
                 SimulationError::new(format!(
@@ -3807,7 +3777,10 @@ where
         }
 
         let diagonal: Vec<num_complex::Complex32> = (0..n_dofs)
-            .map(|row| values32[row * n_dofs + row])
+            .map(|row| {
+                let value = values64[row * n_dofs + row];
+                num_complex::Complex32::new(value.re as f32, value.im as f32)
+            })
             .collect();
         if let Some(preconditioner) = preconditioner.as_mut() {
             preconditioner

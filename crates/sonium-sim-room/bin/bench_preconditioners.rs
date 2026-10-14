@@ -34,6 +34,7 @@ const ALL_PRECONDITIONERS: &[FemPreconditionerKind] = &[
     FemPreconditionerKind::Ilut,
     FemPreconditionerKind::BlockJacobi,
     FemPreconditionerKind::AdditiveSchwarz,
+    FemPreconditionerKind::SweepingSchwarz,
     FemPreconditionerKind::IluColoring,
     FemPreconditionerKind::IluFixedPoint,
     FemPreconditionerKind::Amg,
@@ -101,7 +102,7 @@ struct Args {
     #[arg(long, default_value = "cpu")]
     backend: String,
     /// Optional comma-separated subset, e.g. `ilut,amg,block-jacobi`. Defaults
-    /// to all six. Used only with `--backend cpu`.
+    /// to all seven. Used only with `--backend cpu`.
     #[arg(long)]
     preconditioners: Option<String>,
     /// Optional comma-separated GPU preconditioner subset, e.g.
