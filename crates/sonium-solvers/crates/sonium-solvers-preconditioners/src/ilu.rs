@@ -937,12 +937,8 @@ impl<T: ComplexField> IluPreconditioner<T> {
             factors.n,
             false,
         );
-        let (_, backward_level_starts) = compute_level_schedule(
-            &factors.u_col_indices,
-            &factors.u_row_ptrs,
-            factors.n,
-            true,
-        );
+        let (_, backward_level_starts) =
+            compute_level_schedule(&factors.u_col_indices, &factors.u_row_ptrs, factors.n, true);
         Self {
             factors,
             perm,
@@ -1422,8 +1418,7 @@ impl<T: ComplexField + Send + Sync> IluPreconditioner<T> {
                                 None => shared.set(i, shared.get(i) - sum),
                                 Some(diag) => shared.set(i, (shared.get(i) - sum) * diag[i]),
                             }
-                            if (done + 1) % PROGRESS_PUBLISH_INTERVAL == 0 || done + 1 == hi - lo
-                            {
+                            if (done + 1) % PROGRESS_PUBLISH_INTERVAL == 0 || done + 1 == hi - lo {
                                 progress[w].0.store(i, Ordering::Release);
                             }
                         }
@@ -1445,8 +1440,7 @@ impl<T: ComplexField + Send + Sync> IluPreconditioner<T> {
                                 None => shared.set(i, shared.get(i) - sum),
                                 Some(diag) => shared.set(i, (shared.get(i) - sum) * diag[i]),
                             }
-                            if (done + 1) % PROGRESS_PUBLISH_INTERVAL == 0 || done + 1 == hi - lo
-                            {
+                            if (done + 1) % PROGRESS_PUBLISH_INTERVAL == 0 || done + 1 == hi - lo {
                                 progress[w].0.store(i + 1, Ordering::Release);
                             }
                         }
@@ -1458,7 +1452,6 @@ impl<T: ComplexField + Send + Sync> IluPreconditioner<T> {
 }
 
 impl<T: ComplexField> IluPreconditioner<T> {
-
     /// Shared driver for the transpose/Hermitian applies: gather into the
     /// (optional) permuted ordering, run the adjoint factor solve, scatter
     /// back. The permutation is real, so `Mᴴ = Pᵀ (LU)⁻ᴴ P` reuses exactly
@@ -2314,7 +2307,6 @@ mod tests {
             }
         }
     }
-
 
     #[test]
     fn level_wavefront_apply_is_bit_identical_across_thread_counts() {

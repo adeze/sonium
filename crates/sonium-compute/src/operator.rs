@@ -3304,24 +3304,31 @@ mod tests {
             .try_copy_values_from_host_cast(&backend, &update64)
             .unwrap();
         // Length and finiteness gates mirror the same-precision update.
-        assert!(persistent
-            .try_copy_values_from_host_cast(&backend, &update64[..3])
-            .is_err());
-        assert!(persistent
-            .try_copy_values_from_host_cast(
-                &backend,
-                &[
-                    Complex64::new(1.0, 0.0),
-                    Complex64::new(0.0, 1.0),
-                    Complex64::new(0.0, 0.0),
-                    Complex64::new(f64::NAN, 0.0),
-                ]
-            )
-            .is_err());
+        assert!(
+            persistent
+                .try_copy_values_from_host_cast(&backend, &update64[..3])
+                .is_err()
+        );
+        assert!(
+            persistent
+                .try_copy_values_from_host_cast(
+                    &backend,
+                    &[
+                        Complex64::new(1.0, 0.0),
+                        Complex64::new(0.0, 1.0),
+                        Complex64::new(0.0, 0.0),
+                        Complex64::new(f64::NAN, 0.0),
+                    ]
+                )
+                .is_err()
+        );
 
         let mut x = backend.raw_alloc::<Complex32>(2).unwrap();
         let mut y = backend.raw_alloc::<Complex32>(2).unwrap();
-        backend.copy_h2d(&[Complex32::new(1.0, 0.0), Complex32::new(0.0, 1.0)], &mut x);
+        backend.copy_h2d(
+            &[Complex32::new(1.0, 0.0), Complex32::new(0.0, 1.0)],
+            &mut x,
+        );
         persistent.try_apply(&backend, &x, &mut y).unwrap();
         let mut result = [Complex32::new(0.0, 0.0); 2];
         backend.copy_d2h(&y, &mut result);

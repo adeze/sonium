@@ -311,8 +311,11 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f32> {
         pressure_schur: HostCsrRef<'_, f32>,
         config: SaddlePointJacobiSchurBackendConfig,
     ) -> crate::BackendResult<Self> {
-        let schur_values_f64: Vec<f64> =
-            pressure_schur.values.iter().map(|&v| f64::from(v)).collect();
+        let schur_values_f64: Vec<f64> = pressure_schur
+            .values
+            .iter()
+            .map(|&v| f64::from(v))
+            .collect();
         let schur_f64 = HostCsrRef::new(
             pressure_schur.num_rows,
             pressure_schur.num_cols,
@@ -320,8 +323,7 @@ impl<'a, B: Backend> SaddlePointJacobiSchurBackend<'a, B, f32> {
             pressure_schur.col_indices,
             &schur_values_f64,
         );
-        let pressure_lambda_max =
-            schur_lambda_max_f64(a.m, config.velocity_block_size, schur_f64)?;
+        let pressure_lambda_max = schur_lambda_max_f64(a.m, config.velocity_block_size, schur_f64)?;
         Self::try_build(
             backend,
             a,
@@ -593,7 +595,11 @@ impl<'a, B: Backend, T: DeviceScalar> SaddlePointJacobiSchurBackend<'a, B, T> {
             self.pressure_diag_inv.try_apply(backend, residual, d_new)?;
 
             backend.try_scale::<T>(T::from_real(real_from_f64::<T>(coeff_old)), correction)?;
-            backend.try_axpy::<T>(T::from_real(real_from_f64::<T>(coeff_res)), d_new, correction)?;
+            backend.try_axpy::<T>(
+                T::from_real(real_from_f64::<T>(coeff_res)),
+                d_new,
+                correction,
+            )?;
             backend.try_axpy::<T>(T::one(), correction, y_pressure)?;
             rho = rho_new;
         }
@@ -731,7 +737,11 @@ impl<'a, B: Backend, T: DeviceScalar> SaddlePointJacobiSchurBackend<'a, B, T> {
                 .try_apply_colmajor(backend, rhs, residual, d_new)?;
 
             backend.try_scale::<T>(T::from_real(real_from_f64::<T>(coeff_old)), correction)?;
-            backend.try_axpy::<T>(T::from_real(real_from_f64::<T>(coeff_res)), d_new, correction)?;
+            backend.try_axpy::<T>(
+                T::from_real(real_from_f64::<T>(coeff_res)),
+                d_new,
+                correction,
+            )?;
             backend.try_axpy::<T>(T::one(), correction, y_pressure)?;
             rho = rho_new;
         }
@@ -739,7 +749,9 @@ impl<'a, B: Backend, T: DeviceScalar> SaddlePointJacobiSchurBackend<'a, B, T> {
     }
 }
 
-impl<B: Backend, T: DeviceScalar> BackendPreconditioner<B, T> for SaddlePointJacobiSchurBackend<'_, B, T> {
+impl<B: Backend, T: DeviceScalar> BackendPreconditioner<B, T>
+    for SaddlePointJacobiSchurBackend<'_, B, T>
+{
     fn apply(&self, backend: &B, r: &B::Buffer<T>, z: &mut B::Buffer<T>) {
         if let Err(error) = self.try_apply(backend, r, z) {
             log::error!(
@@ -1248,23 +1260,16 @@ mod tests {
             let values32: Vec<f32> = values.iter().map(|&v| v as f32).collect();
             let schur_values32: Vec<f32> = schur_values.iter().map(|&v| v as f32).collect();
             let a32 = BackendCsr::from_host(&backend, 3, 3, &row_ptr, &col_idx, &values32);
-            let precond32 =
-                SaddlePointJacobiSchurBackend::try_from_csr_host_parts_f32(
-                    &backend,
-                    &a32,
-                    &row_ptr,
-                    &col_idx,
-                    &values32,
-                    HostCsrRef::new(
-                        1,
-                        1,
-                        &schur_row_ptrs,
-                        &schur_col_indices,
-                        &schur_values32,
-                    ),
-                    config,
-                )
-                .expect("f32 saddle construction");
+            let precond32 = SaddlePointJacobiSchurBackend::try_from_csr_host_parts_f32(
+                &backend,
+                &a32,
+                &row_ptr,
+                &col_idx,
+                &values32,
+                HostCsrRef::new(1, 1, &schur_row_ptrs, &schur_col_indices, &schur_values32),
+                config,
+            )
+            .expect("f32 saddle construction");
             let mut r32 = backend.raw_alloc::<f32>(3).unwrap();
             backend.copy_h2d(&[1.0_f32, -2.0, 0.5], &mut r32);
             let mut z32 = backend.raw_alloc::<f32>(3).unwrap();

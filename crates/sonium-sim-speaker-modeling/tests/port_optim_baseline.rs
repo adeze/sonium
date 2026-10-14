@@ -28,8 +28,8 @@ fn load_archive() -> Result<PortOptimBaseline, Box<dyn std::error::Error + Send 
 }
 
 #[test]
-fn archived_baseline_matches_frozen_fixture_and_passes_gates() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
-{
+fn archived_baseline_matches_frozen_fixture_and_passes_gates()
+-> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let baseline = load_archive()?;
     assert_eq!(
         baseline.case,
@@ -98,8 +98,8 @@ fn regenerate_port_optim_baseline_v1() -> Result<(), Box<dyn std::error::Error +
     use sonium_sim_speaker_modeling::free_turbulence_power_trend;
     use sonium_sim_speaker_modeling::port_flow::analysis::{dft_amplitude, thd_fraction};
     use sonium_sim_speaker_modeling::port_flow::baseline::{
-        LumpedLimitBaseline, Tier1BaselinePoint, Tier2BaselineLevel,
-        PORT_OPTIM_BASELINE_PROVENANCE, PORT_OPTIM_BASELINE_SCHEMA_VERSION,
+        LumpedLimitBaseline, PORT_OPTIM_BASELINE_PROVENANCE, PORT_OPTIM_BASELINE_SCHEMA_VERSION,
+        Tier1BaselinePoint, Tier2BaselineLevel,
     };
     use sonium_sim_speaker_modeling::port_flow::coupled::run_coupled_port;
     use sonium_sim_speaker_modeling::port_flow::{
@@ -153,16 +153,13 @@ fn regenerate_port_optim_baseline_v1() -> Result<(), Box<dyn std::error::Error +
             );
             Ok(Tier1BaselinePoint {
                 frequency_hz: *frequency,
-                port_impedance_pa_s_per_m3: complex_pair(
-                    transfer.port_impedance_pa_s_per_m3,
-                ),
+                port_impedance_pa_s_per_m3: complex_pair(transfer.port_impedance_pa_s_per_m3),
                 box_to_port_flow_ratio: complex_pair(transfer.box_to_port_flow_ratio),
                 port_volume_velocity_rms_m3_per_s: complex_pair(
                     transfer.port_volume_velocity_rms_m3_per_s,
                 ),
                 relative_residual: transfer.relative_residual,
-                flux_relative_difference: transfer
-                    .strong_weak_exterior_flux_relative_difference,
+                flux_relative_difference: transfer.strong_weak_exterior_flux_relative_difference,
                 scalar_dofs: transfer.scalar_dofs,
             })
         })
@@ -195,82 +192,82 @@ fn regenerate_port_optim_baseline_v1() -> Result<(), Box<dyn std::error::Error +
     let raw_levels: Vec<RawLevel> = case
         .tier2_drives_v_peak
         .par_iter()
-        .map(|voltage_peak_v| -> Result<RawLevel, Box<dyn std::error::Error + Send + Sync>> {
-            let config = case.coupled_config(*voltage_peak_v)?;
-            let dt = config.bdf.dt;
-            let result = run_coupled_port(&slot_mesh, &velocity_space, &pressure_space, &config)?;
-            if result.steps_completed != expected_steps {
-                return Err(format!(
-                    "Tier 2 at {voltage_peak_v} V peak completed {} of {expected_steps} steps",
-                    result.steps_completed
-                )
-                .into());
-            }
-            let tail_start = result.port_flow_m3s.len() - tail_length;
-            let flow_tail = &result.port_flow_m3s[tail_start..];
-            let energy = result.energy_summary(tail_start..result.energy_steps.len());
-            if !energy.is_finite() {
-                return Err(format!(
-                    "Tier 2 energy summary at {voltage_peak_v} V peak is non-finite: {energy:?}"
-                )
-                .into());
-            }
-            let dissipation_tolerance =
-                DISSIPATION_NEGATIVITY_RELATIVE_TOLERANCE * energy.energy_scale_j;
-            for (offset, step) in result.energy_steps[tail_start..].iter().enumerate() {
-                if !step.is_finite() {
+        .map(
+            |voltage_peak_v| -> Result<RawLevel, Box<dyn std::error::Error + Send + Sync>> {
+                let config = case.coupled_config(*voltage_peak_v)?;
+                let dt = config.bdf.dt;
+                let result =
+                    run_coupled_port(&slot_mesh, &velocity_space, &pressure_space, &config)?;
+                if result.steps_completed != expected_steps {
                     return Err(format!(
-                        "Tier 2 energy step {} at {voltage_peak_v} V peak is non-finite",
-                        tail_start + offset
+                        "Tier 2 at {voltage_peak_v} V peak completed {} of {expected_steps} steps",
+                        result.steps_completed
                     )
                     .into());
                 }
-                if !step.physical_dissipations_nonnegative(dissipation_tolerance) {
+                let tail_start = result.port_flow_m3s.len() - tail_length;
+                let flow_tail = &result.port_flow_m3s[tail_start..];
+                let energy = result.energy_summary(tail_start..result.energy_steps.len());
+                if !energy.is_finite() {
                     return Err(format!(
+                        "Tier 2 energy summary at {voltage_peak_v} V peak is non-finite: {energy:?}"
+                    )
+                    .into());
+                }
+                let dissipation_tolerance =
+                    DISSIPATION_NEGATIVITY_RELATIVE_TOLERANCE * energy.energy_scale_j;
+                for (offset, step) in result.energy_steps[tail_start..].iter().enumerate() {
+                    if !step.is_finite() {
+                        return Err(format!(
+                            "Tier 2 energy step {} at {voltage_peak_v} V peak is non-finite",
+                            tail_start + offset
+                        )
+                        .into());
+                    }
+                    if !step.physical_dissipations_nonnegative(dissipation_tolerance) {
+                        return Err(format!(
                         "Tier 2 energy step {} at {voltage_peak_v} V peak has negative dissipation",
                         tail_start + offset
                     )
                     .into());
+                    }
                 }
-            }
-            let flow_amplitude = dft_amplitude(flow_tail, dt, drive_hz);
-            let flow_rms =
-                (flow_tail.iter().map(|q| q * q).sum::<f64>() / flow_tail.len() as f64).sqrt();
-            let pressure_amplitude =
-                dft_amplitude(&result.box_pressure_pa[tail_start..], dt, drive_hz);
-            let peak_excursion = result.displacement_m[tail_start..]
-                .iter()
-                .map(|x| x.abs())
-                .fold(0.0_f64, f64::max);
-            let thd = thd_fraction(flow_tail, dt, drive_hz, 5);
-            let duct_velocity = (flow_amplitude / duct_area).abs();
-            let mach = duct_bulk_mach_number(
-                flow_amplitude,
-                duct_area,
-                medium.sound_speed_m_per_s,
-            );
-            let trend = free_turbulence_power_trend(duct_velocity, case.tier2_duct_length_m)?;
-            println!(
-                "tier 2 V={voltage_peak_v:.3} V peak: Q={flow_amplitude:.6e} m3/s, \
+                let flow_amplitude = dft_amplitude(flow_tail, dt, drive_hz);
+                let flow_rms =
+                    (flow_tail.iter().map(|q| q * q).sum::<f64>() / flow_tail.len() as f64).sqrt();
+                let pressure_amplitude =
+                    dft_amplitude(&result.box_pressure_pa[tail_start..], dt, drive_hz);
+                let peak_excursion = result.displacement_m[tail_start..]
+                    .iter()
+                    .map(|x| x.abs())
+                    .fold(0.0_f64, f64::max);
+                let thd = thd_fraction(flow_tail, dt, drive_hz, 5);
+                let duct_velocity = (flow_amplitude / duct_area).abs();
+                let mach =
+                    duct_bulk_mach_number(flow_amplitude, duct_area, medium.sound_speed_m_per_s);
+                let trend = free_turbulence_power_trend(duct_velocity, case.tier2_duct_length_m)?;
+                println!(
+                    "tier 2 V={voltage_peak_v:.3} V peak: Q={flow_amplitude:.6e} m3/s, \
                  Q_rms={flow_rms:.6e} m3/s, p_box={pressure_amplitude:.6e} Pa, \
                  THD={:.6}%, Mach={mach:.6e}, trend={trend:.6e}",
-                100.0 * thd,
-            );
-            Ok(RawLevel {
-                voltage_peak_v: *voltage_peak_v,
-                flow_amplitude_m3s: flow_amplitude,
-                flow_rms_m3s: flow_rms,
-                pressure_amplitude_pa: pressure_amplitude,
-                peak_excursion_m: peak_excursion,
-                thd,
-                mach,
-                trend,
-                physical_closure: energy.physical_relative_closure,
-                algebraic_closure: energy.algebraic_relative_closure,
-                interface_residual: energy.interface_relative_residual,
-                energy_scale_j: energy.energy_scale_j,
-            })
-        })
+                    100.0 * thd,
+                );
+                Ok(RawLevel {
+                    voltage_peak_v: *voltage_peak_v,
+                    flow_amplitude_m3s: flow_amplitude,
+                    flow_rms_m3s: flow_rms,
+                    pressure_amplitude_pa: pressure_amplitude,
+                    peak_excursion_m: peak_excursion,
+                    thd,
+                    mach,
+                    trend,
+                    physical_closure: energy.physical_relative_closure,
+                    algebraic_closure: energy.algebraic_relative_closure,
+                    interface_residual: energy.interface_relative_residual,
+                    energy_scale_j: energy.energy_scale_j,
+                })
+            },
+        )
         .collect::<Result<Vec<_>, _>>()?;
 
     let reference = raw_levels
@@ -303,8 +300,7 @@ fn regenerate_port_optim_baseline_v1() -> Result<(), Box<dyn std::error::Error +
 
     let lumped_reference = case.lumped_port_flow_amplitude(reference.voltage_peak_v)?;
     let lumped_limit = LumpedLimitBaseline {
-        relative_error: (reference.flow_amplitude_m3s - lumped_reference).abs()
-            / lumped_reference,
+        relative_error: (reference.flow_amplitude_m3s - lumped_reference).abs() / lumped_reference,
         coupled_flow_m3s: reference.flow_amplitude_m3s,
         reference_flow_m3s: lumped_reference,
     };

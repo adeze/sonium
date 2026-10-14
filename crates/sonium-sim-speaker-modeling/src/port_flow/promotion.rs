@@ -669,9 +669,9 @@ pub fn reduce_promotion_trace(
     let pressure_scale = observables.box_pressure_pa.norm().max(f64::EPSILON);
     let max_box_conservation_relative_residual = result.box_conservation_residual_pa
         [tail_range.clone()]
-        .iter()
-        .map(|residual| residual.abs() / pressure_scale)
-        .fold(0.0, f64::max);
+    .iter()
+    .map(|residual| residual.abs() / pressure_scale)
+    .fold(0.0, f64::max);
     let transfer_identity_relative_error = complex_relative_error(
         observables.direct_box_to_port_flow_ratio,
         observables.box_to_port_flow_ratio_from_impedance,
@@ -691,9 +691,7 @@ pub fn reduce_promotion_trace(
         diaphragm_flow: complex_pair(observables.diaphragm_flow_m3s),
         port_impedance: complex_pair(observables.port_impedance_pa_s_per_m3),
         flow_ratio_direct: complex_pair(observables.direct_box_to_port_flow_ratio),
-        flow_ratio_from_impedance: complex_pair(
-            observables.box_to_port_flow_ratio_from_impedance,
-        ),
+        flow_ratio_from_impedance: complex_pair(observables.box_to_port_flow_ratio_from_impedance),
         transfer_identity_relative_error,
         cap_continuity_relative_error: observables.cap_continuity_relative_error,
         energy_algebraic_relative_closure: energy.algebraic_relative_closure,
@@ -800,7 +798,13 @@ pub fn check_thd_finest_pair(
     fine: f64,
     max_allowed: f64,
 ) -> Result<FinestPairChange, PortFlowError> {
-    check_finest_pair_with_floor(name, coarse, fine, max_allowed, Some(STEP9_THD_RESOLUTION_FLOOR))
+    check_finest_pair_with_floor(
+        name,
+        coarse,
+        fine,
+        max_allowed,
+        Some(STEP9_THD_RESOLUTION_FLOOR),
+    )
 }
 
 fn check_finest_pair_with_floor(
@@ -1031,8 +1035,7 @@ pub fn run_step9_ladder(
                 .iter()
                 .rev()
                 .find(|((mesh, dt), _)| {
-                    close_level(*mesh, refinement.mesh_size_m)
-                        && close_level(*dt, refinement.dt_s)
+                    close_level(*mesh, refinement.mesh_size_m) && close_level(*dt, refinement.dt_s)
                 })
                 .map(|(_, stats)| *stats)
                 .ok_or_else(|| {
@@ -1506,7 +1509,8 @@ impl MeshIndependenceCheck {
         Ok(Self {
             straight_regenerated_q_rms_m3s,
             step0_archived_q_rms_m3s,
-            straight_relative_difference: (straight_regenerated_q_rms_m3s - step0_archived_q_rms_m3s)
+            straight_relative_difference: (straight_regenerated_q_rms_m3s
+                - step0_archived_q_rms_m3s)
                 .abs()
                 / step0_archived_q_rms_m3s,
             winner_regenerated_q_rms_m3s,
@@ -1791,7 +1795,7 @@ impl Step9Report {
         }
         if self.linear_gate.passed != self.linear_gate.failures.is_empty() {
             return Err(bad(
-                "Step-9 linear verdict disagrees with its failure list".to_string(),
+                "Step-9 linear verdict disagrees with its failure list".to_string()
             ));
         }
         let expected = evaluate_step9_verdict(
@@ -1991,11 +1995,7 @@ mod tests {
         let mut bad = good.clone();
         bad.voltage_peak_v = 0.0;
         assert!(bad.validate().is_err());
-        assert!(
-            good
-                .temporal_dt_s(f64::NAN)
-                .is_err()
-        );
+        assert!(good.temporal_dt_s(f64::NAN).is_err());
     }
 
     #[test]
@@ -2107,8 +2107,7 @@ mod tests {
 
     #[test]
     fn trace_reduction_recovers_synthetic_tail() {
-        let (refinement, result) =
-            synthetic_trace(16, 2, 1, 100.0);
+        let (refinement, result) = synthetic_trace(16, 2, 1, 100.0);
         let diagnostics =
             reduce_promotion_trace(refinement, &result, reduction_inputs(), mesh_stats())
                 .expect("synthetic settled tail reduces");
@@ -2242,14 +2241,17 @@ mod tests {
         let mut resonant_tier1 = tier1_winner.clone();
         resonant_tier1.flow_ratio = [60.0, 70.0];
         let report = gate(&winner, &straight, &resonant_tier1, &tier1_straight);
-        assert!(report.passed, "H disagreement must not fail: {:?}", report.failures);
+        assert!(
+            report.passed,
+            "H disagreement must not fail: {:?}",
+            report.failures
+        );
         assert!(report.flow_ratio_relative_error > 0.03);
     }
 
     #[test]
     fn mesh_independence_math() {
-        let check =
-            MeshIndependenceCheck::compare(7.31e-6, 7.30e-6, 7.28e-4, 7.31e-4).unwrap();
+        let check = MeshIndependenceCheck::compare(7.31e-6, 7.30e-6, 7.28e-4, 7.31e-4).unwrap();
         assert!((check.straight_relative_difference - 0.01 / 7.30).abs() < 1.0e-9);
         assert!(check.winner_relative_difference > 0.0);
         assert!(MeshIndependenceCheck::compare(0.0, 1.0, 1.0, 1.0).is_err());
@@ -2297,13 +2299,26 @@ mod tests {
             synthetic_diagnostics(0.01, dt_fine, 252, 9.1e-6, 1.01),
         ];
         assert!(
-            evaluate_step9_verdict(&promotion, &gate, &extended, &linear_gate, &spatial, &temporal)
-                .passed()
+            evaluate_step9_verdict(
+                &promotion,
+                &gate,
+                &extended,
+                &linear_gate,
+                &spatial,
+                &temporal
+            )
+            .passed()
         );
 
         promotion.max_spatial_observable_relative_change = 0.05;
-        let verdict =
-            evaluate_step9_verdict(&promotion, &gate, &extended, &linear_gate, &spatial, &temporal);
+        let verdict = evaluate_step9_verdict(
+            &promotion,
+            &gate,
+            &extended,
+            &linear_gate,
+            &spatial,
+            &temporal,
+        );
         assert!(!verdict.passed());
         match verdict {
             Step9Verdict::DemoteUnconvergedIndicativeOnly { reasons } => {
@@ -2472,13 +2487,9 @@ mod tests {
         // Schema/provenance drift is rejected at parse.
         let mut drifted = serde_json::to_value(&report).unwrap();
         drifted["schema_version"] = serde_json::json!(STEP9_REPORT_SCHEMA_VERSION + 1);
-        assert!(
-            Step9Report::from_json_str(&serde_json::to_string(&drifted).unwrap()).is_err()
-        );
+        assert!(Step9Report::from_json_str(&serde_json::to_string(&drifted).unwrap()).is_err());
         let mut drifted = serde_json::to_value(&report).unwrap();
         drifted["provenance"] = serde_json::json!("drifted");
-        assert!(
-            Step9Report::from_json_str(&serde_json::to_string(&drifted).unwrap()).is_err()
-        );
+        assert!(Step9Report::from_json_str(&serde_json::to_string(&drifted).unwrap()).is_err());
     }
 }

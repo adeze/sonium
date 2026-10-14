@@ -524,16 +524,18 @@ pub fn assemble_boundary_operators_with_basis(
             })
             .collect::<Vec<_>>()
     };
-    let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> =
-        if use_parallel(n.saturating_mul(elements.len()), BEM_QUADRATURE_PAIRS_PER_THREAD) {
-            elements
-                .par_iter()
-                .enumerate()
-                .flat_map_iter(&build_rows)
-                .collect()
-        } else {
-            elements.iter().enumerate().flat_map(&build_rows).collect()
-        };
+    let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> = if use_parallel(
+        n.saturating_mul(elements.len()),
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+    ) {
+        elements
+            .par_iter()
+            .enumerate()
+            .flat_map_iter(&build_rows)
+            .collect()
+    } else {
+        elements.iter().enumerate().flat_map(&build_rows).collect()
+    };
 
     let mut operators = BoundaryOperators {
         single_layer: DenseMatrix::zeros(n, n),
@@ -1121,16 +1123,18 @@ pub fn assemble_boundary_operators_wavenumber_derivative_with_basis(
             })
             .collect::<Vec<_>>()
     };
-    let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> =
-        if use_parallel(n.saturating_mul(elements.len()), BEM_QUADRATURE_PAIRS_PER_THREAD) {
-            elements
-                .par_iter()
-                .enumerate()
-                .flat_map_iter(&build_rows)
-                .collect()
-        } else {
-            elements.iter().enumerate().flat_map(&build_rows).collect()
-        };
+    let rows: Vec<(usize, Vec<(usize, IntegrationResult)>)> = if use_parallel(
+        n.saturating_mul(elements.len()),
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+    ) {
+        elements
+            .par_iter()
+            .enumerate()
+            .flat_map_iter(&build_rows)
+            .collect()
+    } else {
+        elements.iter().enumerate().flat_map(&build_rows).collect()
+    };
 
     let mut operators = BoundaryOperators {
         single_layer: DenseMatrix::zeros(n, n),

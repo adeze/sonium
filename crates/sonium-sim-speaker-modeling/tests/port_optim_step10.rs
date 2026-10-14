@@ -50,7 +50,11 @@ fn tier0_only_gate_is_deterministic_and_feasible() {
         "refinement must stay feasible"
     );
     assert!(
-        first.tier0.quota.first().is_some_and(|u| u.iter().all(|v| *v == 0.0)),
+        first
+            .tier0
+            .quota
+            .first()
+            .is_some_and(|u| u.iter().all(|v| *v == 0.0)),
         "quota must lead with the straight tube"
     );
     assert!(first.tier1.is_none() && first.tier2.is_none());
@@ -228,7 +232,10 @@ fn step10_bounded_gate_explicit() -> Result<(), GateError> {
             .all(|(s, w)| s.health.passed && w.health.passed),
         "every Tier-2 level must be healthy"
     );
-    println!("step-10 explicit (production={production}): {}", report.detail);
+    println!(
+        "step-10 explicit (production={production}): {}",
+        report.detail
+    );
     println!(
         "SC1[{}] SC2[pareto:{}]",
         report

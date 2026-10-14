@@ -333,8 +333,13 @@ pub fn run_biharmonic_mms_case() {
         .map(solve)
         .collect::<Result<Vec<_>, _>>()
         .unwrap_or_else(|error| fail(case_id, &error));
-    let [(u_coarse, q_coarse, residual_coarse), (u_medium, q_medium, residual_medium), (u_fine, q_fine, residual_fine)] =
-        solved.try_into().unwrap_or_else(|_| fail(case_id, "subdivision count mismatch"));
+    let [
+        (u_coarse, q_coarse, residual_coarse),
+        (u_medium, q_medium, residual_medium),
+        (u_fine, q_fine, residual_fine),
+    ] = solved
+        .try_into()
+        .unwrap_or_else(|_| fail(case_id, "subdivision count mismatch"));
     // Smooth P1 fields have second-order L2 convergence. Both refinement intervals
     // must reach the asymptotic regime, and the resolved field must be accurate.
     let u_convergence_rate =

@@ -66,9 +66,7 @@ use super::error::PortFlowError;
 use super::geometry3d::{SplineRoundPortGeometry, build_spline_round_port_mesh};
 use super::optimize::{ProfileTemplate, campaign_template};
 use super::profile::SplinePortProfile;
-use super::promotion::{
-    STEP9_TIER1_FLARE_LENGTH_M, Tier1TransferPoint, solve_step9_tier1,
-};
+use super::promotion::{STEP9_TIER1_FLARE_LENGTH_M, Tier1TransferPoint, solve_step9_tier1};
 
 /// Schema version for [`WinnerProfile`] JSON.
 pub const WINNER_PROFILE_SCHEMA_VERSION: u32 = 1;
@@ -104,8 +102,7 @@ pub const WINNER_F_TARGET_HZ: f64 = 92.60634465596921;
 /// Reference mesh (0.01 m), flare extent 0.01 m, `exp(-i·ω·t)` RMS phasors at
 /// [`WINNER_F_TARGET_HZ`]. Archived in
 /// `fixtures/port_optim_step9/step9_report.json` (`tier1_winner`).
-pub const WINNER_TIER1_IMPEDANCE_PA_S_PER_M3: [f64; 2] =
-    [381.15152950342406, -48180.9850406475];
+pub const WINNER_TIER1_IMPEDANCE_PA_S_PER_M3: [f64; 2] = [381.15152950342406, -48180.9850406475];
 
 /// Frozen Step-9 Tier-1 oracle box-to-port flow ratio `[re, im]`.
 pub const WINNER_TIER1_FLOW_RATIO: [f64; 2] = [63.352079993134424, 69.88844403726944];
@@ -376,14 +373,14 @@ impl WinnerProfile {
             )));
         }
         if self.sampled.len() < 2 {
-            return Err(bad("winner-profile needs at least 2 sampled stations".to_string()));
+            return Err(bad(
+                "winner-profile needs at least 2 sampled stations".to_string()
+            ));
         }
         let profile = self
             .profile()
             .map_err(|error| CampaignArchiverError::Json(error.to_string()))?;
-        for (index, (knot, radius)) in
-            self.knots_m.iter().zip(self.radii_m.iter()).enumerate()
-        {
+        for (index, (knot, radius)) in self.knots_m.iter().zip(self.radii_m.iter()).enumerate() {
             let want_x = profile.knots()[index];
             let want_r = profile.radii()[index];
             if (knot - want_x).abs() > 1.0e-12 || (radius - want_r).abs() > 1.0e-12 {
@@ -482,7 +479,10 @@ mod tests {
         assert_eq!(record.n_control_points, WINNER_N_CONTROL_POINTS);
         assert_eq!(record.sampled.len(), WINNER_PROFILE_SAMPLE_STATIONS);
         assert!((record.sampled[0][0] - 0.0).abs() < 1.0e-15);
-        assert!((record.sampled[WINNER_PROFILE_SAMPLE_STATIONS - 1][0] - record.length_m).abs() < 1.0e-12);
+        assert!(
+            (record.sampled[WINNER_PROFILE_SAMPLE_STATIONS - 1][0] - record.length_m).abs()
+                < 1.0e-12
+        );
         let rebuilt = record.profile().expect("record must rebuild");
         for (got, want) in rebuilt.normalized().iter().zip(winner_u().iter()) {
             assert!(
@@ -502,7 +502,10 @@ mod tests {
         let parsed = WinnerProfile::from_json_str(&json).expect("round-trip must parse");
         parsed.validate().expect("parsed record must validate");
         assert_eq!(parsed, record);
-        let drifted = json.replace(WINNER_PROFILE_PROVENANCE, "PortOptimWinnerProfile[v0,drift]");
+        let drifted = json.replace(
+            WINNER_PROFILE_PROVENANCE,
+            "PortOptimWinnerProfile[v0,drift]",
+        );
         assert!(WinnerProfile::from_json_str(&drifted).is_err());
         let bad_schema = json.replace("\"schema_version\": 1", "\"schema_version\": 99");
         assert!(WinnerProfile::from_json_str(&bad_schema).is_err());

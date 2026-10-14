@@ -228,10 +228,7 @@ impl PortOptimReferenceCase {
             ("driver_mms_kg", self.driver_mms_kg),
             ("driver_rms_kg_per_s", self.driver_rms_kg_per_s),
             ("driver_kms_n_per_m", self.driver_kms_n_per_m),
-            (
-                "voice_coil_resistance_ohm",
-                self.voice_coil_resistance_ohm,
-            ),
+            ("voice_coil_resistance_ohm", self.voice_coil_resistance_ohm),
             ("voice_coil_inductance_h", self.voice_coil_inductance_h),
             ("voice_coil_bl_n_per_a", self.voice_coil_bl_n_per_a),
             ("diaphragm_area_m2", self.diaphragm_area_m2),
@@ -441,10 +438,7 @@ impl PortOptimReferenceCase {
     ///
     /// Returns [`PortFlowError::InvalidConfig`] when the fixture is invalid.
     pub fn dt_s(&self) -> Result<f64, PortFlowError> {
-        Ok(
-            1.0 / (self.tier2_drive_frequency_hz()?
-                * self.tier2_samples_per_cycle as f64),
-        )
+        Ok(1.0 / (self.tier2_drive_frequency_hz()? * self.tier2_samples_per_cycle as f64))
     }
 
     /// Tier 2 BDF steps per drive level.
@@ -475,9 +469,7 @@ impl PortOptimReferenceCase {
                 ..Default::default()
             },
             bdf: BdfConfig::bdf2(dt, self.num_steps()),
-            voltage_fn: Box::new(move |time| {
-                voltage_peak_v * (TAU * frequency_hz * time).sin()
-            }),
+            voltage_fn: Box::new(move |time| voltage_peak_v * (TAU * frequency_hz * time).sin()),
             under_relaxation: 1.0,
             exterior_pressure_pa: 0.0,
         })
@@ -513,10 +505,7 @@ impl PortOptimReferenceCase {
     ///
     /// Returns [`PortFlowError::InvalidConfig`] for a non-positive drive
     /// voltage, an invalid fixture, or a lumped impedance failure.
-    pub fn lumped_port_flow_amplitude(
-        &self,
-        voltage_peak_v: f64,
-    ) -> Result<f64, PortFlowError> {
+    pub fn lumped_port_flow_amplitude(&self, voltage_peak_v: f64) -> Result<f64, PortFlowError> {
         if !(voltage_peak_v.is_finite() && voltage_peak_v > 0.0) {
             return Err(PortFlowError::InvalidConfig(format!(
                 "lumped reference drive voltage must be finite and positive, got {voltage_peak_v}"
@@ -553,8 +542,7 @@ impl PortOptimReferenceCase {
             / (electrical_impedance * total_mechanical_impedance
                 + self.voice_coil_bl_n_per_a.powi(2));
         Ok(
-            (diaphragm_velocity * self.diaphragm_area_m2 * enclosure_impedance
-                / port_impedance)
+            (diaphragm_velocity * self.diaphragm_area_m2 * enclosure_impedance / port_impedance)
                 .norm(),
         )
     }
@@ -587,10 +575,9 @@ pub fn compression_db(
     reference_voltage_peak_v: f64,
     reference_flow_amplitude_m3s: f64,
 ) -> f64 {
-    20.0
-        * ((voltage_peak_v / reference_voltage_peak_v)
-            / (flow_amplitude_m3s / reference_flow_amplitude_m3s))
-            .log10()
+    20.0 * ((voltage_peak_v / reference_voltage_peak_v)
+        / (flow_amplitude_m3s / reference_flow_amplitude_m3s))
+        .log10()
 }
 
 /// Tier 1 straight-tube impedance point at one frequency.
@@ -711,7 +698,9 @@ fn gate_error(message: String) -> PortFlowError {
 /// # Errors
 ///
 /// Returns [`PortFlowError::InvalidConfig`] naming the first violated check.
-pub fn check_baseline_gates(baseline: &PortOptimBaseline) -> Result<BaselineGateReport, PortFlowError> {
+pub fn check_baseline_gates(
+    baseline: &PortOptimBaseline,
+) -> Result<BaselineGateReport, PortFlowError> {
     if baseline.schema_version != PORT_OPTIM_BASELINE_SCHEMA_VERSION {
         return Err(gate_error(format!(
             "schema version is {}, expected {PORT_OPTIM_BASELINE_SCHEMA_VERSION}",
@@ -764,10 +753,7 @@ pub fn check_baseline_gates(baseline: &PortOptimBaseline) -> Result<BaselineGate
                 "port_impedance_pa_s_per_m3",
                 point.port_impedance_pa_s_per_m3,
             ),
-            (
-                "box_to_port_flow_ratio",
-                point.box_to_port_flow_ratio,
-            ),
+            ("box_to_port_flow_ratio", point.box_to_port_flow_ratio),
             (
                 "port_volume_velocity_rms_m3_per_s",
                 point.port_volume_velocity_rms_m3_per_s,
@@ -830,11 +816,7 @@ pub fn check_baseline_gates(baseline: &PortOptimBaseline) -> Result<BaselineGate
     let mut max_interface = 0.0_f64;
     let mut max_compression = f64::NEG_INFINITY;
     let mut previous_compression: Option<f64> = None;
-    for (level, expected_drive) in baseline
-        .tier2
-        .iter()
-        .zip(case.tier2_drives_v_peak.iter())
-    {
+    for (level, expected_drive) in baseline.tier2.iter().zip(case.tier2_drives_v_peak.iter()) {
         if level.voltage_peak_v != *expected_drive {
             return Err(gate_error(format!(
                 "Tier 2 drive is {} V peak, expected {expected_drive} V peak",
@@ -853,10 +835,7 @@ pub fn check_baseline_gates(baseline: &PortOptimBaseline) -> Result<BaselineGate
                 level.port_flow_fundamental_amplitude_m3s,
             ),
             ("port_flow_rms_m3s", level.port_flow_rms_m3s),
-            (
-                "box_pressure_amplitude_pa",
-                level.box_pressure_amplitude_pa,
-            ),
+            ("box_pressure_amplitude_pa", level.box_pressure_amplitude_pa),
             ("peak_excursion_m", level.peak_excursion_m),
             ("thd_fraction", level.thd_fraction),
             ("compression_db", level.compression_db),
@@ -1001,8 +980,7 @@ mod tests {
         );
 
         let slot_area = case.tier2_slot_area_m2();
-        let slot_effective = case.tier2_duct_length_m
-            + 4.0 * LN_2 / PI * case.tier2_duct_height_m;
+        let slot_effective = case.tier2_duct_length_m + 4.0 * LN_2 / PI * case.tier2_duct_height_m;
         let expected_drive = medium.sound_speed_m_per_s / TAU
             * (slot_area / (case.box_volume_m3 * slot_effective)).sqrt()
             / 2.0;

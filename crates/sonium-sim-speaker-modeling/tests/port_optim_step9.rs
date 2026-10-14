@@ -22,8 +22,8 @@ use sonium_sim_speaker_modeling::port_flow::{
     MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL, PortOptimReferenceCase,
     STEP9_MAX_FINEST_PAIR_RELATIVE_CHANGE, STEP9_REPORT_PROVENANCE, STEP9_SPATIAL_MESH_SIZES_M,
     STEP9_TEMPORAL_SAMPLES_PER_CYCLE, Step7Report, Step9Report, Tier2EvalContext,
-    build_promotion_case, campaign_profile_options, campaign_template,
-    min_profile_area_m2, step9_promotion_gate,
+    build_promotion_case, campaign_profile_options, campaign_template, min_profile_area_m2,
+    step9_promotion_gate,
 };
 
 fn step7_report_path() -> PathBuf {
@@ -128,8 +128,7 @@ fn regenerated_ladder_meshes_are_distinct_and_healthy() {
                     "{name} mesh at {mesh_size_m} m lost marker {marker}"
                 );
             }
-            let min_area =
-                sonium_sim_speaker_modeling::port_flow::min_triangle_area_m2(&mesh);
+            let min_area = sonium_sim_speaker_modeling::port_flow::min_triangle_area_m2(&mesh);
             assert!(
                 min_area > 0.0,
                 "{name} mesh at {mesh_size_m} m failed positivity: {min_area:.3e}"
@@ -197,17 +196,12 @@ fn promotion_case_matches_its_refinement() {
             "case dt {} mismatches spc {spc}",
             runtime_case.config.bdf.dt
         );
-        assert_eq!(
-            runtime_case.config.bdf.num_steps,
-            ladder.total_cycles * spc
-        );
+        assert_eq!(runtime_case.config.bdf.num_steps, ladder.total_cycles * spc);
         assert_eq!(stats.mesh_size_m, mesh_size_m);
         assert!(stats.min_triangle_area_m2 > 0.0);
         println!(
             "step-9 case h={mesh_size_m} m spc={spc}: dt={:.6e} s steps={} nodes={}",
-            runtime_case.config.bdf.dt,
-            runtime_case.config.bdf.num_steps,
-            stats.mesh_nodes,
+            runtime_case.config.bdf.dt, runtime_case.config.bdf.num_steps, stats.mesh_nodes,
         );
     }
 }
@@ -355,15 +349,9 @@ fn step9_coarse_probe() -> Result<(), Step9Error> {
         compression_reference: None,
     };
     let started = std::time::Instant::now();
-    let (runtime_case, stats) = build_promotion_case(
-        &context,
-        &winner,
-        voltage,
-        drive_hz,
-        mesh_size_m,
-        &fidelity,
-    )
-    .map_err(|error| error.to_string())?;
+    let (runtime_case, stats) =
+        build_promotion_case(&context, &winner, voltage, drive_hz, mesh_size_m, &fidelity)
+            .map_err(|error| error.to_string())?;
     let result = run_coupled_port(
         &runtime_case.mesh,
         &runtime_case.velocity_space,
@@ -447,14 +435,13 @@ fn step9_winner_promotion() -> Result<(), Step9Error> {
     use rayon::prelude::*;
     use sonium_sim_speaker_modeling::port_flow::coupled::run_coupled_port;
     use sonium_sim_speaker_modeling::port_flow::{
-        MeshIndependenceCheck, PortEvalFidelity, PortFlowRuntimeRefinement,
-        PromotionGateMirror, PromotionLadderConfig, PromotionLevelDiagnostics,
-        PromotionReductionInputs, PromotionReportMirror, STEP7_TIER2_DRIVES_V_PEAK,
-        STEP9_REPORT_SCHEMA_VERSION, STEP9_TIER1_MESH_SIZE_M, Step9LinearGateInputs,
-        Step9Report, Tier1TransferPoint, campaign_f_target_hz, check_extended_changes,
-        check_linear_transfer_gate, evaluate_step9_verdict, run_step9_ladder,
-        solve_step9_tier1, step9_promotion_gate, step9_structural_gate,
-        validate_port_flow_promotion,
+        MeshIndependenceCheck, PortEvalFidelity, PortFlowRuntimeRefinement, PromotionGateMirror,
+        PromotionLadderConfig, PromotionLevelDiagnostics, PromotionReductionInputs,
+        PromotionReportMirror, STEP7_TIER2_DRIVES_V_PEAK, STEP9_REPORT_SCHEMA_VERSION,
+        STEP9_TIER1_MESH_SIZE_M, Step9LinearGateInputs, Step9Report, Tier1TransferPoint,
+        campaign_f_target_hz, check_extended_changes, check_linear_transfer_gate,
+        evaluate_step9_verdict, run_step9_ladder, solve_step9_tier1, step9_promotion_gate,
+        step9_structural_gate, validate_port_flow_promotion,
     };
 
     let Some((case, f_target_archive, winner_u)) = load_step7_winner() else {
@@ -624,10 +611,8 @@ fn step9_winner_promotion() -> Result<(), Step9Error> {
         );
         Ok(diagnostics)
     };
-    let jobs: Vec<(&str, Vec<f64>)> = vec![
-        ("winner", winner_u.clone()),
-        ("straight", vec![0.0, 0.0]),
-    ];
+    let jobs: Vec<(&str, Vec<f64>)> =
+        vec![("winner", winner_u.clone()), ("straight", vec![0.0, 0.0])];
     let low_drive: Result<Vec<PromotionLevelDiagnostics>, String> = jobs
         .par_iter()
         .map(|(n, u)| run_low_drive((*n, u.as_slice())))
@@ -676,11 +661,7 @@ fn step9_winner_promotion() -> Result<(), Step9Error> {
         100.0 * linear_gate.impedance_ratio_relative_error,
         linear_gate.winner_thd,
         linear_gate.winner_mach,
-        if linear_gate.passed {
-            "pass"
-        } else {
-            "FAIL"
-        },
+        if linear_gate.passed { "pass" } else { "FAIL" },
         100.0 * linear_gate.flow_ratio_relative_error,
         tier1_winner.flow_ratio_condition_number,
         tier1_straight.flow_ratio_condition_number,
@@ -807,6 +788,9 @@ fn step9_winner_promotion() -> Result<(), Step9Error> {
     report
         .save_json(&step9_report_path())
         .map_err(|error| error.to_string())?;
-    println!("step-9 archive written to {}", step9_report_path().display());
+    println!(
+        "step-9 archive written to {}",
+        step9_report_path().display()
+    );
     Ok(())
 }

@@ -143,7 +143,10 @@ impl SplinePortGeometry {
     /// unjittered caps and chamber walls). This catches dimension mismatches
     /// (profile length/bore against geometry, baseline against geometry)
     /// before any node moves.
-    fn check_baseline_compatible(baseline: &Mesh, geo: &SplinePortGeometry) -> Result<(), PortFlowError> {
+    fn check_baseline_compatible(
+        baseline: &Mesh,
+        geo: &SplinePortGeometry,
+    ) -> Result<(), PortFlowError> {
         if baseline.dimension != 2 {
             return Err(PortFlowError::InvalidConfig(format!(
                 "spline morph needs a 2D meridian baseline, got dimension {}",
@@ -288,8 +291,11 @@ impl SplinePortGeometry {
         x_lines.extend(spaced_lines(ld, ld + lc, cell).into_iter().skip(1));
         x_lines.sort_by(f64::total_cmp);
         let min_gap = cell * 0.25;
-        let protected =
-            |x: f64| [(-lc), 0.0, ld, ld + lc].iter().any(|t| (x - t).abs() <= 1.0e-12);
+        let protected = |x: f64| {
+            [(-lc), 0.0, ld, ld + lc]
+                .iter()
+                .any(|t| (x - t).abs() <= 1.0e-12)
+        };
         let mut deduped: Vec<f64> = Vec::with_capacity(x_lines.len());
         for x in x_lines {
             match deduped.last() {
@@ -391,7 +397,8 @@ impl SplinePortGeometry {
                 .filter(|b| b.marker == marker)
                 .count()
         };
-        if count(MARKER_BOX_CAP) == 0 || count(MARKER_EXTERIOR_CAP) == 0 || count(MARKER_WALL) == 0 {
+        if count(MARKER_BOX_CAP) == 0 || count(MARKER_EXTERIOR_CAP) == 0 || count(MARKER_WALL) == 0
+        {
             return Err(PortFlowError::Mesh(format!(
                 "boundary classification failed: box_cap={}, exterior_cap={}, wall={}",
                 count(MARKER_BOX_CAP),
@@ -471,9 +478,7 @@ fn laplacian_smooth_duct_interior(mesh: &mut Mesh, duct_length_m: f64, passes: u
         .nodes
         .iter()
         .enumerate()
-        .map(|(index, point)| {
-            !is_boundary[index] && point.x >= 0.0 && point.x <= duct_length_m
-        })
+        .map(|(index, point)| !is_boundary[index] && point.x >= 0.0 && point.x <= duct_length_m)
         .collect();
     for _ in 0..passes {
         let previous = mesh.nodes.clone();
@@ -613,10 +618,7 @@ mod tests {
         for (moved, base) in morphed.nodes.iter().zip(baseline.nodes.iter()) {
             // Same operation order as the morph (`y *= r / R0`) for bit-exactness.
             let expected = base.y * (profile.local_radius_m(base.x) / R0);
-            assert!(
-                moved.x == base.x,
-                "morph must never move nodes axially"
-            );
+            assert!(moved.x == base.x, "morph must never move nodes axially");
             assert!(
                 moved.y == expected,
                 "node at x = {} scales by r(x)/R0",
@@ -697,12 +699,7 @@ mod tests {
                 is_boundary[node] = true;
             }
         }
-        for (index, (moved, base)) in morphed
-            .nodes
-            .iter()
-            .zip(baseline.nodes.iter())
-            .enumerate()
-        {
+        for (index, (moved, base)) in morphed.nodes.iter().zip(baseline.nodes.iter()).enumerate() {
             if is_boundary[index] && (base.x == 0.0 || base.x == L) {
                 assert!(
                     moved.x == base.x && moved.y == base.y,
@@ -713,9 +710,10 @@ mod tests {
         // Exact ends: step corners sit at exactly ±R0.
         for end in [0.0, L] {
             for sign in [-1.0, 1.0] {
-                let found = morphed.nodes.iter().any(|point| {
-                    point.x == end && point.y == sign * R0
-                });
+                let found = morphed
+                    .nodes
+                    .iter()
+                    .any(|point| point.x == end && point.y == sign * R0);
                 assert!(found, "missing exact step corner ({end}, {})", sign * R0);
             }
         }
@@ -771,7 +769,10 @@ mod tests {
                     "N = {n} corner {u:?} produced an inverted element"
                 );
                 for marker in [MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL] {
-                    assert_eq!(marker_count(&morphed, marker), marker_count(&baseline, marker));
+                    assert_eq!(
+                        marker_count(&morphed, marker),
+                        marker_count(&baseline, marker)
+                    );
                 }
             }
         }
@@ -790,8 +791,15 @@ mod tests {
             );
         }
         assert!(
-            SplinePortProfile::from_normalized(5, L, R0, RMIN, &[0.0, 0.0], ProfileOptions::default())
-                .is_ok()
+            SplinePortProfile::from_normalized(
+                5,
+                L,
+                R0,
+                RMIN,
+                &[0.0, 0.0],
+                ProfileOptions::default()
+            )
+            .is_ok()
         );
     }
 
@@ -810,9 +818,8 @@ mod tests {
         let baseline = baseline_mesh();
         for bits in 0..4usize {
             let u = [f64::from(bits & 1 == 1), f64::from(bits & 2 == 2)];
-            let profile =
-                SplinePortProfile::from_normalized(5, L, R0, RMIN, &u, options)
-                    .unwrap_or_else(|error| panic!("corner {u:?} must construct: {error}"));
+            let profile = SplinePortProfile::from_normalized(5, L, R0, RMIN, &u, options)
+                .unwrap_or_else(|error| panic!("corner {u:?} must construct: {error}"));
             let geo = reference_geometry(profile);
             let morphed = geo
                 .morph_baseline_mesh(&baseline, DEFAULT_MORPH_SMOOTHING_PASSES)
@@ -822,7 +829,10 @@ mod tests {
                 "corner {u:?} produced an inverted element"
             );
             for marker in [MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL] {
-                assert_eq!(marker_count(&morphed, marker), marker_count(&baseline, marker));
+                assert_eq!(
+                    marker_count(&morphed, marker),
+                    marker_count(&baseline, marker)
+                );
             }
         }
     }
@@ -844,9 +854,7 @@ mod tests {
                 ..ProfileOptions::default()
             };
             for bits in 0..32usize {
-                let u: Vec<f64> = (0..5)
-                    .map(|i| f64::from((bits >> i) & 1 == 1))
-                    .collect();
+                let u: Vec<f64> = (0..5).map(|i| f64::from((bits >> i) & 1 == 1)).collect();
                 let profile = SplinePortProfile::from_normalized(8, L, R0, RMIN, &u, options)
                     .unwrap_or_else(|error| {
                         panic!("{spacing:?} corner {u:?} must construct: {error}")
@@ -964,9 +972,15 @@ mod tests {
         let good = reference_geometry(profile.clone());
         assert!(good.build_baseline_mesh().is_ok());
 
-        let long_profile =
-            SplinePortProfile::from_normalized(5, 2.0 * L, R0, RMIN, &[0.2, 0.3], ProfileOptions::default())
-                .unwrap();
+        let long_profile = SplinePortProfile::from_normalized(
+            5,
+            2.0 * L,
+            R0,
+            RMIN,
+            &[0.2, 0.3],
+            ProfileOptions::default(),
+        )
+        .unwrap();
         assert!(
             SplinePortGeometry {
                 profile: long_profile,
@@ -978,9 +992,15 @@ mod tests {
 
         // Gentle dip: the wider bore doubles the radius span, so the same
         // normalised depth would exceed the default slope limit.
-        let wide_profile =
-            SplinePortProfile::from_normalized(5, L, 2.0 * R0, RMIN, &[0.05, 0.05], ProfileOptions::default())
-                .unwrap();
+        let wide_profile = SplinePortProfile::from_normalized(
+            5,
+            L,
+            2.0 * R0,
+            RMIN,
+            &[0.05, 0.05],
+            ProfileOptions::default(),
+        )
+        .unwrap();
         assert!(
             SplinePortGeometry {
                 profile: wide_profile,

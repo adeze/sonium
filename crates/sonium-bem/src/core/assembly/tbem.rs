@@ -1437,7 +1437,10 @@ pub fn build_tbem_system_with_beta_parallel(
 
         *rhs_slot = local_rhs;
     };
-    if use_parallel(num_dofs.saturating_mul(num_dofs), BEM_QUADRATURE_PAIRS_PER_THREAD) {
+    if use_parallel(
+        num_dofs.saturating_mul(num_dofs),
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+    ) {
         system
             .matrix
             .as_mut_slice()
@@ -2352,120 +2355,126 @@ pub fn eval_tbem_rows_stabilized(
     // serial for small row × field counts). Work is rows × field kernel
     // evaluations.
     let row_work = rows.len().saturating_mul(field_indices.len());
-    gated_map(rows, row_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |&row_index| {
-        let source_elem = &elements[row_index];
-        debug_assert!(!source_elem.property.is_evaluation());
-        let source_point = &source_elem.center;
-        let source_normal = &source_elem.normal;
-        let source_dof = source_elem.dof_addresses[0];
+    gated_map(
+        rows,
+        row_work,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+        |&row_index| {
+            let source_elem = &elements[row_index];
+            debug_assert!(!source_elem.property.is_evaluation());
+            let source_point = &source_elem.center;
+            let source_normal = &source_elem.normal;
+            let source_dof = source_elem.dof_addresses[0];
 
-        let (bc_type, bc_value) = get_bc_type_and_value(&source_elem.boundary_condition);
-        let bc_admittance = source_elem.boundary_condition.admittance();
+            let (bc_type, bc_value) = get_bc_type_and_value(&source_elem.boundary_condition);
+            let bc_admittance = source_elem.boundary_condition.admittance();
 
-        let mut entries = Vec::with_capacity(field_indices.len() + 1);
-        let mut local_rhs = Complex64::new(0.0, 0.0);
+            let mut entries = Vec::with_capacity(field_indices.len() + 1);
+            let mut local_rhs = Complex64::new(0.0, 0.0);
 
-        if full_rows {
-            let avg_bc = bc_value.iter().sum::<Complex64>() / bc_value.len() as f64;
-            let mut local_diag = Complex64::new(0.0, 0.0);
-            match bc_type {
-                0 => {
-                    local_diag -= sign * (gamma * 0.5);
-                    if let Some(admittance) = bc_admittance {
-                        local_diag -= sign * admittance * i_omega_rho * beta * tau * 0.5;
+            if full_rows {
+                let avg_bc = bc_value.iter().sum::<Complex64>() / bc_value.len() as f64;
+                let mut local_diag = Complex64::new(0.0, 0.0);
+                match bc_type {
+                    0 => {
+                        local_diag -= sign * (gamma * 0.5);
+                        if let Some(admittance) = bc_admittance {
+                            local_diag -= sign * admittance * i_omega_rho * beta * tau * 0.5;
+                        }
+                        local_rhs += avg_bc * i_omega_rho * beta * tau * 0.5 * sign;
                     }
-                    local_rhs += avg_bc * i_omega_rho * beta * tau * 0.5 * sign;
+                    1 => {
+                        local_diag += sign * (beta * tau * 0.5);
+                        local_rhs -= avg_bc * gamma * 0.5 * sign;
+                    }
+                    _ => {}
                 }
-                1 => {
-                    local_diag += sign * (beta * tau * 0.5);
-                    local_rhs -= avg_bc * gamma * 0.5 * sign;
+                entries.push((source_dof, local_diag));
+            }
+
+            for (&field_index, element_coords) in field_indices.iter().zip(&field_coords) {
+                let field_elem = &elements[field_index];
+                if field_elem.property.is_evaluation() {
+                    continue;
                 }
-                _ => {}
-            }
-            entries.push((source_dof, local_diag));
-        }
+                let field_dof = field_elem.dof_addresses[0];
+                let (field_bc_type, field_bc_values) =
+                    get_bc_type_and_value(&field_elem.boundary_condition);
+                let compute_rhs = has_nonzero_bc(&field_bc_values);
 
-        for (&field_index, element_coords) in field_indices.iter().zip(&field_coords) {
-            let field_elem = &elements[field_index];
-            if field_elem.property.is_evaluation() {
-                continue;
-            }
-            let field_dof = field_elem.dof_addresses[0];
-            let (field_bc_type, field_bc_values) =
-                get_bc_type_and_value(&field_elem.boundary_condition);
-            let compute_rhs = has_nonzero_bc(&field_bc_values);
+                let result = if field_index == row_index {
+                    singular_integration(
+                        source_point,
+                        source_normal,
+                        element_coords,
+                        field_elem.element_type,
+                        physics,
+                        if compute_rhs {
+                            Some(&field_bc_values)
+                        } else {
+                            None
+                        },
+                        field_bc_type,
+                        compute_rhs,
+                    )
+                } else {
+                    regular_integration(
+                        source_point,
+                        source_normal,
+                        element_coords,
+                        field_elem.element_type,
+                        field_elem.area,
+                        physics,
+                        if compute_rhs {
+                            Some(&field_bc_values)
+                        } else {
+                            None
+                        },
+                        field_bc_type,
+                        compute_rhs,
+                    )
+                };
 
-            let result = if field_index == row_index {
-                singular_integration(
-                    source_point,
-                    source_normal,
-                    element_coords,
-                    field_elem.element_type,
-                    physics,
-                    if compute_rhs {
-                        Some(&field_bc_values)
-                    } else {
-                        None
-                    },
-                    field_bc_type,
-                    compute_rhs,
-                )
-            } else {
-                regular_integration(
-                    source_point,
-                    source_normal,
-                    element_coords,
-                    field_elem.element_type,
-                    field_elem.area,
-                    physics,
-                    if compute_rhs {
-                        Some(&field_bc_values)
-                    } else {
-                        None
-                    },
-                    field_bc_type,
-                    compute_rhs,
-                )
-            };
-
-            let mut coeff = match field_bc_type {
-                0 => {
-                    sign * (result.dg_dn_integral * gamma * tau + result.d2g_dnxdny_integral * beta)
+                let mut coeff = match field_bc_type {
+                    0 => {
+                        sign * (result.dg_dn_integral * gamma * tau
+                            + result.d2g_dnxdny_integral * beta)
+                    }
+                    1 => -sign * (result.g_integral * gamma * tau + result.dg_dnx_integral * beta),
+                    _ => Complex64::new(0.0, 0.0),
+                };
+                if field_bc_type == 0
+                    && let Some(admittance) = field_elem.boundary_condition.admittance()
+                {
+                    coeff -= sign
+                        * (result.g_integral * gamma * tau + result.dg_dnx_integral * beta)
+                        * admittance
+                        * i_omega_rho;
                 }
-                1 => -sign * (result.g_integral * gamma * tau + result.dg_dnx_integral * beta),
-                _ => Complex64::new(0.0, 0.0),
-            };
-            if field_bc_type == 0
-                && let Some(admittance) = field_elem.boundary_condition.admittance()
-            {
-                coeff -= sign
-                    * (result.g_integral * gamma * tau + result.dg_dnx_integral * beta)
-                    * admittance
-                    * i_omega_rho;
+
+                entries.push((field_dof, coeff));
+
+                if compute_rhs {
+                    local_rhs += stabilized_constant_rhs_contribution(
+                        &result,
+                        field_bc_type,
+                        &field_bc_values,
+                        sign,
+                        gamma,
+                        tau,
+                        beta,
+                        i_omega_rho,
+                    );
+                }
             }
 
-            entries.push((field_dof, coeff));
-
-            if compute_rhs {
-                local_rhs += stabilized_constant_rhs_contribution(
-                    &result,
-                    field_bc_type,
-                    &field_bc_values,
-                    sign,
-                    gamma,
-                    tau,
-                    beta,
-                    i_omega_rho,
-                );
+            TbemPartialRow {
+                row_dof: source_dof,
+                entries,
+                rhs: local_rhs,
             }
-        }
-
-        TbemPartialRow {
-            row_dof: source_dof,
-            entries,
-            rhs: local_rhs,
-        }
-    })
+        },
+    )
 }
 
 /// Stabilised constant-panel TBEM assembly with `sign`, routing the

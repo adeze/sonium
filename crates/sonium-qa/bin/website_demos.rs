@@ -124,8 +124,7 @@ fn write_manifest(
         field_range.0,
         field_range.1,
     );
-    std::fs::write(out_dir.join("manifest.json"), body)
-        .map_err(|e| format!("manifest write: {e}"))
+    std::fs::write(out_dir.join("manifest.json"), body).map_err(|e| format!("manifest write: {e}"))
 }
 
 /// Build a `SimpleMesh` from a FEM mesh (triangles and tetrahedra only).
@@ -248,12 +247,7 @@ fn taylor_green(out_dir: &Path) -> Result<(), String> {
             point_vectors: vec![("velocity", velocity)],
             cell_scalars: Vec::new(),
         };
-        write_frame(
-            out_dir,
-            &format!("frame_{step:04}"),
-            &simple,
-            &fields,
-        )
+        write_frame(out_dir, &format!("frame_{step:04}"), &simple, &fields)
     };
 
     frames.push(dump(&state, 0, 0.0, &mut max_speed)?);
@@ -318,7 +312,9 @@ fn shell_strain_field(
         let (u3, v3) = local_u[2];
         let ex = ((y2 - y3) * u1 + (y3 - y1) * u2 + (y1 - y2) * u3) / two_a;
         let ey = ((x3 - x2) * v1 + (x1 - x3) * v2 + (x2 - x1) * v3) / two_a;
-        let gam = ((x3 - x2) * u1 + (x1 - x3) * u2 + (x2 - x1) * u3
+        let gam = ((x3 - x2) * u1
+            + (x1 - x3) * u2
+            + (x2 - x1) * u3
             + (y2 - y3) * v1
             + (y3 - y1) * v2
             + (y1 - y2) * v3)
@@ -343,7 +339,7 @@ fn crush(out_dir: &Path) -> Result<(), String> {
     use sonium_fem::mesh::Point;
     use sonium_fem::physics::solid::plasticity::{HardeningLaw, J2Material};
     use sonium_fem::physics::solid::shell::crash::{
-        q4_crash_forces, DefShell, ElasticShearHook, HourglassParams, LayerStates, Q4CrashGeom,
+        DefShell, ElasticShearHook, HourglassParams, LayerStates, Q4CrashGeom, q4_crash_forces,
     };
     use sonium_fem::physics::solid::shell::layered::{J2LayerState, SmallStrainJ2Model};
     use sonium_fem::physics::solid::shell::{ShellElement, ShellSection};
@@ -385,8 +381,18 @@ fn crush(out_dir: &Path) -> Result<(), String> {
             let d = node_id(level + 1, around);
             quads.push([a, b, c, d]);
             for (nodes, pa, pb, pc) in [
-                ([a, b, c], point(level, around), point(level, around + 1), point(level + 1, around + 1)),
-                ([a, c, d], point(level, around), point(level + 1, around + 1), point(level + 1, around)),
+                (
+                    [a, b, c],
+                    point(level, around),
+                    point(level, around + 1),
+                    point(level + 1, around + 1),
+                ),
+                (
+                    [a, c, d],
+                    point(level, around),
+                    point(level + 1, around + 1),
+                    point(level + 1, around),
+                ),
             ] {
                 elements.push(ShellElement::from_points(nodes, &pa, &pb, &pc, section));
                 tube_faces.push(nodes);
@@ -502,30 +508,28 @@ fn crush(out_dir: &Path) -> Result<(), String> {
     let mut frames = Vec::new();
     let mut times = Vec::new();
     let mut max_strain: f64 = 0.0;
-    let dump = |points: &[[f64; 3]],
-                frame_index: usize,
-                max_strain: &mut f64|
-     -> Result<String, String> {
-        // Colouring strain from the triangle split of the quads.
-        let mut u6 = vec![0.0f64; total_nodes * 6];
-        for node in 0..total_nodes {
-            for c in 0..3 {
-                u6[node * 6 + c] = points[node][c] - initial[node][c];
+    let dump =
+        |points: &[[f64; 3]], frame_index: usize, max_strain: &mut f64| -> Result<String, String> {
+            // Colouring strain from the triangle split of the quads.
+            let mut u6 = vec![0.0f64; total_nodes * 6];
+            for node in 0..total_nodes {
+                for c in 0..3 {
+                    u6[node * 6 + c] = points[node][c] - initial[node][c];
+                }
             }
-        }
-        let strain = element_strain(&u6);
-        *max_strain = (*max_strain).max(strain.iter().copied().fold(0.0, f64::max));
-        let mesh = SimpleMesh {
-            points: points.to_vec(),
-            cells: render_cells.clone(),
+            let strain = element_strain(&u6);
+            *max_strain = (*max_strain).max(strain.iter().copied().fold(0.0, f64::max));
+            let mesh = SimpleMesh {
+                points: points.to_vec(),
+                cells: render_cells.clone(),
+            };
+            let fields = FrameFields {
+                point_scalars: vec![("strain", strain)],
+                point_vectors: Vec::new(),
+                cell_scalars: Vec::new(),
+            };
+            write_frame(out_dir, &format!("frame_{frame_index:04}"), &mesh, &fields)
         };
-        let fields = FrameFields {
-            point_scalars: vec![("strain", strain)],
-            point_vectors: Vec::new(),
-            cell_scalars: Vec::new(),
-        };
-        write_frame(out_dir, &format!("frame_{frame_index:04}"), &mesh, &fields)
-    };
 
     let mut points = initial.clone();
     let mut velocity = vec![[0.0f64; 6]; total_nodes];
@@ -703,17 +707,7 @@ fn necking(out_dir: &Path) -> Result<(), String> {
         let dx = (axial / old.axial).ln();
         let mut dt = -0.5 * dx;
         for _ in 0..30 {
-            let increment = [
-                dx.exp(),
-                0.0,
-                0.0,
-                0.0,
-                dt.exp(),
-                0.0,
-                0.0,
-                0.0,
-                dt.exp(),
-            ];
+            let increment = [dx.exp(), 0.0, 0.0, 0.0, dt.exp(), 0.0, 0.0, 0.0, dt.exp()];
             let update = mat.update(&old.material, &increment);
             let residual = 0.5 * (update.stress[1] + update.stress[2]);
             let c = &update.tangent;
@@ -914,7 +908,8 @@ fn necking(out_dir: &Path) -> Result<(), String> {
                 break;
             }
             let rhs: Vec<_> = trial.residual[1..n].iter().map(|v| -v).collect();
-            let correction = solve_tridiagonal(&trial.diagonal[1..n], &trial.upper[1..n - 1], &rhs)?;
+            let correction =
+                solve_tridiagonal(&trial.diagonal[1..n], &trial.upper[1..n - 1], &rhs)?;
             let mut accepted = false;
             let mut alpha = 1.0;
             for _ in 0..16 {
@@ -1018,8 +1013,8 @@ fn plate_modes(out_dir: &Path) -> Result<(), String> {
     use sonium_fem::mesh::Point;
     use sonium_fem::physics::solid::shell::explicit::lumped_masses;
     use sonium_fem::physics::solid::shell::{ShellElement, ShellSection};
-    use sonium_solvers_core::traits::{LinearOperator, Preconditioner};
     use sonium_solvers::{LobpcgConfig, lobpcg_generalized_preconditioned};
+    use sonium_solvers_core::traits::{LinearOperator, Preconditioner};
 
     struct DenseOp {
         rows: usize,
@@ -1068,7 +1063,10 @@ fn plate_modes(out_dir: &Path) -> Result<(), String> {
     }
     impl Preconditioner<f64> for DiagOp {
         fn apply(&self, r: &[f64]) -> Vec<f64> {
-            r.iter().zip(&self.diag).map(|(value, d)| value * d).collect()
+            r.iter()
+                .zip(&self.diag)
+                .map(|(value, d)| value * d)
+                .collect()
         }
         fn apply_into(&self, r: &[f64], y: &mut [f64]) {
             LinearOperator::apply_into(self, r, y);
@@ -1099,8 +1097,18 @@ fn plate_modes(out_dir: &Path) -> Result<(), String> {
             let c = node_id(i + 1, j + 1);
             let d = node_id(i, j + 1);
             for (nodes, pa, pb, pc) in [
-                ([a, b, c], node_point(i, j), node_point(i + 1, j), node_point(i + 1, j + 1)),
-                ([a, c, d], node_point(i, j), node_point(i + 1, j + 1), node_point(i, j + 1)),
+                (
+                    [a, b, c],
+                    node_point(i, j),
+                    node_point(i + 1, j),
+                    node_point(i + 1, j + 1),
+                ),
+                (
+                    [a, c, d],
+                    node_point(i, j),
+                    node_point(i + 1, j + 1),
+                    node_point(i, j + 1),
+                ),
             ] {
                 elements.push(ShellElement::from_points(nodes, &pa, &pb, &pc, section));
                 cells.push((
@@ -1166,7 +1174,9 @@ fn plate_modes(out_dir: &Path) -> Result<(), String> {
         cols: n_free,
         data: k_data,
     };
-    let m_op = DiagOp { diag: m_free.clone() };
+    let m_op = DiagOp {
+        diag: m_free.clone(),
+    };
     let precond = DiagOp {
         diag: (0..n_free)
             .map(|i| {
@@ -1294,10 +1304,26 @@ fn room_wave(out_dir: &Path) -> Result<(), String> {
             element.nodes[3],
         ];
         let p: [[f64; 3]; 4] = [
-            [mesh.nodes[idx[0]].x, mesh.nodes[idx[0]].y, mesh.nodes[idx[0]].z],
-            [mesh.nodes[idx[1]].x, mesh.nodes[idx[1]].y, mesh.nodes[idx[1]].z],
-            [mesh.nodes[idx[2]].x, mesh.nodes[idx[2]].y, mesh.nodes[idx[2]].z],
-            [mesh.nodes[idx[3]].x, mesh.nodes[idx[3]].y, mesh.nodes[idx[3]].z],
+            [
+                mesh.nodes[idx[0]].x,
+                mesh.nodes[idx[0]].y,
+                mesh.nodes[idx[0]].z,
+            ],
+            [
+                mesh.nodes[idx[1]].x,
+                mesh.nodes[idx[1]].y,
+                mesh.nodes[idx[1]].z,
+            ],
+            [
+                mesh.nodes[idx[2]].x,
+                mesh.nodes[idx[2]].y,
+                mesh.nodes[idx[2]].z,
+            ],
+            [
+                mesh.nodes[idx[3]].x,
+                mesh.nodes[idx[3]].y,
+                mesh.nodes[idx[3]].z,
+            ],
         ];
         // Jacobian of the affine map from the reference tet.
         let j = [
@@ -1385,23 +1411,22 @@ fn room_wave(out_dir: &Path) -> Result<(), String> {
     let mut frames = Vec::new();
     let mut times = Vec::new();
     let mut max_pressure: f64 = 0.0;
-    let dump = |pressure: &[f64],
-                frame_index: usize,
-                max_pressure: &mut f64|
-     -> Result<String, String> {
-        *max_pressure = (*max_pressure).max(pressure.iter().fold(0.0, |acc: f64, v| acc.max(v.abs())));
-        let fields = FrameFields {
-            point_scalars: vec![("pressure", pressure.to_vec())],
-            point_vectors: Vec::new(),
-            cell_scalars: Vec::new(),
+    let dump =
+        |pressure: &[f64], frame_index: usize, max_pressure: &mut f64| -> Result<String, String> {
+            *max_pressure =
+                (*max_pressure).max(pressure.iter().fold(0.0, |acc: f64, v| acc.max(v.abs())));
+            let fields = FrameFields {
+                point_scalars: vec![("pressure", pressure.to_vec())],
+                point_vectors: Vec::new(),
+                cell_scalars: Vec::new(),
+            };
+            write_frame(
+                out_dir,
+                &format!("frame_{frame_index:04}"),
+                &simple,
+                &fields,
+            )
         };
-        write_frame(
-            out_dir,
-            &format!("frame_{frame_index:04}"),
-            &simple,
-            &fields,
-        )
-    };
 
     frames.push(dump(&pressure, 0, &mut max_pressure)?);
     times.push(0.0);
@@ -1447,9 +1472,7 @@ fn room_wave(out_dir: &Path) -> Result<(), String> {
 fn arch(out_dir: &Path) -> Result<(), String> {
     use sonium_fem::mesh::Point;
     use sonium_fem::physics::solid::plasticity::{HardeningLaw, J2Material};
-    use sonium_fem::physics::solid::shell::explicit::{
-        ShellExplicitModel, ShellExplicitState,
-    };
+    use sonium_fem::physics::solid::shell::explicit::{ShellExplicitModel, ShellExplicitState};
     use sonium_fem::physics::solid::shell::{ShellElement, ShellSection};
 
     let span = 1.0f64;

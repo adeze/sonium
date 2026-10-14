@@ -39,9 +39,9 @@ use super::evaluate::{
 };
 use super::optimize::{
     AlBobyqaConfig, BudgetUsage, DEFAULT_CACHE_QUANTIZATION_STEP, Duct1dTier0Evaluator, EvalTier,
-    EvaluatedCandidate, FeasibilitySpec, FunnelConfig, PARETO_VIOLATION_PENALTY, campaign_template,
-    PortOptimError, PortOptimFunnel, RankedCandidate, ScalarWeights, SplineTier1Evaluator,
-    StageReport, Tier1Evaluator, TierBudgets,
+    EvaluatedCandidate, FeasibilitySpec, FunnelConfig, PARETO_VIOLATION_PENALTY, PortOptimError,
+    PortOptimFunnel, RankedCandidate, ScalarWeights, SplineTier1Evaluator, StageReport,
+    Tier1Evaluator, TierBudgets, campaign_template,
 };
 
 /// QA case id for the bounded port-optim gate (mirrored in
@@ -355,11 +355,13 @@ impl Step10GateReport {
             if tier2.straight.len() != tier2.drives_v_peak.len()
                 || tier2.winner.len() != tier2.drives_v_peak.len()
             {
-                return Err(bad("Step-10 Tier-2 level count disagrees with drives".to_string()));
+                return Err(bad(
+                    "Step-10 Tier-2 level count disagrees with drives".to_string()
+                ));
             }
             if tier2.equal_voltage.len() != tier2.drives_v_peak.len() {
                 return Err(bad(
-                    "Step-10 needs one equal-voltage delta per drive".to_string(),
+                    "Step-10 needs one equal-voltage delta per drive".to_string()
                 ));
             }
             if tier2.equal_airflow.len() != 1 {
@@ -531,19 +533,11 @@ pub fn run_step10_gate(config: &Step10GateConfig) -> Result<Step10GateReport, Po
                     .partial_cmp(&b.objective_j)
                     .unwrap_or(std::cmp::Ordering::Equal)
             });
-        let winner_u = winner_row.map_or_else(
-            || vec![0.0; template.n_free()],
-            |row| row.u.clone(),
-        );
+        let winner_u = winner_row.map_or_else(|| vec![0.0; template.n_free()], |row| row.u.clone());
         let winner_is_straight = is_straight(&winner_u);
-        let winner_tier0 = feasible0
-            .iter()
-            .find(|c| c.u == winner_u)
-            .ok_or_else(|| {
-                PortOptimError::InvalidConfig(format!(
-                    "winner {winner_u:?} has no Tier-0 record"
-                ))
-            })?;
+        let winner_tier0 = feasible0.iter().find(|c| c.u == winner_u).ok_or_else(|| {
+            PortOptimError::InvalidConfig(format!("winner {winner_u:?} has no Tier-0 record"))
+        })?;
         let straight_q_ratio = funnel
             .history()
             .records
@@ -620,8 +614,11 @@ pub fn run_step10_gate(config: &Step10GateConfig) -> Result<Step10GateReport, Po
         }
         // Equal-airflow rescale at the nominal level + verification run.
         let nominal = drives[1];
-        let v_winner =
-            equal_airflow_voltage(nominal, straight[1].port_flow_rms_m3s, winner[1].port_flow_rms_m3s);
+        let v_winner = equal_airflow_voltage(
+            nominal,
+            straight[1].port_flow_rms_m3s,
+            winner[1].port_flow_rms_m3s,
+        );
         let airflow_match = run(&winner_profile, v_winner, Some(winner_ref))?;
         let mut equal_voltage = Vec::with_capacity(drives.len());
         for (s, w) in straight.iter().zip(winner.iter()) {
@@ -668,10 +665,7 @@ pub fn run_step10_gate(config: &Step10GateConfig) -> Result<Step10GateReport, Po
     let t0_ok = tier0_stage.straight_feasible
         && tier0_stage.feasible_count >= STEP10_MIN_TIER0_FEASIBLE
         && tier0_stage.refined_feasible
-        && tier0_stage
-            .quota
-            .first()
-            .is_some_and(|u| is_straight(u));
+        && tier0_stage.quota.first().is_some_and(|u| is_straight(u));
     let t1_ok = tier1_stage.as_ref().is_none_or(|t| t.straight_feasible);
     let improves = tier2_stage.as_ref().is_some_and(|t| {
         !t.equal_airflow.is_empty()
@@ -679,10 +673,7 @@ pub fn run_step10_gate(config: &Step10GateConfig) -> Result<Step10GateReport, Po
                 .iter()
                 .all(|level| level.d_thd_rel < 0.0 && level.d_noise_db < 0.0)
     });
-    let sc2_consistent = match (
-        criterion_2_no_pareto.as_ref(),
-        criterion_2_pareto.as_ref(),
-    ) {
+    let sc2_consistent = match (criterion_2_no_pareto.as_ref(), criterion_2_pareto.as_ref()) {
         (None, None) => true,
         (Some(plain), Some(pareto)) => {
             let want_plain = if improves { "improvement" } else { "fail" };
@@ -706,15 +697,12 @@ pub fn run_step10_gate(config: &Step10GateConfig) -> Result<Step10GateReport, Po
         _ => false,
     };
     let passed = t0_ok && t1_ok && t2_ok;
-    let sc1_label = criterion_1.as_ref().map_or("skipped", |v| {
-        if v.passed { "pass" } else { "FAIL" }
-    });
+    let sc1_label =
+        criterion_1
+            .as_ref()
+            .map_or("skipped", |v| if v.passed { "pass" } else { "FAIL" });
     let sc2_label = criterion_2_pareto.as_ref().map_or("skipped", |v| {
-        if v.passed {
-            v.outcome.as_str()
-        } else {
-            "FAIL"
-        }
+        if v.passed { v.outcome.as_str() } else { "FAIL" }
     });
     let detail = format!(
         "step-10 bounded gate: Tier-0 {}/{} feasible (straight {}), refine {} J={:.6} -> {:.6}, \
@@ -784,10 +772,11 @@ mod tests {
             tier2: Step10Tier2Fidelity::Capped,
             ..Step10GateConfig::bounded()
         };
-        let error = config.validate().expect_err("must reject Tier-2 without Tier-1");
+        let error = config
+            .validate()
+            .expect_err("must reject Tier-2 without Tier-1");
         assert!(matches!(error, PortOptimError::InvalidConfig(_)));
-        let error =
-            run_step10_gate(&config).expect_err("runner must reject Tier-2 without Tier-1");
+        let error = run_step10_gate(&config).expect_err("runner must reject Tier-2 without Tier-1");
         assert!(matches!(error, PortOptimError::InvalidConfig(_)));
     }
 
@@ -845,7 +834,9 @@ mod tests {
             passed: false,
             detail: String::new(),
         };
-        let json = report.to_json_string().expect("synthetic report serializes");
+        let json = report
+            .to_json_string()
+            .expect("synthetic report serializes");
         let parsed = Step10GateReport::from_json_str(&json).expect("round-trip parses");
         assert_eq!(parsed.provenance, STEP10_REPORT_PROVENANCE);
         let drifted = json.replace(

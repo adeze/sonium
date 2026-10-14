@@ -68,17 +68,19 @@ fn extract(report: &Step10GateReport) -> Result<GateNumbers, String> {
     if !sc2_pareto.passed {
         return Err(format!("SC2 failed: {}", sc2_pareto.detail));
     }
-    let vmax = tier2.equal_voltage.last().ok_or_else(|| {
-        "bounded gate Tier-2 needs an equal-voltage Vmax level".to_string()
-    })?;
+    let vmax = tier2
+        .equal_voltage
+        .last()
+        .ok_or_else(|| "bounded gate Tier-2 needs an equal-voltage Vmax level".to_string())?;
     let compression_db_vmax = tier2
         .winner
         .last()
         .and_then(|metrics| metrics.compression_db)
         .ok_or_else(|| "bounded gate Tier-2 misses Vmax compression".to_string())?;
-    let nominal = tier2.equal_airflow.first().ok_or_else(|| {
-        "bounded gate Tier-2 needs the equal-airflow nominal level".to_string()
-    })?;
+    let nominal = tier2
+        .equal_airflow
+        .first()
+        .ok_or_else(|| "bounded gate Tier-2 needs the equal-airflow nominal level".to_string())?;
     Ok(GateNumbers {
         f_target_hz: report.f_target_hz,
         tier0_screened: report.tier0.screen.ranking.len(),
@@ -155,11 +157,20 @@ fn main() {
                 .elapsed_ms(started.elapsed().as_millis() as u64);
             println!("QA_RESULT: {}", result.to_json_line().unwrap());
             println!("GATE_DETAIL: {}", report.detail);
-            println!("SC1: {}", report.criterion_1.as_ref().map_or("skipped", |v| v.detail.as_str()));
+            println!(
+                "SC1: {}",
+                report
+                    .criterion_1
+                    .as_ref()
+                    .map_or("skipped", |v| v.detail.as_str())
+            );
             println!(
                 "SC2[pareto:{}]: {}",
                 numbers.sc2_pareto_outcome,
-                report.criterion_2_pareto.as_ref().map_or("skipped", |v| v.detail.as_str())
+                report
+                    .criterion_2_pareto
+                    .as_ref()
+                    .map_or("skipped", |v| v.detail.as_str())
             );
             println!("SUCCESS");
         }

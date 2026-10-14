@@ -187,10 +187,7 @@ impl ClampedCubicSpline {
                 "clamped spline end slopes must be finite".to_string(),
             ));
         }
-        if let Some(index) = pts
-            .windows(2)
-            .position(|pair| pair[1][0] <= pair[0][0])
-        {
+        if let Some(index) = pts.windows(2).position(|pair| pair[1][0] <= pair[0][0]) {
             return Err(PortFlowError::InvalidConfig(format!(
                 "clamped spline knots must be strictly increasing at index {}",
                 index + 1
@@ -238,11 +235,7 @@ impl ClampedCubicSpline {
             moments[i] = (rhs[i] - upper[i] * moments[i + 1]) / diag[i];
         }
 
-        Ok(Self {
-            xs,
-            ys,
-            moments,
-        })
+        Ok(Self { xs, ys, moments })
     }
 
     /// Interval index holding `x` (clamped to the end intervals outside).
@@ -267,7 +260,8 @@ impl ClampedCubicSpline {
         let b = (x - self.xs[i]) / h;
         a * self.ys[i]
             + b * self.ys[i + 1]
-            + (h * h / 6.0) * ((a * a * a - a) * self.moments[i] + (b * b * b - b) * self.moments[i + 1])
+            + (h * h / 6.0)
+                * ((a * a * a - a) * self.moments[i] + (b * b * b - b) * self.moments[i + 1])
     }
 
     /// Evaluate the spline first derivative, clamping `x` to the knot range.
@@ -279,7 +273,8 @@ impl ClampedCubicSpline {
         let b = (x - self.xs[i]) / h;
         (self.ys[i + 1] - self.ys[i]) / h
             - (h / 6.0)
-                * ((3.0 * a * a - 1.0) * self.moments[i] - (3.0 * b * b - 1.0) * self.moments[i + 1])
+                * ((3.0 * a * a - 1.0) * self.moments[i]
+                    - (3.0 * b * b - 1.0) * self.moments[i + 1])
     }
 
     /// Evaluate the spline second derivative, clamping `x` to the knot range.
@@ -334,10 +329,7 @@ impl PchipSpline {
                 }
             }
         }
-        if let Some(index) = pts
-            .windows(2)
-            .position(|pair| pair[1][0] <= pair[0][0])
-        {
+        if let Some(index) = pts.windows(2).position(|pair| pair[1][0] <= pair[0][0]) {
             return Err(PortFlowError::InvalidConfig(format!(
                 "shape-preserving spline knots must be strictly increasing at index {}",
                 index + 1
@@ -410,7 +402,9 @@ impl PchipSpline {
         let dh10 = 3.0 * t2 - 4.0 * t + 1.0;
         let dh01 = -6.0 * t2 + 6.0 * t;
         let dh11 = 3.0 * t2 - 2.0 * t;
-        (self.ys[i] * dh00 + h * self.ds[i] * dh10 + self.ys[i + 1] * dh01
+        (self.ys[i] * dh00
+            + h * self.ds[i] * dh10
+            + self.ys[i + 1] * dh01
             + h * self.ds[i + 1] * dh11)
             / h
     }
@@ -428,7 +422,9 @@ impl PchipSpline {
         let d2h10 = 6.0 * t - 4.0;
         let d2h01 = -12.0 * t + 6.0;
         let d2h11 = 6.0 * t - 2.0;
-        (self.ys[i] * d2h00 + h * self.ds[i] * d2h10 + self.ys[i + 1] * d2h01
+        (self.ys[i] * d2h00
+            + h * self.ds[i] * d2h10
+            + self.ys[i + 1] * d2h01
             + h * self.ds[i + 1] * d2h11)
             / (h * h)
     }
@@ -630,13 +626,7 @@ impl SplinePortProfile {
         for (i, value) in u.iter().enumerate() {
             radii[i + 2] = bore_radius_m - value * span;
         }
-        Self::from_radii_with(
-            radii,
-            length_m,
-            bore_radius_m,
-            throat_radius_m,
-            options,
-        )
+        Self::from_radii_with(radii, length_m, bore_radius_m, throat_radius_m, options)
     }
 
     /// Build a profile from absolute knot radii (all pinned knots included).
@@ -684,9 +674,7 @@ impl SplinePortProfile {
     /// Constructors call this; expose it so later steps can re-audit a
     /// deserialized profile before an expensive solve.
     pub fn validate(&self) -> Result<(), PortFlowError> {
-        if self.knots.len() != self.n_control_points
-            || self.radii.len() != self.n_control_points
-        {
+        if self.knots.len() != self.n_control_points || self.radii.len() != self.n_control_points {
             return Err(PortFlowError::InvalidConfig(
                 "spline port profile knot/radii length mismatch".to_string(),
             ));
@@ -1009,20 +997,12 @@ mod tests {
                 vec![R0, R0, R0 - 0.25 * (R0 - RMIN), R0 - 0.5 * (R0 - RMIN), R0],
                 ProfileOptions::default(),
             ),
-            (
-                vec![R0, R0, mid, R0, R0],
-                ProfileOptions::default(),
-            ),
-            (
-                vec![R0, R0, mid, mid, R0, R0],
-                ProfileOptions::default(),
-            ),
+            (vec![R0, R0, mid, R0, R0], ProfileOptions::default()),
+            (vec![R0, R0, mid, mid, R0, R0], ProfileOptions::default()),
             (vec![R0, R0, RMIN, R0, R0], relaxed),
         ] {
             let p = SplinePortProfile::try_from_radii(&radii, L, R0, RMIN, options)
-                .unwrap_or_else(|err| {
-                    panic!("shape-preserving mode must accept {radii:?}: {err}")
-                });
+                .unwrap_or_else(|err| panic!("shape-preserving mode must accept {radii:?}: {err}"));
             for [x, r] in p.sampled_profile(PROFILE_VALIDATION_GRID_POINTS) {
                 assert!(
                     (RMIN - 1.0e-12..=R0 + 1.0e-12).contains(&r),
@@ -1039,17 +1019,11 @@ mod tests {
         let u = [0.25, 0.75];
         let knots = SplinePortProfile::build_knots(5, L, KnotSpacing::Uniform);
         let span = R0 - RMIN;
-        let pts: Vec<[f64; 2]> = [
-            R0,
-            R0,
-            R0 - u[0] * span,
-            R0 - u[1] * span,
-            R0,
-        ]
-        .iter()
-        .zip(knots.iter())
-        .map(|(r, x)| [*x, *r])
-        .collect();
+        let pts: Vec<[f64; 2]> = [R0, R0, R0 - u[0] * span, R0 - u[1] * span, R0]
+            .iter()
+            .zip(knots.iter())
+            .map(|(r, x)| [*x, *r])
+            .collect();
         let spline = ClampedCubicSpline::try_from_control_points(&pts, 0.0, 0.0)
             .expect("C² fit must succeed");
         let mut max_r = f64::NEG_INFINITY;
@@ -1067,15 +1041,8 @@ mod tests {
     fn out_of_range_normalized_radii_are_rejected() {
         for bad in [vec![-0.1, 0.5], vec![0.5, 1.2], vec![f64::NAN, 0.5]] {
             assert!(
-                SplinePortProfile::from_normalized(
-                    5,
-                    L,
-                    R0,
-                    RMIN,
-                    &bad,
-                    ProfileOptions::default()
-                )
-                .is_err(),
+                SplinePortProfile::from_normalized(5, L, R0, RMIN, &bad, ProfileOptions::default())
+                    .is_err(),
                 "u = {bad:?} must be rejected"
             );
         }
@@ -1152,8 +1119,9 @@ mod tests {
     fn control_point_counts_3_5_8_construct_and_evaluate() {
         for n in [3, 5, 8] {
             let u = vec![0.4; n - 3];
-            let p = SplinePortProfile::from_normalized(n, L, R0, RMIN, &u, ProfileOptions::default())
-                .unwrap_or_else(|err| panic!("N = {n} must construct: {err}"));
+            let p =
+                SplinePortProfile::from_normalized(n, L, R0, RMIN, &u, ProfileOptions::default())
+                    .unwrap_or_else(|err| panic!("N = {n} must construct: {err}"));
             assert_eq!(p.n_control_points(), n);
             assert_eq!(p.knots().len(), n);
             let samples = p.sampled_profile(64);
@@ -1164,10 +1132,7 @@ mod tests {
                 );
                 assert!(p.area_m2(*x) > 0.0, "N = {n}: non-positive area");
                 assert!(p.slope(*x).is_finite(), "N = {n}: non-finite slope");
-                assert!(
-                    p.curvature(*x).is_finite(),
-                    "N = {n}: non-finite curvature"
-                );
+                assert!(p.curvature(*x).is_finite(), "N = {n}: non-finite curvature");
             }
             // Chebyshev spacing builds the same-shaped contract. End
             // clustering shortens the exit transition, so this leg dips
@@ -1218,18 +1183,21 @@ mod tests {
         );
         // Non-increasing knots.
         assert!(
-            ClampedCubicSpline::try_from_control_points(&[[0.0, 1.0], [0.0, 2.0]], 0.0, 0.0).is_err()
+            ClampedCubicSpline::try_from_control_points(&[[0.0, 1.0], [0.0, 2.0]], 0.0, 0.0)
+                .is_err()
         );
         // Non-finite end slope.
         assert!(
-            ClampedCubicSpline::try_from_control_points(&[[0.0, 1.0], [1.0, 2.0]], f64::INFINITY, 0.0)
-                .is_err()
+            ClampedCubicSpline::try_from_control_points(
+                &[[0.0, 1.0], [1.0, 2.0]],
+                f64::INFINITY,
+                0.0
+            )
+            .is_err()
         );
         // Shape-preserving twin guards the same contract.
         assert!(PchipSpline::try_from_control_points(&[[0.0, 1.0]]).is_err());
-        assert!(
-            PchipSpline::try_from_control_points(&[[0.0, 1.0], [0.0, 2.0]]).is_err()
-        );
+        assert!(PchipSpline::try_from_control_points(&[[0.0, 1.0], [0.0, 2.0]]).is_err());
     }
 
     #[test]
@@ -1245,7 +1213,10 @@ mod tests {
             .collect();
         let spline = ClampedCubicSpline::try_from_control_points(&pts, 0.0, 0.0)
             .expect("cosine spline must fit");
-        assert!(spline.derivative(0.0).abs() < 1.0e-12, "start slope must be 0");
+        assert!(
+            spline.derivative(0.0).abs() < 1.0e-12,
+            "start slope must be 0"
+        );
         assert!(spline.derivative(PI).abs() < 1.0e-12, "end slope must be 0");
         for [x, y] in &pts {
             assert!(
@@ -1286,8 +1257,7 @@ mod tests {
         .enumerate()
         .map(|(i, r)| [L * i as f64 / 6.0, *r])
         .collect();
-        let spline =
-            PchipSpline::try_from_control_points(&pts).expect("PCHIP fit must succeed");
+        let spline = PchipSpline::try_from_control_points(&pts).expect("PCHIP fit must succeed");
         assert!(
             spline.derivative(0.0).abs() == 0.0,
             "PCHIP start slope must be exactly 0"
@@ -1322,9 +1292,7 @@ mod tests {
             "C¹ continuity broken at x = {knot}"
         );
         // Monotone data stays monotone on the dense grid.
-        let ramp: Vec<[f64; 2]> = (0..5)
-            .map(|i| [i as f64, (i * i) as f64])
-            .collect();
+        let ramp: Vec<[f64; 2]> = (0..5).map(|i| [i as f64, (i * i) as f64]).collect();
         let ramp = PchipSpline::try_from_control_points(&ramp).expect("ramp must fit");
         let mut prev = f64::NEG_INFINITY;
         for i in 0..201 {

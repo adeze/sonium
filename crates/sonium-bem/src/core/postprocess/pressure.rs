@@ -786,58 +786,63 @@ fn compute_scattered_field_gradient(
     // serial for small point × element counts). Work is evaluation points ×
     // boundary elements kernel evaluations.
     let eval_work = eval_points.len().saturating_mul(boundary_elements.len());
-    gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
-        let mut gradient = [Complex64::new(0.0, 0.0); 3];
-        match basis_order {
-            BasisOrder::Constant => {
-                for (index, element) in boundary_elements.iter().enumerate() {
-                    let (pressure, velocity) = constant_cauchy_data(
-                        element,
-                        index,
-                        surface_pressure,
-                        surface_velocity,
-                        incident_field,
-                        physics,
-                    );
-                    let contribution = integrate_element_field_gradient(
-                        point,
-                        &all_coords[index],
-                        element.element_type,
-                        pressure,
-                        velocity,
-                        k,
-                        wavruim,
-                        physics.pressure_factor,
-                        None,
-                    );
-                    for axis in 0..3 {
-                        gradient[axis] += contribution[axis];
+    gated_map(
+        eval_points,
+        eval_work,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+        |point| {
+            let mut gradient = [Complex64::new(0.0, 0.0); 3];
+            match basis_order {
+                BasisOrder::Constant => {
+                    for (index, element) in boundary_elements.iter().enumerate() {
+                        let (pressure, velocity) = constant_cauchy_data(
+                            element,
+                            index,
+                            surface_pressure,
+                            surface_velocity,
+                            incident_field,
+                            physics,
+                        );
+                        let contribution = integrate_element_field_gradient(
+                            point,
+                            &all_coords[index],
+                            element.element_type,
+                            pressure,
+                            velocity,
+                            k,
+                            wavruim,
+                            physics.pressure_factor,
+                            None,
+                        );
+                        for axis in 0..3 {
+                            gradient[axis] += contribution[axis];
+                        }
+                    }
+                }
+                BasisOrder::Linear | BasisOrder::Quadratic => {
+                    for (index, element) in boundary_elements.iter().enumerate() {
+                        let contribution = integrate_element_field_discontinuous_gradient(
+                            point,
+                            &all_coords[index],
+                            element.element_type,
+                            basis_order,
+                            &element.dof_addresses,
+                            surface_pressure,
+                            surface_velocity,
+                            k,
+                            wavruim,
+                            physics.pressure_factor,
+                            None,
+                        );
+                        for axis in 0..3 {
+                            gradient[axis] += contribution[axis];
+                        }
                     }
                 }
             }
-            BasisOrder::Linear | BasisOrder::Quadratic => {
-                for (index, element) in boundary_elements.iter().enumerate() {
-                    let contribution = integrate_element_field_discontinuous_gradient(
-                        point,
-                        &all_coords[index],
-                        element.element_type,
-                        basis_order,
-                        &element.dof_addresses,
-                        surface_pressure,
-                        surface_velocity,
-                        k,
-                        wavruim,
-                        physics.pressure_factor,
-                        None,
-                    );
-                    for axis in 0..3 {
-                        gradient[axis] += contribution[axis];
-                    }
-                }
-            }
-        }
-        gradient
-    })
+            gradient
+        },
+    )
 }
 
 /// Compute scattered field at evaluation points using surface solution
@@ -912,8 +917,11 @@ pub fn build_constant_field_operator(
         .collect();
     let wavruim = physics.wave_number * physics.harmonic_factor;
     let eval_work = eval_points.len().saturating_mul(boundary_elements.len());
-    let rows: Vec<(Vec<Complex64>, Complex64)> =
-        gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
+    let rows: Vec<(Vec<Complex64>, Complex64)> = gated_map(
+        eval_points,
+        eval_work,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+        |point| {
             let mut row = Vec::with_capacity(boundary_elements.len());
             let mut affine = Complex64::new(0.0, 0.0);
             for (index, element) in boundary_elements.iter().enumerate() {
@@ -943,7 +951,8 @@ pub fn build_constant_field_operator(
                 }
             }
             (row, affine)
-        });
+        },
+    );
     let affine = rows.iter().map(|(_, value)| *value).collect();
     let matrix = DenseMatrix::from_row_major_vec(
         eval_points.len(),
@@ -990,8 +999,11 @@ pub fn build_field_operator_checked(
         .collect();
     let wavruim = physics.wave_number * physics.harmonic_factor;
     let eval_work = eval_points.len().saturating_mul(boundary_elements.len());
-    let rows: Vec<(Vec<Complex64>, Complex64)> =
-        gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
+    let rows: Vec<(Vec<Complex64>, Complex64)> = gated_map(
+        eval_points,
+        eval_work,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+        |point| {
             let mut row = vec![Complex64::new(0.0, 0.0); pressure_dof_count];
             let mut affine = Complex64::new(0.0, 0.0);
 
@@ -1062,7 +1074,8 @@ pub fn build_field_operator_checked(
             }
 
             (row, affine)
-        });
+        },
+    );
 
     for (row, affine) in &rows {
         validate_finite_results(row)?;
@@ -1297,8 +1310,11 @@ pub fn eval_constant_field_operator_columns(
         .collect();
     let wavruim = physics.wave_number * physics.harmonic_factor;
     let eval_work = eval_points.len().saturating_mul(columns.len());
-    let rows: Vec<(Vec<Complex64>, Complex64)> =
-        gated_map(eval_points, eval_work, BEM_QUADRATURE_PAIRS_PER_THREAD, |point| {
+    let rows: Vec<(Vec<Complex64>, Complex64)> = gated_map(
+        eval_points,
+        eval_work,
+        BEM_QUADRATURE_PAIRS_PER_THREAD,
+        |point| {
             let mut values = Vec::with_capacity(columns.len());
             let mut affine = Complex64::new(0.0, 0.0);
             for (position, &column) in columns.iter().enumerate() {
@@ -1329,7 +1345,8 @@ pub fn eval_constant_field_operator_columns(
                 }
             }
             (values, affine)
-        });
+        },
+    );
     let affine = rows.iter().map(|(_, value)| *value).collect();
     let mut column_values = vec![vec![Complex64::new(0.0, 0.0); eval_points.len()]; columns.len()];
     for (point_index, (values, _)) in rows.into_iter().enumerate() {

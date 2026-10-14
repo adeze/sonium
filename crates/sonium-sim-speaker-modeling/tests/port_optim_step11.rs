@@ -30,7 +30,9 @@ use sonium_sim_speaker_modeling::port_flow::{
 };
 
 fn fixture_path(name: &str) -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures").join(name)
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("fixtures")
+        .join(name)
 }
 
 fn complex_rel_error(got: [f64; 2], want: [f64; 2]) -> f64 {
@@ -73,7 +75,11 @@ fn winner_record_agrees_with_step7_archive() {
         .expect("step-7 report fixture must exist");
     let report = Step7Report::from_json_str(&raw).expect("step-7 report must parse");
     report.validate().expect("step-7 report must validate");
-    assert_eq!(report.winner_u, winner_u(), "handoff must pin the archived winner");
+    assert_eq!(
+        report.winner_u,
+        winner_u(),
+        "handoff must pin the archived winner"
+    );
     assert!(
         (report.f_target_hz - WINNER_F_TARGET_HZ).abs() < 1.0e-9,
         "handoff tuning must match the archived campaign target"
@@ -105,7 +111,11 @@ fn winner_tier1_constants_agree_with_step9_archive() {
     let raw = std::fs::read_to_string(fixture_path("port_optim_step9/step9_report.json"))
         .expect("step-9 report fixture must exist");
     let report = Step9Report::from_json_str(&raw).expect("step-9 report must parse");
-    assert_eq!(report.winner_u, winner_u(), "step-9 must archive the same winner");
+    assert_eq!(
+        report.winner_u,
+        winner_u(),
+        "step-9 must archive the same winner"
+    );
     let tier1 = &report.tier1_winner;
     assert_eq!(tier1.scalar_dofs, WINNER_TIER1_SCALAR_DOFS);
     assert_eq!(tier1.mesh_nodes, WINNER_TIER1_MESH_NODES);
@@ -140,7 +150,10 @@ fn winner_record_json_round_trips_and_fails_closed() {
     let parsed = WinnerProfile::from_json_str(&json).expect("round-trip must parse");
     parsed.validate().expect("parsed record must validate");
     assert_eq!(parsed, record);
-    let drifted = json.replace(WINNER_PROFILE_PROVENANCE, "PortOptimWinnerProfile[v0,drift]");
+    let drifted = json.replace(
+        WINNER_PROFILE_PROVENANCE,
+        "PortOptimWinnerProfile[v0,drift]",
+    );
     assert!(WinnerProfile::from_json_str(&drifted).is_err());
     let bad_schema = json.replace("\"schema_version\": 1", "\"schema_version\": 99");
     assert!(WinnerProfile::from_json_str(&bad_schema).is_err());
@@ -150,16 +163,21 @@ fn winner_record_json_round_trips_and_fails_closed() {
     assert!(bad_u.validate().is_err(), "tampered u must fail validation");
     let mut bad_radii = parsed.clone();
     bad_radii.radii_m[2] += 1.0e-6;
-    assert!(bad_radii.validate().is_err(), "tampered radii must fail validation");
+    assert!(
+        bad_radii.validate().is_err(),
+        "tampered radii must fail validation"
+    );
 }
 
 #[test]
 fn winner_tier1_mesh_build_is_deterministic() {
     let case = PortOptimReferenceCase::default();
-    let (nodes, elements) =
-        winner_tier1_mesh_node_counts(&case, STEP9_TIER1_MESH_SIZE_M)
-            .expect("Tier-1 mesh must build");
-    assert_eq!(nodes, WINNER_TIER1_MESH_NODES, "mesh nodes must reproduce the archive");
+    let (nodes, elements) = winner_tier1_mesh_node_counts(&case, STEP9_TIER1_MESH_SIZE_M)
+        .expect("Tier-1 mesh must build");
+    assert_eq!(
+        nodes, WINNER_TIER1_MESH_NODES,
+        "mesh nodes must reproduce the archive"
+    );
     assert_eq!(
         elements, WINNER_TIER1_MESH_ELEMENTS,
         "mesh elements must reproduce the archive"
