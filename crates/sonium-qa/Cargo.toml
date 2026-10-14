@@ -5764,7 +5764,6 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-hertz-sphere"
 path = "bin/fem_opencourant_hertz_sphere.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
@@ -5868,7 +5867,6 @@ required-features = ["qa-binaries"]
 [[bin]]
 name = "qa-fem-opencourant-taylor-bar"
 path = "bin/fem_opencourant_taylor_bar.rs"
-test = false
 required-features = ["qa-binaries"]
 
 [[bin]]

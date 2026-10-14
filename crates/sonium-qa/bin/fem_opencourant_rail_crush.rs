@@ -4,9 +4,9 @@
 //! engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the crusher force
 //! (EA delta / L, pre-buckling) and the loaded face motion against the elastic closed form.
 //!
-//! The plastic mean-crush-force probe (Alexander/Wierzbicki) needs the plastic LAW cards
-//! tracked for Worker 1; this leg proves geometry, loading, and wall-force probing on the
-//! supported cards.
+//! This original solid-column leg remains elastic. The separate full hollow
+//! rail fixture adds plasticity,self-contact and sixty-percent stroke between
+//! grips; its construction alone does not establish folding or native parity.
 //!
 //! Missing references emit a structured optional skip, or fail when
 //! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
@@ -23,8 +23,11 @@ use std::path::PathBuf;
 
 const NAME: &str = "rail_crush";
 
+#[path = "support/rail_full_fixture.rs"]
+pub mod rail_full_fixture;
+
 /// Builds the rail crush case on the real `sonium_qa::rad` API.
-fn rail_crush_case() -> OpenCourantCase {
+pub(crate) fn rail_crush_case() -> OpenCourantCase {
     // Short box column along x; 1% quasi-static crush stays elastic and
     // far below the Euler buckling load (5x margin by construction).
     let length = 0.2;

@@ -22,6 +22,7 @@
 // Rust guideline compliant 2026-02-21
 
 use clap::{Parser, ValueEnum};
+use rayon::prelude::*;
 use sonium_bench::oc_compare::{
     BUNDLE_SCHEMA, BenchBundle, BenchRow, HardwareInfo, PROTOCOL_CORRECTNESS, ProtocolInfo, Side,
     bundle_json, render_bundle_markdown,
@@ -33,9 +34,10 @@ use sonium_fem::physics::solid::contact::explicit::{
 };
 use sonium_fem::physics::solid::fracture::ductile::{ErosionCriterion, ErosionSet};
 use sonium_fem::physics::solid::nonlinear_solid::{
-    ExplicitPlasticMaterial, HexExplicitGeom, HexExplicitParams, HexExplicitState, HexMesh,
-    NeoHookean, hex_jacobian, hex_plastic_forces, hex_quadrature, hex_shape_derivatives,
-    physical_gradients, q1_element_residual,
+    HexExplicitError, HexExplicitGeom, HexExplicitParams, HexExplicitState, HexGaussPlasticGeom,
+    HexGaussPlasticState, HexMesh, HexPlasticOut, NeoHookean, ObjectivePlasticMaterial,
+    hex_gauss_plastic_forces, hex_jacobian, hex_plastic_forces, hex_plastic_forces_objective,
+    hex_quadrature, hex_shape_derivatives, physical_gradients, q1_element_residual,
 };
 use sonium_fem::physics::solid::plasticity::law_metals::{
     Law2, Law2Flow, Law2State, Law36, Law36State, MaxRateEffect, RateCurve,
@@ -1213,6 +1215,29 @@ struct NativeWall {
     slaves: Vec<usize>,
 }
 
+/// Observe the spring reaction without applying it to the physical state.
+fn wall_reaction(
+    wall: &NativeWall,
+    time: f64,
+    penalty: f64,
+    positions: &[f64],
+    velocities: &[f64],
+    scratch: &mut [f64],
+) -> [f64; 3] {
+    scratch.fill(0.0);
+    let point = std::array::from_fn(|axis| wall.point[axis] + wall.velocity[axis] * time);
+    let mut rigid = RigidWall::new(point, wall.normal, penalty);
+    rigid.velocity = wall.velocity;
+    let pairs = rigid_wall_contact(&rigid, &wall.slaves, positions, velocities, scratch);
+    let mut reaction = [0.0; 3];
+    for pair in pairs {
+        for (axis, value) in reaction.iter_mut().enumerate() {
+            *value -= pair.force[axis];
+        }
+    }
+    reaction
+}
+
 /// Native concentrated load parsed from one `/CLOAD` block.
 #[derive(Debug, Clone)]
 struct NativeCload {
@@ -1310,6 +1335,15 @@ fn grnod_ids(card: &DeckCard) -> Result<Vec<i64>, String> {
 
 /// Builds the native explicit model from a C3 deck pair.
 fn parse_native_model(decks: &C3Decks) -> Result<NativeModel, String> {
+    parse_native_model_with_validated_solid_contact(decks, false)
+}
+
+// The contact-enabled caller verifies byte-identical checked typed decks and
+// builds their native operator before admitting these three contact cards.
+fn parse_native_model_with_validated_solid_contact(
+    decks: &C3Decks,
+    validated_solid_contact: bool,
+) -> Result<NativeModel, String> {
     let starter_text = std::fs::read_to_string(&decks.starter)
         .map_err(|error| format!("cannot read {}: {error}", decks.starter.display()))?;
     if !has_si_units(&starter_text) {
@@ -1433,6 +1467,8 @@ fn parse_native_model(decks: &C3Decks) -> Result<NativeModel, String> {
             | CardKind::ThBric
             | CardKind::ThBrick => {}
             CardKind::Bcs | CardKind::Cload | CardKind::RwallPlane => {}
+            CardKind::SurfSeg | CardKind::GrnodSurf | CardKind::InterType7
+                if validated_solid_contact => {}
             _ => {
                 return Err(format!(
                     "sonium arm supports no starter card {} (deferred: shells, other plastics, imposed motion)",
@@ -2457,6 +2493,17 @@ fn sonium_repeat(
     model: &NativeModel,
     probes: &[Probe],
 ) -> Result<RepeatSample, String> {
+    sonium_repeat_observed(deck, model, probes, 1.0, None)
+}
+
+/// Original elastic integration with optional raw observation capture.
+fn sonium_repeat_observed(
+    deck: &str,
+    model: &NativeModel,
+    probes: &[Probe],
+    timestep_scale: f64,
+    capture: Option<&mut NativeElasticHistory>,
+) -> Result<RepeatSample, String> {
     if !matches!(model.material, NativeMaterial::Law1) {
         return sonium_repeat_plastic(deck, model, probes);
     }
@@ -2508,7 +2555,7 @@ fn sonium_repeat(
     // spring, no stiffness), so every deck rides the bulk CFL cap:
     // the old explicit-penalty `sqrt(m/k)` cap cost wall decks ~12x
     // in step count for identical statics.
-    let dt_max = critical_dt(&char_lengths, &sound_speeds);
+    let dt_max = critical_dt(&char_lengths, &sound_speeds) * timestep_scale;
     if !dt_max.is_finite() || dt_max <= 0.0 {
         return Err("native dt bound is not positive".to_string());
     }
@@ -2693,6 +2740,20 @@ fn sonium_repeat(
     // driver's ledger never sees these boundary-condition resets,
     // so the drift gate adds them back (E = D - J).
     let mut adopt_work = 0.0;
+    let targets = if capture.is_some() {
+        probes
+            .iter()
+            .map(|p| resolve_probe_channel(&p.channel, model))
+            .collect::<Result<Vec<_>, _>>()?
+    } else {
+        Vec::new()
+    };
+    let mut times = if capture.is_some() {
+        vec![0.0]
+    } else {
+        Vec::new()
+    };
+    let mut values = targets.iter().map(|_| vec![0.0]).collect::<Vec<_>>();
     while state.time < model.stop {
         if steps >= MAX_NATIVE_STEPS {
             return Err(format!(
@@ -2705,13 +2766,22 @@ fn sonium_repeat(
         // of plunge like any explicit contact); the adoption
         // below then freezes the normal motion.
         transitions.borrow_mut().clear();
-        if let Err(error) = driver.step(
-            &mut state,
-            internal_force,
-            external_force,
-            &char_lengths,
-            &sound_speeds,
-        ) {
+        let step = if capture.is_some() {
+            // The observed run uses the same bulk CFL safety factor, and
+            // clips its final step to the original physical stop time.
+            let dt = (0.9 * critical_dt(&char_lengths, &sound_speeds) * timestep_scale)
+                .min(model.stop - state.time);
+            driver.step_fixed(&mut state, internal_force, external_force, dt)
+        } else {
+            driver.step(
+                &mut state,
+                internal_force,
+                external_force,
+                &char_lengths,
+                &sound_speeds,
+            )
+        };
+        if let Err(error) = step {
             return Err(format!(
                 "unstable at t = {:.6e}s after {steps} steps: {error}",
                 state.time
@@ -2756,6 +2826,24 @@ fn sonium_repeat(
             }
         }
         steps += 1;
+        if capture.is_some() {
+            times.push(state.time);
+            let wall_forces = wall_force.borrow();
+            for (slot, target) in targets.iter().enumerate() {
+                let value = match *target {
+                    ProbeTarget::Displacement { axis, node } => {
+                        state.positions[3 * node + axis] - reference[3 * node + axis]
+                    }
+                    ProbeTarget::WallForce { axis, wall } => wall_forces[wall][axis],
+                    _ => {
+                        return Err(
+                            "elastic observations require displacement or wall force".into()
+                        );
+                    }
+                };
+                values[slot].push(value);
+            }
+        }
     }
     let wall_s = start.elapsed().as_secs_f64();
     println!(
@@ -2810,6 +2898,15 @@ fn sonium_repeat(
                 continue;
             }
         };
+        if capture.is_some() {
+            // Captured wall-force channels have no benchmark target. Their
+            // actual histories are validated by the independent QA reference.
+            println!(
+                "measured {} [{}]: actual {actual:.6e}",
+                probe.label, probe.channel
+            );
+            continue;
+        }
         println!(
             "probe {} [{}]: actual {actual:.6e}, expected {:.6e}",
             probe.label, probe.channel, probe.expected
@@ -2852,10 +2949,25 @@ fn sonium_repeat(
         .ok()
         .and_then(|nodes| nodes.checked_mul(3))
         .ok_or_else(|| "node count overflows dof".to_string())?;
-    println!(
-        "sonium: wall {wall_s:.3}s, cycles {steps}, dof {dof}, correct {}",
-        failures.is_empty()
-    );
+    if capture.is_some() {
+        println!("native history: wall {wall_s:.3}s, cycles {steps}, dof {dof}");
+    } else {
+        println!(
+            "sonium: wall {wall_s:.3}s, cycles {steps}, dof {dof}, correct {}",
+            failures.is_empty()
+        );
+    }
+    if let Some(capture) = capture {
+        *capture = NativeElasticHistory {
+            probe_channels: probes.iter().map(|p| p.channel.clone()).collect(),
+            times_s: times,
+            probe_values: values,
+            final_time_s: state.time,
+            steps,
+            relative_energy_drift: drift_frac,
+            ..NativeElasticHistory::default()
+        };
+    }
     Ok(RepeatSample {
         wall_s,
         cycles: steps,
@@ -2863,6 +2975,78 @@ fn sonium_repeat(
         peak_rss_bytes: self_peak_rss_bytes(),
         correct: failures.is_empty(),
     })
+}
+
+/// Raw native displacement and contact-force histories for elastic validation.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct NativeElasticHistory {
+    pub probe_channels: Vec<String>,
+    pub times_s: Vec<f64>,
+    pub probe_values: Vec<Vec<f64>>,
+    pub final_time_s: f64,
+    pub steps: u64,
+    pub relative_energy_drift: f64,
+    pub starter_sha256: String,
+    pub engine_deck_sha256: String,
+}
+
+/// Measure the original full elastic sphere squeeze and both wall reactions.
+///
+/// Uses original checked-in decks and actual native elastic/multiplier contact
+/// integration. Benchmark verdicts are not used to establish QA parity.
+///
+/// # Errors
+/// Rejects invalid CFL scale, nonelastic material, integration failures, and
+/// incomplete or nonfinite histories.
+pub fn original_hertz_history(timestep_scale: f64) -> Result<NativeElasticHistory, String> {
+    use sha2::{Digest, Sha256};
+    if !timestep_scale.is_finite() || timestep_scale <= 0.0 || timestep_scale > 1.0 {
+        return Err("native Hertz CFL scale must be in (0,1]".into());
+    }
+    let decks = resolve_c3_decks("hertz_sphere")?;
+    let model = parse_native_model(&decks)?;
+    if !matches!(model.material, NativeMaterial::Law1) {
+        return Err("original elastic Hertz material required".into());
+    }
+    let mut probes = read_probe_file(&decks.probes)?;
+    for wall in [1, 2] {
+        probes.push(Probe {
+            label: format!("wall {wall} force"),
+            channel: format!("FNZ/RWALL/{wall}"),
+            expected: 0.0,
+            abs_tol: 0.0,
+            rel_tol: 0.0,
+        });
+    }
+    let mut history = NativeElasticHistory::default();
+    sonium_repeat_observed(
+        "hertz_sphere",
+        &model,
+        &probes,
+        timestep_scale,
+        Some(&mut history),
+    )?;
+    if history.steps == 0
+        || history.times_s.len() < 2
+        || (history.final_time_s - model.stop).abs() > 1e-12
+        || history.probe_values.len() != probes.len()
+        || history
+            .probe_values
+            .iter()
+            .any(|v| v.len() != history.times_s.len() || v.iter().any(|x| !x.is_finite()))
+        || !history.relative_energy_drift.is_finite()
+    {
+        return Err("incomplete finite original native Hertz history".into());
+    }
+    history.starter_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(decks.starter).map_err(|e| e.to_string())?)
+    );
+    history.engine_deck_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(decks.engine).map_err(|e| e.to_string())?)
+    );
+    Ok(history)
 }
 
 /// Minimum edge length of one brick at the given positions.
@@ -2943,8 +3127,20 @@ fn sonium_repeat_plastic(
 }
 
 /// Complete native plastic observations, independent of benchmark verdicts.
-#[derive(Debug, Default, serde::Serialize)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct NativePlasticityHistory {
+    /// Optional explicitly selected integration formulation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub integration_formulation: Option<String>,
+    /// Explicitly requested bulk execution mode; numerical equations are unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bulk_execution: Option<String>,
+    /// Actual penetrating native self-contact pairs, if explicitly enabled.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub self_contact_peak_pairs: Option<usize>,
+    /// Final normal-spring contact energy; independent of the work ledger.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub final_self_contact_penalty_energy_j: Option<f64>,
     pub probe_channels: Vec<String>,
     pub times_s: Vec<f64>,
     pub probe_values: Vec<Vec<f64>>,
@@ -2965,11 +3161,27 @@ pub struct NativePlasticityHistory {
     /// Final physical coordinates, in the same order as `node_ids`.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub final_positions_m: Vec<[f64; 3]>,
+    /// Requested observation time inside the complete physical run.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_sample_time_s: Option<f64>,
+    /// Physical coordinates interpolated between actual steps at that time.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub profile_sample_positions_m: Vec<[f64; 3]>,
+    /// Actual element plastic strains interpolated at the same observation time.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub profile_sample_element_plastic_strain: Vec<f64>,
 }
 
 #[derive(Debug)]
 struct NativeRunOptions<'a> {
     timestep_scale: f64,
+    penalty_scale: f64,
+    objective: bool,
+    gauss_bbar: bool,
+    parallel_gauss: bool,
+    self_contact:
+        Option<&'a RefCell<sonium_fem::physics::solid::contact::explicit::ExplicitContact>>,
+    profile_sample_time_s: Option<f64>,
     capture: Option<&'a mut NativePlasticityHistory>,
 }
 
@@ -2977,9 +3189,196 @@ impl Default for NativeRunOptions<'_> {
     fn default() -> Self {
         Self {
             timestep_scale: 1.0,
+            penalty_scale: 1.0,
+            objective: false,
+            gauss_bbar: false,
+            parallel_gauss: false,
+            self_contact: None,
+            profile_sample_time_s: None,
             capture: None,
         }
     }
+}
+
+fn native_gauss_parallel() -> Result<bool, String> {
+    match std::env::var("SONIUM_NATIVE_GAUSS_PARALLEL").as_deref() {
+        Ok("1") => Ok(true),
+        Ok("0") | Err(_) => Ok(false),
+        Ok(_) => Err("SONIUM_NATIVE_GAUSS_PARALLEL must be 0 or 1".into()),
+    }
+}
+
+struct GaussBulkStep<'a> {
+    positions: &'a [f64],
+    velocities: &'a [f64],
+    dt: f64,
+    parallel: bool,
+}
+
+// Material histories belong exclusively to their element. Indexed collection
+// preserves element order; the caller scatters forces serially in that order.
+fn gauss_bulk_responses<M: ObjectivePlasticMaterial + Sync>(
+    mesh: &HexMesh,
+    states: &mut [HexGaussPlasticState<M::State>],
+    material: &M,
+    step: &GaussBulkStep<'_>,
+    params: &HexExplicitParams,
+    active: &[bool],
+) -> Result<Vec<Option<Result<HexPlasticOut, HexExplicitError>>>, HexExplicitError>
+where
+    M::State: Send,
+{
+    if states.len() != mesh.conn.len()
+        || active.len() != states.len()
+        || step.positions.len() != 3 * mesh.num_nodes()
+        || step.velocities.len() != step.positions.len()
+    {
+        return Err(HexExplicitError::new(
+            "Gauss bulk states, connectivity and kinematics must align",
+        ));
+    }
+    let update = |(elem, state): (usize, &mut HexGaussPlasticState<M::State>)| {
+        if !active[elem] {
+            return None;
+        }
+        let conn = &mesh.conn[elem];
+        let coordinates =
+            std::array::from_fn(|i| std::array::from_fn(|a| step.positions[3 * conn[i] + a]));
+        let velocity = std::array::from_fn(|i| step.velocities[3 * conn[i / 3] + i % 3]);
+        Some(HexGaussPlasticGeom::new(coordinates).and_then(|geom| {
+            hex_gauss_plastic_forces(&geom, state, material, &velocity, step.dt, params)
+        }))
+    };
+    Ok(if step.parallel {
+        states.par_iter_mut().enumerate().map(update).collect()
+    } else {
+        states.iter_mut().enumerate().map(update).collect()
+    })
+}
+
+/// Measure the original rail's complete LAW1 elastic compression history.
+///
+/// Uses the isotropic C1 elastic stress update through a tabulated adapter whose
+/// unreachable yield limit is checked to remain inactive. Geometry, E/nu/rho,
+/// wall directions, velocities, eligibility groups and duration come from
+/// the original decks. Penalty and timestep refinements are numerical only.
+/// This supplies observations; full plastic crushing is a separate requirement.
+///
+/// # Errors
+/// Rejects invalid options, non-LAW1 decks, failed integration, plasticity,
+/// erosion, nonfinite fields or an incomplete original physical trajectory.
+pub fn rail_elastic_history(
+    directory: &Path,
+    timestep_scale: f64,
+    penalty_scale: f64,
+) -> Result<NativePlasticityHistory, String> {
+    use sha2::{Digest, Sha256};
+
+    if !timestep_scale.is_finite()
+        || !(0.0 < timestep_scale && timestep_scale <= 1.0)
+        || !penalty_scale.is_finite()
+        || penalty_scale < 1.0
+    {
+        return Err("rail elastic requires CFL scale in(0,1] and penalty scale>=1".into());
+    }
+    let decks = C3Decks {
+        starter: directory.join("rail_crush_0000.rad"),
+        engine: directory.join("rail_crush_0001.rad"),
+        probes: directory.join("probes.json"),
+    };
+    let model = parse_native_model(&decks)?;
+    if !matches!(model.material, NativeMaterial::Law1) {
+        return Err("original elastic rail requires LAW1".into());
+    }
+    let probes = read_probe_file(&decks.probes)?;
+    for probe in &probes {
+        resolve_probe_channel(&probe.channel, &model)?;
+    }
+    // LAW1 has no yield surface. This adapter remains elastic even at the
+    // original1% compression; any plastic increment rejects the observation.
+    let material = rail_law1_adapter(model.youngs, model.poisson)?;
+    let initial = model
+        .bricks
+        .iter()
+        .map(|_| HexExplicitState::new(Law36State::new()))
+        .collect();
+    let mut history = NativePlasticityHistory::default();
+    repeat_plastic_core(
+        "rail_crush",
+        &model,
+        &probes,
+        &material,
+        initial,
+        ErosionCriterion {
+            max_equiv_plastic_strain: f64::INFINITY,
+            max_damage: f64::INFINITY,
+            max_porosity: f64::INFINITY,
+            max_tabular_damage: f64::INFINITY,
+        },
+        NativeRunOptions {
+            timestep_scale,
+            penalty_scale,
+            objective: true,
+            capture: Some(&mut history),
+            ..NativeRunOptions::default()
+        },
+    )?;
+    history.times_s.insert(0, 0.0);
+    for values in &mut history.probe_values {
+        values.insert(0, 0.0);
+    }
+    if history.steps == 0
+        || history.times_s.len() < 2
+        || (history.final_time_s - model.stop).abs() > 1e-12
+        || history.eroded_elements != 0
+        || history.final_element_plastic_strain.len() != model.bricks.len()
+        || history
+            .final_element_plastic_strain
+            .iter()
+            .any(|v| *v != 0.0)
+        || history.node_ids.len() != model.coords.len()
+        || history.final_positions_m.len() != model.coords.len()
+        || history.probe_values.len() != probes.len()
+        || history
+            .probe_values
+            .iter()
+            .any(|v| v.len() != history.times_s.len())
+        || history
+            .times_s
+            .iter()
+            .chain(history.probe_values.iter().flatten())
+            .chain(history.final_positions_m.iter().flatten())
+            .any(|v| !v.is_finite())
+        || !history.relative_energy_drift.is_finite()
+    {
+        return Err("complete finite and purely elastic original rail history required".into());
+    }
+    history.starter_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.starter).map_err(|e| e.to_string())?)
+    );
+    history.engine_deck_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.engine).map_err(|e| e.to_string())?)
+    );
+    Ok(history)
+}
+
+fn rail_law1_adapter(youngs: f64, poisson: f64) -> Result<Law36, String> {
+    // Reuse the existing objective tensor-history support. The yield table
+    // only selects the elastic branch; no plastic event may be admitted.
+    let curve = RateCurve::new(0.0, vec![0.0, 1.0], vec![1e20, 1e20], 1.0)
+        .map_err(|e| format!("invalid elastic rail adapter: {e}"))?;
+    Ok(Law36::new(
+        youngs,
+        poisson,
+        vec![curve],
+        0.0,
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::INFINITY,
+        f64::INFINITY,
+    ))
 }
 
 /// Run the original full plastic cylinder and return measured native histories.
@@ -3026,6 +3425,7 @@ pub fn original_thick_cylinder_history(
         NativeRunOptions {
             timestep_scale,
             capture: Some(&mut history),
+            ..NativeRunOptions::default()
         },
     )?;
     // The original initial state is unstressed and at rest. Keep it explicit
@@ -3056,11 +3456,309 @@ pub fn original_thick_cylinder_history(
     Ok(history)
 }
 
+/// Measure the complete free-body hollow rail between both physical platens.
+///
+/// Requires byte-identical checked TYPE7 decks, uses objective eight-point
+/// B-bar LAW36 integration, and applies the actual full-boundary native contact
+/// operator. The explicit numerical penalty scale requires independent
+/// convergence validation. Histories are measurements, not QA admission.
+///
+/// # Errors
+/// Rejects invalid options, modified decks, unsupported contact behavior,
+/// mismatched geometry, incompatible material, failed/incomplete integration,
+/// erosion, nonfinite measurements or excessive force-work ledger drift.
+pub fn rail_plastic_history(
+    directory: &Path,
+    case: &sonium_qa::rad::RadExtendedCase,
+    surfaces: &[sonium_qa::rad::contact_surface::RadSurfSegments],
+    extra: &sonium_qa::rad::RadExtra,
+    timestep_scale: f64,
+    penalty_scale: f64,
+    profile_time_s: Option<f64>,
+) -> Result<NativePlasticityHistory, String> {
+    use sha2::{Digest, Sha256};
+    use sonium_qa::rad::contact_surface::{
+        native_solid_self_contact, write_explicit_solid_contact_starter,
+    };
+    if !timestep_scale.is_finite()
+        || timestep_scale <= 0.0
+        || timestep_scale > 1.0
+        || !penalty_scale.is_finite()
+        || penalty_scale < 1.0
+        || profile_time_s.is_some_and(|t| !t.is_finite() || t <= 0.0 || t > case.base.stop_time_s)
+        || case.base.name != "rail_crush_full_platens"
+        || case.base.stop_time_s != 1.2
+        || !case.base.bcs.is_empty()
+    {
+        return Err("full free-body rail requires original duration, valid CFL/penalty scale and profile time".into());
+    }
+    let starter =
+        write_explicit_solid_contact_starter(case, surfaces, extra).map_err(|e| e.to_string())?;
+    let engine = sonium_qa::rad::write_extended_engine(case);
+    let decks = C3Decks {
+        starter: directory.join(format!("{}_0000.rad", case.base.name)),
+        engine: directory.join(format!("{}_0001.rad", case.base.name)),
+        probes: directory.join("probes.json"),
+    };
+    if std::fs::read(&decks.starter).map_err(|e| e.to_string())? != starter.as_bytes()
+        || std::fs::read(&decks.engine).map_err(|e| e.to_string())? != engine.as_bytes()
+    {
+        return Err("native rail requires byte-identical validated physical decks".into());
+    }
+    // Admit contact cards only after proving their complete typed native
+    // counterpart; the generic benchmark parser remains strict by default.
+    native_solid_self_contact(case, surfaces, extra, 1.0).map_err(|e| e.to_string())?;
+    let model = parse_native_model_with_validated_solid_contact(&decks, true)?;
+    let NativeMaterial::Law36 { material } = &model.material else {
+        return Err("full hollow rail requires the declared LAW36 hardening curve".into());
+    };
+    if model.stop != case.base.stop_time_s
+        || model.walls.len() != 2
+        || model
+            .walls
+            .iter()
+            .any(|wall| wall.slaves.len() != model.coords.len())
+    {
+        return Err("both physical platens must cover every structural rail node".into());
+    }
+    // Use coordinates read from the exact serialized reference deck. This
+    // avoids giving the native arm unrounded, pre-serialization coordinates.
+    let mut serialized_case = case.clone();
+    for (&id, &index) in &model.index_of {
+        serialized_case.base.mesh.nodes[id as usize - 1] = model.coords[index];
+    }
+    let mesh = HexMesh::new(model.coords.clone(), model.bricks.clone());
+    let min_char = (0..model.bricks.len())
+        .map(|e| min_edge_length(&mesh, e))
+        .fold(f64::INFINITY, f64::min);
+    let native = native_solid_self_contact(
+        &serialized_case,
+        surfaces,
+        extra,
+        model.youngs * min_char * penalty_scale,
+    )
+    .map_err(|e| e.to_string())?;
+    if native.coordinates != model.coords
+        || native.bricks != model.bricks
+        || native
+            .node_ids
+            .iter()
+            .enumerate()
+            .any(|(i, &id)| model.index_of.get(&(id as i64)) != Some(&i))
+    {
+        return Err("contact operator and bulk solve must share exact compact geometry".into());
+    }
+    let contact = RefCell::new(native.operator);
+    let probes = (1..=2)
+        .map(|wall| Probe {
+            label: format!("physical platen{wall} axial force"),
+            channel: format!("FNX/RWALL/{wall}"),
+            expected: 0.0,
+            abs_tol: 0.0,
+            rel_tol: 0.0,
+        })
+        .collect::<Vec<_>>();
+    let initial = model
+        .bricks
+        .iter()
+        .map(|_| HexExplicitState::new(Law36State::new()))
+        .collect();
+    let mut history = NativePlasticityHistory::default();
+    repeat_plastic_core(
+        &case.base.name,
+        &model,
+        &probes,
+        material,
+        initial,
+        ErosionCriterion {
+            max_equiv_plastic_strain: f64::INFINITY,
+            max_damage: 1.0,
+            max_porosity: f64::INFINITY,
+            max_tabular_damage: f64::INFINITY,
+        },
+        NativeRunOptions {
+            timestep_scale,
+            penalty_scale,
+            objective: true,
+            gauss_bbar: true,
+            parallel_gauss: native_gauss_parallel()?,
+            self_contact: Some(&contact),
+            profile_sample_time_s: profile_time_s,
+            capture: Some(&mut history),
+        },
+    )?;
+    history.times_s.insert(0, 0.0);
+    for values in &mut history.probe_values {
+        values.insert(0, 0.0);
+    }
+    if history.steps == 0
+        || (history.final_time_s - model.stop).abs() > 1e-12
+        || history.eroded_elements != 0
+        || history.node_ids.len() != model.coords.len()
+        || history.final_positions_m.len() != model.coords.len()
+        || history.final_element_plastic_strain.len() != model.bricks.len()
+        || history.probe_values.len() != 2
+        || history.times_s.len() < 2
+        || history
+            .probe_values
+            .iter()
+            .any(|v| v.len() != history.times_s.len())
+        || history
+            .times_s
+            .iter()
+            .chain(history.probe_values.iter().flatten())
+            .chain(history.final_positions_m.iter().flatten())
+            .chain(&history.final_element_plastic_strain)
+            .chain(history.profile_sample_positions_m.iter().flatten())
+            .chain(&history.profile_sample_element_plastic_strain)
+            .any(|v| !v.is_finite())
+        || !history.relative_energy_drift.is_finite()
+        || history.relative_energy_drift > DRIFT_TOL
+        || history
+            .final_self_contact_penalty_energy_j
+            .is_none_or(|v| !v.is_finite() || v < 0.0)
+        || profile_time_s.is_some_and(|t| {
+            history.profile_sample_time_s != Some(t)
+                || history.profile_sample_positions_m.len() != model.coords.len()
+                || history.profile_sample_element_plastic_strain.len() != model.bricks.len()
+        })
+    {
+        return Err("complete finite full-stroke native rail observations required".into());
+    }
+    history.starter_sha256 = format!("{:x}", Sha256::digest(starter.as_bytes()));
+    history.engine_deck_sha256 = format!("{:x}", Sha256::digest(engine.as_bytes()));
+    Ok(history)
+}
+
+/// Measure full plastic tensile deformation from the explicit necking decks.
+///
+/// Uses the actual native LAW36 material and objective stress integration.
+/// Returns finite observations without admitting placeholder benchmark probes.
+/// A requested profile is interpolated only between actual adjacent steps;
+/// the complete physical trajectory and stop time remain unchanged.
+///
+/// # Errors
+/// Rejects invalid run options, malformed decks, incompatible material,
+/// failed integration, nonfinite observations and incomplete physical profiles.
+pub fn necking_plastic_history(
+    directory: &Path,
+    timestep_scale: f64,
+    profile_time_s: Option<f64>,
+) -> Result<NativePlasticityHistory, String> {
+    use sha2::{Digest, Sha256};
+    let gauss_bbar = match std::env::var("P2_NECKING_FORMULATION").as_deref() {
+        Ok("gauss-bbar") => true,
+        Ok("centroid") | Err(_) => false,
+        Ok(_) => return Err("P2_NECKING_FORMULATION must be centroid or gauss-bbar".into()),
+    };
+    if !timestep_scale.is_finite()
+        || timestep_scale <= 0.0
+        || timestep_scale > 1.0
+        || profile_time_s.is_some_and(|t| !t.is_finite() || t <= 0.0)
+    {
+        return Err("necking requires CFL scale in(0,1] and finite positive profile time".into());
+    }
+    let decks = C3Decks {
+        starter: directory.join("necking_bar_full_plastic_0000.rad"),
+        engine: directory.join("necking_bar_full_plastic_0001.rad"),
+        probes: directory.join("probes.json"),
+    };
+    let model = parse_native_model(&decks)?;
+    if profile_time_s.is_some_and(|t| t > model.stop) {
+        return Err("necking profile exceeds complete physical duration".into());
+    }
+    let probes = read_probe_file(&decks.probes)?;
+    for probe in &probes {
+        resolve_probe_channel(&probe.channel, &model)?;
+    }
+    let NativeMaterial::Law36 { material } = &model.material else {
+        return Err("full necking requires the explicit LAW36 hardening curve".into());
+    };
+    let initial = model
+        .bricks
+        .iter()
+        .map(|_| HexExplicitState::new(Law36State::new()))
+        .collect();
+    let mut history = NativePlasticityHistory::default();
+    repeat_plastic_core(
+        "necking_bar_full_plastic",
+        &model,
+        &probes,
+        material,
+        initial,
+        ErosionCriterion {
+            max_equiv_plastic_strain: f64::INFINITY,
+            max_damage: 1.0,
+            max_porosity: f64::INFINITY,
+            max_tabular_damage: f64::INFINITY,
+        },
+        NativeRunOptions {
+            timestep_scale,
+            objective: true,
+            gauss_bbar,
+            parallel_gauss: gauss_bbar && native_gauss_parallel()?,
+            profile_sample_time_s: profile_time_s,
+            capture: Some(&mut history),
+            ..NativeRunOptions::default()
+        },
+    )?;
+    history.times_s.insert(0, 0.0);
+    for values in &mut history.probe_values {
+        values.insert(0, 0.0);
+    }
+    if history.steps == 0
+        || (history.final_time_s - model.stop).abs() > 1e-12
+        || history.node_ids.len() != model.coords.len()
+        || history.final_positions_m.len() != model.coords.len()
+        || history.final_element_plastic_strain.len() != model.bricks.len()
+        || history.probe_values.len() != probes.len()
+        || history
+            .probe_values
+            .iter()
+            .any(|v| v.len() != history.times_s.len())
+        || history
+            .times_s
+            .iter()
+            .chain(history.probe_values.iter().flatten())
+            .chain(history.final_positions_m.iter().flatten())
+            .chain(&history.final_element_plastic_strain)
+            .any(|v| !v.is_finite())
+        || !history.relative_energy_drift.is_finite()
+    {
+        return Err("incomplete finite native full plastic tensile history".into());
+    }
+    if let Some(time) = profile_time_s
+        && (history.profile_sample_time_s != Some(time)
+            || history.profile_sample_positions_m.len() != model.coords.len()
+            || history.profile_sample_element_plastic_strain.len() != model.bricks.len()
+            || history
+                .profile_sample_positions_m
+                .iter()
+                .flatten()
+                .chain(&history.profile_sample_element_plastic_strain)
+                .any(|v| !v.is_finite()))
+    {
+        return Err("complete finite necking profile at reference time required".into());
+    }
+    history.starter_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.starter).map_err(|e| e.to_string())?)
+    );
+    history.engine_deck_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.engine).map_err(|e| e.to_string())?)
+    );
+    Ok(history)
+}
+
 /// Measure a complete copper Taylor impact from an explicit deck directory.
 ///
 /// The directory must contain `taylor_bar_full_plastic_0000.rad`, its engine
 /// deck, and `probes.json`. Uses the actual native LAW2 integration path and
 /// exports observations; benchmark probe verdicts do not establish QA parity.
+/// `penalty_scale >= 1` refines contact stiffness while tightening the contact
+/// timestep bound consistently. Other benchmark cases keep their default.
+/// `objective` enables the spin-based corotational stress/history update.
 ///
 /// # Errors
 /// Rejects invalid CFL scale, nonplastic material, unresolved probe channels,
@@ -3068,10 +3766,37 @@ pub fn original_thick_cylinder_history(
 pub fn taylor_plastic_history(
     directory: &Path,
     timestep_scale: f64,
+    penalty_scale: f64,
+    objective: bool,
 ) -> Result<NativePlasticityHistory, String> {
+    taylor_plastic_history_sampled(directory, timestep_scale, penalty_scale, objective, None)
+}
+
+/// Measure full Taylor impact with a profile at an exact reference timestamp.
+///
+/// Interpolates only observations between actual adjacent native steps. It does
+/// not change the trajectory, constitutive evolution, full physical stop time,
+/// or benchmark behavior. Coordinates and plastic strains share one time.
+///
+/// # Errors
+/// Rejects invalid sample time, invalid run options, nonplastic material,
+/// incomplete integration and nonfinite profiles.
+pub fn taylor_plastic_history_sampled(
+    directory: &Path,
+    timestep_scale: f64,
+    penalty_scale: f64,
+    objective: bool,
+    profile_sample_time_s: Option<f64>,
+) -> Result<NativePlasticityHistory, String> {
+    if profile_sample_time_s.is_some_and(|t| !t.is_finite() || t <= 0.0) {
+        return Err("native profile sample time must be finite positive".into());
+    }
     use sha2::{Digest, Sha256};
     if !timestep_scale.is_finite() || timestep_scale <= 0.0 || timestep_scale > 1.0 {
         return Err("native CFL timestep scale must be in (0,1]".into());
+    }
+    if !penalty_scale.is_finite() || penalty_scale < 1.0 {
+        return Err("native contact penalty scale must be finite and >=1".into());
     }
     let decks = C3Decks {
         starter: directory.join("taylor_bar_full_plastic_0000.rad"),
@@ -3079,45 +3804,144 @@ pub fn taylor_plastic_history(
         probes: directory.join("probes.json"),
     };
     let model = parse_native_model(&decks)?;
+    if profile_sample_time_s.is_some_and(|t| t > model.stop) {
+        return Err("native profile sample time exceeds complete physical duration".into());
+    }
     let probes = read_probe_file(&decks.probes)?;
     for probe in &probes {
         resolve_probe_channel(&probe.channel, &model)?;
     }
-    let NativeMaterial::Law2 { material, t0, fail_ep } = &model.material else {
+    let NativeMaterial::Law2 {
+        material,
+        t0,
+        fail_ep,
+    } = &model.material
+    else {
         return Err("Taylor impact requires a LAW2 plastic material".into());
     };
-    let initial = model.bricks.iter()
-        .map(|_| HexExplicitState::new(Law2State::new(*t0))).collect();
+    let initial = model
+        .bricks
+        .iter()
+        .map(|_| HexExplicitState::new(Law2State::new(*t0)))
+        .collect();
     let mut history = NativePlasticityHistory::default();
     repeat_plastic_core(
-        "taylor_bar_full_plastic", &model, &probes, material, initial,
+        "taylor_bar_full_plastic",
+        &model,
+        &probes,
+        material,
+        initial,
         ErosionCriterion {
             max_equiv_plastic_strain: *fail_ep,
             max_damage: 1.0,
             max_porosity: f64::INFINITY,
             max_tabular_damage: f64::INFINITY,
         },
-        NativeRunOptions { timestep_scale, capture: Some(&mut history) },
+        NativeRunOptions {
+            timestep_scale,
+            penalty_scale,
+            objective,
+            gauss_bbar: false,
+            parallel_gauss: false,
+            self_contact: None,
+            profile_sample_time_s,
+            capture: Some(&mut history),
+        },
     )?;
     history.times_s.insert(0, 0.0);
-    for values in &mut history.probe_values { values.insert(0, 0.0); }
-    if history.steps == 0 || history.times_s.len() < 2
+    for values in &mut history.probe_values {
+        values.insert(0, 0.0);
+    }
+    if history.steps == 0
+        || history.times_s.len() < 2
         || history.probe_values.len() != probes.len()
         || (history.final_time_s - model.stop).abs() > 1e-12
-        || history.probe_values.iter().any(|v| v.len() != history.times_s.len()
-            || v.iter().any(|x| !x.is_finite()))
+        || history
+            .probe_values
+            .iter()
+            .any(|v| v.len() != history.times_s.len() || v.iter().any(|x| !x.is_finite()))
         || history.final_positions_m.len() != model.coords.len()
-        || history.final_positions_m.iter().flatten().any(|x| !x.is_finite())
-        || history.final_element_plastic_strain.iter().any(|x| !x.is_finite())
+        || history
+            .final_positions_m
+            .iter()
+            .flatten()
+            .any(|x| !x.is_finite())
+        || history
+            .final_element_plastic_strain
+            .iter()
+            .any(|x| !x.is_finite())
         || !history.relative_energy_drift.is_finite()
     {
         return Err("incomplete finite native Taylor impact history".into());
     }
-    history.starter_sha256 = format!("{:x}", Sha256::digest(
-        std::fs::read(&decks.starter).map_err(|e| e.to_string())?));
-    history.engine_deck_sha256 = format!("{:x}", Sha256::digest(
-        std::fs::read(&decks.engine).map_err(|e| e.to_string())?));
+    if let Some(time) = profile_sample_time_s
+        && (history.profile_sample_time_s != Some(time)
+            || history.profile_sample_positions_m.len() != model.coords.len()
+            || history.profile_sample_element_plastic_strain.len() != model.bricks.len()
+            || history
+                .profile_sample_positions_m
+                .iter()
+                .flatten()
+                .chain(&history.profile_sample_element_plastic_strain)
+                .any(|x| !x.is_finite()))
+    {
+        return Err("complete finite matching-time native profile required".into());
+    }
+    history.starter_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.starter).map_err(|e| e.to_string())?)
+    );
+    history.engine_deck_sha256 = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(&decks.engine).map_err(|e| e.to_string())?)
+    );
     Ok(history)
+}
+
+// Interpolate actual adjacent observations; reject ragged or extrapolated data.
+fn interpolate_plastic_profile(
+    time: f64,
+    before_time: f64,
+    before_positions: &[f64],
+    before_plastic: &[f64],
+    after_time: f64,
+    after_positions: &[f64],
+    after_plastic: &[f64],
+) -> Result<(Vec<[f64; 3]>, Vec<f64>), String> {
+    if !time.is_finite()
+        || !before_time.is_finite()
+        || !after_time.is_finite()
+        || after_time <= before_time
+        || time < before_time
+        || time > after_time
+        || before_positions.len() != after_positions.len()
+        || before_positions.is_empty()
+        || !before_positions.len().is_multiple_of(3)
+        || before_plastic.len() != after_plastic.len()
+        || before_plastic.is_empty()
+        || before_positions
+            .iter()
+            .chain(after_positions)
+            .chain(before_plastic)
+            .chain(after_plastic)
+            .any(|v| !v.is_finite())
+    {
+        return Err("aligned finite bracketing physical profile required; no extrapolation".into());
+    }
+    let weight = (time - before_time) / (after_time - before_time);
+    let positions = before_positions
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .zip(after_positions.as_chunks::<3>().0)
+        .map(|(a, b)| std::array::from_fn(|j| a[j] * (1.0 - weight) + b[j] * weight))
+        .collect();
+    let plastic = before_plastic
+        .iter()
+        .zip(after_plastic)
+        .map(|(a, b)| a * (1.0 - weight) + b * weight)
+        .collect();
+    Ok((positions, plastic))
 }
 
 /// Generic plastic repeat: fixed-step CFL loop over
@@ -3125,7 +3949,7 @@ pub fn taylor_plastic_history(
 /// validated Taylor-plastic leg driver (fixed stepping threads the
 /// true step rate into the flow stress; per-step edge lengths keep
 /// the CFL bound honest under large deformation).
-fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
+fn repeat_plastic_core<M: ObjectivePlasticMaterial + Sync>(
     deck: &str,
     model: &NativeModel,
     probes: &[Probe],
@@ -3133,7 +3957,29 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     initial: Vec<HexExplicitState<M::State>>,
     criterion: ErosionCriterion,
     options: NativeRunOptions<'_>,
-) -> Result<RepeatSample, String> {
+) -> Result<RepeatSample, String>
+where
+    M::State: Send,
+{
+    let capture_profile = options.capture.is_some()
+        && matches!(
+            deck,
+            "taylor_bar_full_plastic"
+                | "necking_bar_full_plastic"
+                | "rail_crush"
+                | "rail_crush_full_platens"
+        );
+    // Full one-second tension needs millions of physical contact-resolution
+    // steps,including the independent half-CFL study and mesh refinements.
+    // Only this explicit diagnostic gets more runtime; mass,CFL and duration
+    // are unchanged,and every other benchmark keeps its original step guard.
+    let step_budget = if capture_profile
+        && matches!(deck, "necking_bar_full_plastic" | "rail_crush_full_platens")
+    {
+        8 * MAX_NATIVE_STEPS
+    } else {
+        MAX_NATIVE_STEPS
+    };
     let mesh = HexMesh::new(model.coords.clone(), model.bricks.clone());
     let num_nodes = mesh.num_nodes();
     let num_elems = mesh.conn.len();
@@ -3170,7 +4016,11 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
         // dt <= 2*sqrt(m/k) is stable but chatters (force zero most
         // steps, rare spikes, low plateau mean); omega dt = 0.2 holds
         // persistent contact and the pilot mean matches the engine.
-        let penalty = suggested_penalty(model.youngs, min_char, PLASTIC_PENALTY_FACTOR);
+        let penalty = suggested_penalty(
+            model.youngs,
+            min_char,
+            PLASTIC_PENALTY_FACTOR * options.penalty_scale,
+        );
         0.1 * 2.0 * (min_mass / penalty).sqrt()
     };
     let dt_max = dt_max * options.timestep_scale;
@@ -3178,9 +4028,9 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
         return Err("native dt bound is not positive".to_string());
     }
     let estimated = (model.stop / dt_max).ceil() as u64;
-    if estimated > MAX_NATIVE_STEPS {
+    if estimated > step_budget {
         return Err(format!(
-            "native run needs about {estimated} steps (stop {}s, dt_max {dt_max:.3e}s): quasi-static timescale deferred (needs implicit or mass-scaling support)",
+            "native run needs about {estimated} steps (stop {}s, dt_max {dt_max:.3e}s),exceeding diagnostic step budget {step_budget}",
             model.stop
         ));
     }
@@ -3210,7 +4060,38 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     // C1-smooth at zero rate (no kink) and stays on for shock capturing;
     // Taylor impact probes pass identically either way.
     params.bulk_c1 = 0.0;
+    let gauss_states = RefCell::new(if options.gauss_bbar {
+        initial
+            .iter()
+            .map(|s| HexGaussPlasticState::new(s.centroid.clone()))
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    });
     let states = RefCell::new(initial);
+    let material_error = RefCell::new(None::<String>);
+    let center_ep = |elem: usize| {
+        if options.gauss_bbar {
+            gauss_states.borrow()[elem].center_features(material).0
+        } else {
+            material.erosion_features(&states.borrow()[elem].centroid).0
+        }
+    };
+    let center_stress = |elem: usize| -> [f64; 6] {
+        if options.gauss_bbar {
+            let points = gauss_states.borrow();
+            let mut mean = [0.0; 6];
+            for point in &points[elem].points {
+                for (value, stress) in mean.iter_mut().zip(M::centroid_stress(point)) {
+                    *value += stress / 8.0;
+                }
+            }
+            mean
+        } else {
+            M::centroid_stress(&states.borrow()[elem].centroid)
+        }
+    };
+    let plastic_values = || (0..num_elems).map(&center_ep).collect::<Vec<_>>();
     let erosion = RefCell::new(ErosionSet::new(num_elems));
     let step_dt = RefCell::new(dt_max);
     let max_ep = RefCell::new(0.0f64);
@@ -3227,11 +4108,16 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     }
     state.masses.copy_from_slice(&masses);
     let reference: Vec<f64> = state.positions.clone();
-    let penalty = suggested_penalty(model.youngs, min_char, PLASTIC_PENALTY_FACTOR);
+    let penalty = suggested_penalty(
+        model.youngs,
+        min_char,
+        PLASTIC_PENALTY_FACTOR * options.penalty_scale,
+    );
     let stride = ((estimated / MAX_FORCE_SAMPLES as u64).max(1)) as usize;
     // Dashpot energy dissipated over the run (stabilization footprint;
     // wall-force probes read the penalty spring alone, leg precedent).
     let damp_dissipated = RefCell::new(0.0f64);
+    let self_contact_peak_pairs = RefCell::new(0usize);
 
     let internal_force = |positions: &[f64], velocities: &[f64], _: f64| {
         let dt = *step_dt.borrow();
@@ -3239,6 +4125,33 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
         let mut states = states.borrow_mut();
         let mut erosion = erosion.borrow_mut();
         let mut features = Vec::with_capacity(num_elems);
+        let mut gauss_responses = if options.gauss_bbar {
+            let active = (0..num_elems)
+                .map(|e| erosion.is_active(e))
+                .collect::<Vec<_>>();
+            let response = gauss_bulk_responses(
+                &mesh,
+                &mut gauss_states.borrow_mut(),
+                material,
+                &GaussBulkStep {
+                    positions,
+                    velocities,
+                    dt,
+                    parallel: options.parallel_gauss,
+                },
+                &params,
+                &active,
+            );
+            match response {
+                Ok(responses) => responses,
+                Err(error) => {
+                    *material_error.borrow_mut() = Some(error.to_string());
+                    return vec![f64::NAN; positions.len()];
+                }
+            }
+        } else {
+            Vec::new()
+        };
         for (elem, conn) in mesh.conn.iter().enumerate() {
             if !erosion.is_active(elem) {
                 features.push((0.0, 0.0, 0.0));
@@ -3252,20 +4165,43 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
                     positions[3 * node + 2],
                 ];
             }
-            let geom = match HexExplicitGeom::new(elem_coords) {
-                Ok(geom) => geom,
-                Err(_) => {
-                    features.push((f64::INFINITY, 0.0, 0.0));
-                    continue;
-                }
-            };
             let mut vel = [0.0; 24];
             for (slot, node) in conn.iter().enumerate() {
                 vel[slot * 3] = velocities[3 * node];
                 vel[slot * 3 + 1] = velocities[3 * node + 1];
                 vel[slot * 3 + 2] = velocities[3 * node + 2];
             }
-            match hex_plastic_forces(&geom, &mut states[elem], material, &vel, dt, &params) {
+            let response = if options.gauss_bbar {
+                let response = gauss_responses[elem]
+                    .take()
+                    .expect("active element has Gauss response");
+                if let Err(error) = &response {
+                    *material_error.borrow_mut() = Some(format!("element{elem}: {error}"));
+                    return vec![f64::NAN; positions.len()];
+                }
+                response
+            } else {
+                let geom = match HexExplicitGeom::new(elem_coords) {
+                    Ok(geom) => geom,
+                    Err(_) => {
+                        features.push((f64::INFINITY, 0.0, 0.0));
+                        continue;
+                    }
+                };
+                if options.objective {
+                    hex_plastic_forces_objective(
+                        &geom,
+                        &mut states[elem],
+                        material,
+                        &vel,
+                        dt,
+                        &params,
+                    )
+                } else {
+                    hex_plastic_forces(&geom, &mut states[elem], material, &vel, dt, &params)
+                }
+            };
+            match response {
                 Ok(out) => {
                     for (slot, node) in conn.iter().enumerate() {
                         forces[3 * node] -= out.base.forces[slot * 3];
@@ -3282,6 +4218,13 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
             }
         }
         erosion.sweep(&criterion, &features);
+        if let Some(contact) = options.self_contact {
+            let pairs = contact
+                .borrow_mut()
+                .apply_with_pairs(positions, velocities, &mut forces);
+            let mut peak = self_contact_peak_pairs.borrow_mut();
+            *peak = (*peak).max(pairs.len());
+        }
         for (node, axes) in model.pinned.iter().enumerate() {
             for axis in 0..3 {
                 if axes[axis] {
@@ -3344,8 +4287,8 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     // The thick-cylinder engine leg samples its displacement probes at
     // transient times (50 MPa crossing, outer transit) and its stress
     // probes as trailing means, so the native arm records per-step
-    // histories for those targets; every other deck keeps final-state
-    // sampling and skips the recording.
+    // histories for those targets. Explicit observation requests also record
+    // traces; other benchmark decks keep their original final-state sampling.
     let record_histories = deck == "plasticity_thick_cylinder" || options.capture.is_some();
     let targets: Vec<Option<ProbeTarget>> = if record_histories {
         probes
@@ -3357,14 +4300,17 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
     };
     let mut probe_times: Vec<f64> = Vec::new();
     let mut probe_values: Vec<Vec<f64>> = vec![Vec::new(); targets.len()];
+    let mut sampled_profile: Option<(f64, Vec<[f64; 3]>, Vec<f64>)> = None;
+    // Reuse the observation buffer; it never enters the physical force closure.
+    let mut reaction_scratch = vec![0.0; state.positions.len()];
     let start = std::time::Instant::now();
     let mut steps: u64 = 0;
     let mut dt_last = dt_max;
     let mut sampled: Vec<Vec<(f64, [f64; 3])>> = vec![Vec::new(); model.walls.len()];
     while state.time < model.stop {
-        if steps >= MAX_NATIVE_STEPS {
+        if steps >= step_budget {
             return Err(format!(
-                "stalled: {MAX_NATIVE_STEPS} steps reached at t = {:.6e}s, short of stop {:.6e}s",
+                "stalled: {step_budget} steps reached at t = {:.6e}s, short of stop {:.6e}s",
                 state.time, model.stop
             ));
         }
@@ -3401,6 +4347,18 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
             .collect();
         let dt_crit = critical_dt(&char_now, &sound_speeds);
         let mut dt = (0.9 * dt_crit).min(dt_max).min(1.1 * dt_last);
+        if let Some(contact) = options.self_contact {
+            let bound = contact
+                .borrow()
+                .normal_stiffness_mass_bound(&state.positions, &masses)
+                .map_err(|error| format!("contact timestep bound rejected: {error}"))?;
+            if bound > 0.0 {
+                // Resolve nearby normal contact before penetration. Frozen
+                // projection stiffness supplements, rather than replaces,
+                // the physical bulk and rigid-wall timestep bounds.
+                dt = dt.min(0.2 / bound.sqrt());
+            }
+        }
         dt = dt.min(model.stop - state.time).max(1.0e-12);
         if !dt.is_finite() || dt <= 0.0 {
             return Err(format!(
@@ -3408,29 +4366,64 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
                 state.time
             ));
         }
+        // Copy one bracketing state only when the requested output is crossed.
+        // Observation never changes dt or any constitutive/integrator state.
+        let before_profile = options
+            .profile_sample_time_s
+            .filter(|time| {
+                sampled_profile.is_none() && state.time <= *time && *time <= state.time + dt
+            })
+            .map(|time| (time, state.time, state.positions.clone(), plastic_values()));
         *step_dt.borrow_mut() = dt;
         if let Err(error) = driver.step_fixed(&mut state, internal_force, external_force, dt) {
             return Err(format!(
-                "unstable at t = {:.6e}s after {steps} steps: {error}",
-                state.time
+                "unstable at t = {:.6e}s after {steps} steps: {error};material error {:?}",
+                state.time,
+                material_error.borrow().as_ref()
             ));
+        }
+        if let Some((time, before_time, before_positions, before_plastic)) = before_profile {
+            let after_plastic = plastic_values();
+            let (positions, plastic) = interpolate_plastic_profile(
+                time,
+                before_time,
+                &before_positions,
+                &before_plastic,
+                state.time,
+                &state.positions,
+                &after_plastic,
+            )?;
+            sampled_profile = Some((time, positions, plastic));
         }
         dt_last = dt;
         steps += 1;
+        if capture_profile && steps.is_multiple_of(100_000) {
+            println!(
+                "Native {deck} progress: physical_time={:.9e}s/{:.9e}s,steps={steps},wall={:.3}s,max_ep={:.6e},self_contact_peak_pairs={}",
+                state.time,
+                model.stop,
+                start.elapsed().as_secs_f64(),
+                *max_ep.borrow(),
+                *self_contact_peak_pairs.borrow(),
+            );
+        }
         if record_histories {
             probe_times.push(state.time);
-            let snapshots = states.borrow();
             for (slot, target) in targets.iter().copied().enumerate() {
                 let value = match target {
                     Some(ProbeTarget::Displacement { axis, node }) => {
                         state.positions[3 * node + axis] - reference[3 * node + axis]
                     }
-                    Some(ProbeTarget::ElemStress { comp, elem }) => {
-                        M::centroid_stress(&snapshots[elem].centroid)[comp]
-                    }
-                    Some(ProbeTarget::ElemPlas { elem }) => {
-                        material.erosion_features(&snapshots[elem].centroid).0
-                    }
+                    Some(ProbeTarget::ElemStress { comp, elem }) => center_stress(elem)[comp],
+                    Some(ProbeTarget::ElemPlas { elem }) => center_ep(elem),
+                    Some(ProbeTarget::WallForce { axis, wall }) => wall_reaction(
+                        &model.walls[wall],
+                        state.time,
+                        penalty,
+                        &state.positions,
+                        &state.velocities,
+                        &mut reaction_scratch,
+                    )[axis],
                     _ => f64::NAN,
                 };
                 probe_values[slot].push(value);
@@ -3492,14 +4485,8 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
                     window.iter().map(|(_, force)| force[axis]).sum::<f64>() / window.len() as f64
                 }
             }
-            ProbeTarget::ElemStress { comp, elem } => {
-                let states = states.borrow();
-                M::centroid_stress(&states[elem].centroid)[comp]
-            }
-            ProbeTarget::ElemPlas { elem } => {
-                let states = states.borrow();
-                material.erosion_features(&states[elem].centroid).0
-            }
+            ProbeTarget::ElemStress { comp, elem } => center_stress(elem)[comp],
+            ProbeTarget::ElemPlas { elem } => center_ep(elem),
         };
         if let (Some((t_elastic, t_outer)), Some(values)) = (sample_times, probe_values.get(index))
         {
@@ -3511,6 +4498,15 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
             if let Some(value) = sampled.filter(|value| value.is_finite()) {
                 actual = value;
             }
+        }
+        if capture_profile {
+            // Full Taylor diagnostic targets are placeholders; independent
+            // reference comparisons consume the actual exported measurements.
+            println!(
+                "measured {} [{}]: actual {actual:.6e}",
+                probe.label, probe.channel
+            );
+            continue;
         }
         println!(
             "probe {} [{}]: actual {actual:.6e}, expected {:.6e}",
@@ -3558,12 +4554,42 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
         .ok()
         .and_then(|nodes| nodes.checked_mul(3))
         .ok_or_else(|| "node count overflows dof".to_string())?;
-    println!(
-        "sonium: wall {wall_s:.3}s, cycles {steps}, dof {dof}, correct {}",
-        failures.is_empty()
-    );
+    if capture_profile {
+        println!("native history: wall {wall_s:.3}s, cycles {steps}, dof {dof}");
+    } else {
+        println!(
+            "sonium: wall {wall_s:.3}s, cycles {steps}, dof {dof}, correct {}",
+            failures.is_empty()
+        );
+    }
+    let (profile_sample_time_s, profile_sample_positions_m, profile_sample_element_plastic_strain) =
+        match sampled_profile {
+            Some((time, positions, plastic)) => (Some(time), positions, plastic),
+            None => (None, Vec::new(), Vec::new()),
+        };
     if let Some(capture) = options.capture {
+        let final_contact_energy = options.self_contact.map(|contact| {
+            let mut scratch = vec![0.0; state.positions.len()];
+            let mut contact = contact.borrow_mut();
+            let stiffness = contact.config().penalty;
+            contact
+                .apply_with_pairs(&state.positions, &state.velocities, &mut scratch)
+                .iter()
+                .map(|pair| 0.5 * stiffness * pair.gap * pair.gap)
+                .sum()
+        });
         *capture = NativePlasticityHistory {
+            integration_formulation: options.gauss_bbar.then(|| "gauss-bbar".into()),
+            bulk_execution: (options.gauss_bbar && options.parallel_gauss).then(|| {
+                format!(
+                    "rayon:{};ordered-force-scatter",
+                    rayon::current_num_threads()
+                )
+            }),
+            self_contact_peak_pairs: options
+                .self_contact
+                .map(|_| *self_contact_peak_pairs.borrow()),
+            final_self_contact_penalty_energy_j: final_contact_energy,
             probe_channels: probes.iter().map(|p| p.channel.clone()).collect(),
             times_s: probe_times,
             probe_values,
@@ -3574,11 +4600,7 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
                 }
                 ids
             },
-            final_element_plastic_strain: states
-                .borrow()
-                .iter()
-                .map(|s| material.erosion_features(&s.centroid).0)
-                .collect(),
+            final_element_plastic_strain: plastic_values(),
             final_time_s: state.time,
             steps,
             kinetic_energy_j: balance.kinetic,
@@ -3586,14 +4608,31 @@ fn repeat_plastic_core<M: ExplicitPlasticMaterial>(
             external_work_j: balance.external_work,
             relative_energy_drift: drift_frac,
             eroded_elements: eroded,
-            node_ids: if deck == "taylor_bar_full_plastic" {
+            node_ids: if capture_profile {
                 let mut ids = vec![0; num_nodes];
-                for (&id, &index) in &model.index_of { ids[index] = id; }
+                for (&id, &index) in &model.index_of {
+                    ids[index] = id;
+                }
                 ids
-            } else { Vec::new() },
-            final_positions_m: if deck == "taylor_bar_full_plastic" {
-                state.positions.chunks_exact(3).map(|p| [p[0], p[1], p[2]]).collect()
-            } else { Vec::new() },
+            } else {
+                Vec::new()
+            },
+            final_positions_m: if capture_profile {
+                (0..num_nodes)
+                    .map(|node| {
+                        [
+                            state.positions[3 * node],
+                            state.positions[3 * node + 1],
+                            state.positions[3 * node + 2],
+                        ]
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            },
+            profile_sample_time_s,
+            profile_sample_positions_m,
+            profile_sample_element_plastic_strain,
             ..NativePlasticityHistory::default()
         };
     }
@@ -3838,8 +4877,152 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn gauss_bulk_parallel_preserves_evolving_plastic_histories_and_force_order() {
+        use std::time::{Duration, Instant};
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap();
+        let mesh = HexMesh::brick(10, 8, 7, [0.0; 3], [0.2, 0.05, 0.05]);
+        let curve =
+            RateCurve::new(0.0, vec![0.0, 0.1, 1.0], vec![250e6, 350e6, 550e6], 1.0).unwrap();
+        let material = Law36::new(200e9, 0.3, vec![curve], 0.0, 1e30, 1e30, 2e30, 1e30);
+        let params = HexExplicitParams::new(7800.0, 5000.0);
+        let mut serial = vec![HexGaussPlasticState::new(Law36State::new()); mesh.conn.len()];
+        let mut parallel = serial.clone();
+        let mut active = vec![true; mesh.conn.len()];
+        active[17] = false;
+        let mut positions = mesh.coords.iter().flatten().copied().collect::<Vec<_>>();
+        let mut serial_time = Duration::ZERO;
+        let mut parallel_time = Duration::ZERO;
+        for _ in 0..80 {
+            let velocities = positions
+                .chunks_exact(3)
+                .flat_map(|p| {
+                    // Uniaxial extension with Poisson contraction and rigid spin.
+                    [
+                        0.05 * p[0] - 0.3 * p[1],
+                        0.3 * p[0] - 0.015 * p[1],
+                        -0.015 * p[2],
+                    ]
+                })
+                .collect::<Vec<_>>();
+            for (p, v) in positions.iter_mut().zip(&velocities) {
+                *p += 1e-3 * v;
+            }
+            let mut step = GaussBulkStep {
+                positions: &positions,
+                velocities: &velocities,
+                dt: 1e-3,
+                parallel: false,
+            };
+            let start = Instant::now();
+            let a = gauss_bulk_responses(&mesh, &mut serial, &material, &step, &params, &active)
+                .unwrap();
+            serial_time += start.elapsed();
+            step.parallel = true;
+            let start = Instant::now();
+            let b = pool
+                .install(|| {
+                    gauss_bulk_responses(&mesh, &mut parallel, &material, &step, &params, &active)
+                })
+                .unwrap();
+            parallel_time += start.elapsed();
+            for (i, (a, b)) in a.into_iter().zip(b).enumerate() {
+                if !active[i] {
+                    assert!(a.is_none() && b.is_none());
+                    continue;
+                }
+                let (a, b) = (a.unwrap().unwrap(), b.unwrap().unwrap());
+                for (x, y) in a.base.forces.iter().zip(b.base.forces) {
+                    assert_eq!(x.to_bits(), y.to_bits());
+                }
+                assert_eq!(a.features, b.features);
+            }
+            for (a, b) in serial.iter().zip(&parallel) {
+                for (a, b) in a.points.iter().zip(&b.points) {
+                    for (x, y) in a
+                        .stress
+                        .iter()
+                        .chain(&a.back_stress)
+                        .chain(&a.plastic)
+                        .chain([&a.equiv_plastic_strain, &a.tensile_scale])
+                        .zip(
+                            b.stress
+                                .iter()
+                                .chain(&b.back_stress)
+                                .chain(&b.plastic)
+                                .chain([&b.equiv_plastic_strain, &b.tensile_scale]),
+                        )
+                    {
+                        assert_eq!(x.to_bits(), y.to_bits());
+                    }
+                    assert_eq!(
+                        (a.ruptured, a.deleted, a.yielding),
+                        (b.ruptured, b.deleted, b.yielding)
+                    );
+                }
+            }
+        }
+        assert!(
+            serial
+                .iter()
+                .any(|e| e.points.iter().any(|s| s.equiv_plastic_strain > 0.0))
+        );
+        assert!(
+            serial[17]
+                .points
+                .iter()
+                .all(|s| s.equiv_plastic_strain == 0.0 && s.stress == [0.0; 6])
+        );
+        println!(
+            "Gauss bulk 560-element/80-step timing: serial_ms={}, parallel8_ms={}, speedup={}",
+            serial_time.as_secs_f64() * 1e3,
+            parallel_time.as_secs_f64() * 1e3,
+            serial_time.as_secs_f64() / parallel_time.as_secs_f64()
+        );
+    }
+
+    #[test]
+    fn rail_law1_adapter_has_original_uniaxial_stress_without_yield() {
+        use sonium_fem::physics::solid::plasticity::StressUpdateModel;
+        let material = super::rail_law1_adapter(200e9, 0.3).unwrap();
+        let out = material.update(
+            &super::Law36State::new(),
+            &[-0.01, 0.003, 0.003, 0.0, 0.0, 0.0],
+        );
+        assert_eq!(out.delta_equiv_plastic_strain, 0.0);
+        assert!((out.stress[0] + 2e9).abs() < 1e-6);
+        assert!(out.stress[1..].iter().all(|v| v.abs() < 1e-6));
+    }
     use super::*;
     use sonium_fem::physics::solid::nonlinear_solid::q1_element_residual;
+
+    #[test]
+    fn wall_history_observation_tracks_moving_plane_and_action_reaction() {
+        let wall = NativeWall {
+            number: 1,
+            point: [0.0; 3],
+            normal: [1.0, 0.0, 0.0],
+            velocity: [0.25, 0.0, 0.0],
+            slaves: vec![0],
+        };
+        let positions = [0.1, 0.0, 0.0];
+        let velocities = [0.0; 3];
+        let mut scratch = [99.0; 3];
+        assert_eq!(
+            wall_reaction(&wall, 0.0, 1000.0, &positions, &velocities, &mut scratch),
+            [0.0; 3]
+        );
+        let reaction = wall_reaction(&wall, 0.8, 1000.0, &positions, &velocities, &mut scratch);
+        assert!((reaction[0] + 100.0).abs() < 1e-12);
+        for axis in 0..3 {
+            assert_eq!(reaction[axis], -scratch[axis]);
+        }
+        assert_eq!(positions, [0.1, 0.0, 0.0]);
+        assert_eq!(velocities, [0.0; 3]);
+    }
 
     fn args_with(side: SideOpt, sonium_only: bool, engine_only: bool) -> Args {
         Args {
@@ -3862,6 +5045,20 @@ mod tests {
     }
 
     #[cfg(target_os = "linux")]
+    #[test]
+    fn physical_profile_interpolation_uses_one_time_and_rejects_bad_evidence() {
+        let a = [0.0, 1.0, 2.0];
+        let b = [4.0, 5.0, 6.0];
+        let (p, ep) = interpolate_plastic_profile(3.0, 2.0, &a, &[0.1], 6.0, &b, &[0.5]).unwrap();
+        assert_eq!(p, vec![[1.0, 2.0, 3.0]]);
+        assert!((ep[0] - 0.2).abs() < 1e-15);
+        for time in [1.0, 7.0, f64::NAN, f64::INFINITY] {
+            assert!(interpolate_plastic_profile(time, 2.0, &a, &[0.1], 6.0, &b, &[0.5]).is_err());
+        }
+        assert!(interpolate_plastic_profile(3.0, 2.0, &a, &[0.1], 6.0, &b[..2], &[0.5]).is_err());
+        assert!(interpolate_plastic_profile(3.0, 2.0, &a, &[0.1], 6.0, &b, &[f64::NAN]).is_err());
+    }
+
     #[test]
     fn vmhwm_parse_reads_peak_kib() {
         let status = "Name:\tqa-oc-bench\nVmRSS:\t    3000 kB\nVmHWM:\t    80896 kB\nThreads:\t1\n";

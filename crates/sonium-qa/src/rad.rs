@@ -27,6 +27,10 @@
 
 // Rust guideline compliant 2026-02-21
 
+/// Checked explicit contact surfaces for shell and solid reference fixtures.
+#[path = "rad_contact_surface.rs"]
+pub mod contact_surface;
+
 /// Structured admission and results for the original native parity gates.
 #[path = "rad_gate.rs"]
 pub mod gate;
@@ -2690,10 +2694,11 @@ fn ramp_hold_function() -> RadFunction {
 ///
 /// A full-roof QEPH model (R = 25, L = 50, t = 0.25) with diaphragm
 /// ends carries self weight through `/GRAV`. The free-edge midspan
-/// probe is a REGRESSION baseline (-0.2574), not the MacNeal target
-/// (-0.3024): the settled engine answer sits 15% stiff across every
-/// formulation/mesh/material variant tried, while in-process MITC4
-/// converges to the target. See the probe comment for the evidence.
+/// probe uses a full-load nonlinear regression baseline (-0.2574).
+/// The published MacNeal target (-0.3024) is a separate linear-accuracy
+/// reference. Matching the nonlinear regression does not prove linear
+/// accuracy or matching native parity. Controlled load-sensitivity runs
+/// prevent attributing the difference to locking from this probe alone.
 pub fn shell_scordelis_lo_case() -> RadExtendedCase {
     // 32x32 with a slow ramp; the hold average is the settled static.
     let mesh = scordelis_lo_shell_mesh(32, 32);
@@ -2745,12 +2750,12 @@ pub fn shell_scordelis_lo_case() -> RadExtendedCase {
         th_nodes: vec![mesh.probe_node],
         probes: vec![
             RadProbe {
-                // REGRESSION (not validation): the settled engine answer is
-                // -0.2574 across QEPH/BATOZ, meshes 16-48, Ismstr 1/2, and
-                // LAW1/LAW2, while MITC4 and the MacNeal target agree at
-                // -0.3024. The engine's flat-facet quads lock on this
-                // membrane-dominated curved benchmark; sonium-fem is
-                // authoritative here and the engine leg tracks drift only.
+                // Nonlinear engine regression only. A controlled original
+                // QEPH32 full8s run at1% gravity gives normalized DY=-.305846,
+                // while full gravity gives about-.2574. The published linear
+                // target is-.3024; its accuracy and full-load native parity
+                // require separate evidence. Do not label this difference
+                // as shell locking or use regression agreement as validation.
                 label: "free edge mid DY".to_string(),
                 channel: format!("DY/{}", mesh.probe_node),
                 expected: -0.2574,
@@ -5617,9 +5622,22 @@ impl RadExtra {
     ///
     /// Returns [`RadError::Parse`] for the first inconsistency found.
     pub fn validate(&self, ctx: &RadExtraContext) -> Result<(), RadError> {
+        self.validate_with_surface_ids(ctx, &[])
+    }
+
+    fn validate_with_surface_ids(
+        &self,
+        ctx: &RadExtraContext,
+        segment_surface_ids: &[usize],
+    ) -> Result<(), RadError> {
         check_ids_unique(
-            &self.surfs.iter().map(|surf| surf.id).collect::<Vec<_>>(),
-            "/SURF/PART",
+            &self
+                .surfs
+                .iter()
+                .map(|surf| surf.id)
+                .chain(segment_surface_ids.iter().copied())
+                .collect::<Vec<_>>(),
+            "/SURF",
         )?;
         check_ids_unique(
             &self.grnods.iter().map(|group| group.id).collect::<Vec<_>>(),
@@ -5677,7 +5695,12 @@ impl RadExtra {
         prop_ids.extend(self.spring_props.iter().map(|prop| prop.id));
         prop_ids.extend(self.injectors.iter().map(|inject| inject.id));
         check_ids_unique(&prop_ids, "extra /PROP")?;
-        let surf_ids: Vec<usize> = self.surfs.iter().map(|surf| surf.id).collect();
+        let surf_ids: Vec<usize> = self
+            .surfs
+            .iter()
+            .map(|surf| surf.id)
+            .chain(segment_surface_ids.iter().copied())
+            .collect();
         let line_ids: Vec<usize> = self.lines.iter().map(|line| line.id).collect();
         let sensor_ids: Vec<usize> = self.sensors.iter().map(RadSensor::id).collect();
         let gas_ids: Vec<usize> = self.gases.iter().map(|gas| gas.id).collect();
@@ -6762,10 +6785,9 @@ mod tests {
             "pressure resultant is {resultant}"
         );
         let roof = shell_scordelis_lo_case();
-        // REGRESSION, not the closed form: OpenCourant converges to the
-        // flat-facet limit (-0.2574) across QEPH/BATOZ/16-48 mesh/Ismstr/LAW1/LAW2.
-        // The -0.3024 closed form stays authoritative for sonium-fem
-        // (fem_shell_scordelis_lo golden); this probe only guards engine drift.
+        // This full-load nonlinear regression guards engine drift. The
+        // published-.3024 linear target requires a separate accuracy leg.
+        // Regression agreement alone is not native/external validation.
         assert!((roof.base.probes[0].expected + 0.2574).abs() < 1e-15);
         assert!((roof.base.probes[0].rel_tol - 0.02).abs() < 1e-12);
         assert!(roof.gravity.is_some());

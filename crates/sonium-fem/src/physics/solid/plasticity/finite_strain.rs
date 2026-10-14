@@ -215,7 +215,7 @@ fn tensor_to_voigt_c1(t: &[f64; 9], engineering_shear: bool) -> [f64; 6] {
 /// Rotates a symmetric tensor stored in C1 Voigt order by `r`.
 ///
 /// Returns `R T R^T` in C1 Voigt order with stress-like shear entries.
-fn rotate_voigt_c1(v: &[f64; 6], r: &[f64; 9]) -> [f64; 6] {
+pub(crate) fn rotate_voigt_c1(v: &[f64; 6], r: &[f64; 9]) -> [f64; 6] {
     let t = voigt_c1_to_tensor(v);
     let rt = mat3_transpose(r);
     tensor_to_voigt_c1(&mat3_mul(&mat3_mul(r, &t), &rt), false)

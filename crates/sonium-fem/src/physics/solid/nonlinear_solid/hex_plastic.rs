@@ -19,6 +19,7 @@
 // Rust guideline compliant 2026-02-21
 
 use super::super::plasticity::J2Material;
+use super::super::plasticity::finite_strain::rotate_voigt_c1;
 use super::super::plasticity::law_metals::{Law2, Law36};
 use super::super::plasticity::update::{StressUpdate, StressUpdateModel};
 use super::hex_explicit::{
@@ -76,6 +77,41 @@ pub trait ExplicitPlasticMaterial: StressUpdateModel<StrainIncrement = [f64; 6]>
     /// Probe-channel output (`SX/SY/SZ/SXY/SYZ/SZX` per element) for
     /// explicit bench drivers; the mechanics never reads it back.
     fn centroid_stress(state: &Self::State) -> [f64; 6];
+}
+
+/// Plastic material with tensor-history rotation for corotational H8 updates.
+///
+/// All tensor-valued history must rotate; scalar hardening and damage remain
+/// unchanged. Rotations are row-major orthogonal matrices supplied by the
+/// objective force evaluator. The original explicit material trait is retained.
+pub trait ObjectivePlasticMaterial: ExplicitPlasticMaterial {
+    /// Rotates committed tensor history by the supplied orthogonal matrix.
+    fn rotate_state(&self, state: &mut Self::State, rotation: &[f64; 9]);
+}
+
+impl ObjectivePlasticMaterial for Law2 {
+    fn rotate_state(&self, state: &mut Self::State, rotation: &[f64; 9]) {
+        state.stress = rotate_voigt_c1(&state.stress, rotation);
+        state.back_stress = rotate_voigt_c1(&state.back_stress, rotation);
+    }
+}
+
+impl ObjectivePlasticMaterial for Law36 {
+    fn rotate_state(&self, state: &mut Self::State, rotation: &[f64; 9]) {
+        state.stress = rotate_voigt_c1(&state.stress, rotation);
+        state.back_stress = rotate_voigt_c1(&state.back_stress, rotation);
+        // C1 plastic strains use engineering shears, whereas the shared tensor
+        // rotation accepts stress-like shear components.
+        let mut tensor = state.plastic;
+        for shear in &mut tensor[3..] {
+            *shear *= 0.5;
+        }
+        tensor = rotate_voigt_c1(&tensor, rotation);
+        for shear in &mut tensor[3..] {
+            *shear *= 2.0;
+        }
+        state.plastic = tensor;
+    }
 }
 
 impl ExplicitPlasticMaterial for J2Material {
@@ -207,6 +243,73 @@ where
     })
 }
 
+/// Advances an isotropic H8 plastic material with an objective spin update.
+///
+/// Splits the incremental Jaumann rotation into two exact half rotations
+/// around the existing strain/return-mapping update. Final internal forces use
+/// the rotated Cauchy stress; bulk viscosity and hourglass forces are retained.
+/// Pure rigid rotation rotates tensor history without producing plastic work.
+/// This is a spin-based hypoelastic update, not the finite-strain J2 model's
+/// separate Green-Naghdi/logarithmic-strain formulation.
+///
+/// # Errors
+/// Rejects nonfinite or nonpositive timestep, velocities, or spin increment;
+/// forwards errors from the original plastic force evaluator.
+pub fn hex_plastic_forces_objective<M: ObjectivePlasticMaterial>(
+    geom: &HexExplicitGeom,
+    state: &mut HexExplicitState<M::State>,
+    material: &M,
+    velocities: &[f64; 24],
+    dt: f64,
+    params: &HexExplicitParams,
+) -> Result<HexPlasticOut, HexExplicitError> {
+    if !dt.is_finite() || dt <= 0.0 || velocities.iter().any(|v| !v.is_finite()) {
+        return Err(HexExplicitError::new(
+            "objective hex update requires finite velocity and positive finite dt",
+        ));
+    }
+    let mut gradient = [[0.0; 3]; 3];
+    for (node, grad) in geom.grad_b.iter().enumerate() {
+        for (axis, row) in gradient.iter_mut().enumerate() {
+            for (entry, derivative) in row.iter_mut().zip(grad) {
+                *entry += velocities[3 * node + axis] * derivative;
+            }
+        }
+    }
+    let spin = [
+        0.5 * (gradient[2][1] - gradient[1][2]),
+        0.5 * (gradient[0][2] - gradient[2][0]),
+        0.5 * (gradient[1][0] - gradient[0][1]),
+    ];
+    let magnitude = spin[0].hypot(spin[1]).hypot(spin[2]);
+    let angle = 0.5 * magnitude * dt;
+    if !angle.is_finite() {
+        return Err(HexExplicitError::new(
+            "objective hex spin increment must be finite",
+        ));
+    }
+    if magnitude == 0.0 {
+        return hex_plastic_forces(geom, state, material, velocities, dt, params);
+    }
+    let rotation = super::super::joints::rotation_matrix(spin, angle);
+    let rotation = std::array::from_fn(|i| rotation[i / 3][i % 3]);
+    material.rotate_state(&mut state.centroid, &rotation);
+    let mut out = hex_plastic_forces(geom, state, material, velocities, dt, params)?;
+    material.rotate_state(&mut state.centroid, &rotation);
+    let stress = M::centroid_stress(&state.centroid);
+    let delta: [f64; 6] = std::array::from_fn(|i| stress[i] - out.base.stress[i]);
+    for (node, g) in geom.grad_b.iter().enumerate() {
+        out.base.forces[3 * node] +=
+            geom.volume * (delta[0] * g[0] + delta[3] * g[1] + delta[5] * g[2]);
+        out.base.forces[3 * node + 1] +=
+            geom.volume * (delta[3] * g[0] + delta[1] * g[1] + delta[4] * g[2]);
+        out.base.forces[3 * node + 2] +=
+            geom.volume * (delta[5] * g[0] + delta[4] * g[1] + delta[2] * g[2]);
+    }
+    out.base.stress = stress;
+    Ok(out)
+}
+
 /// Zero plastic response of an eroded H8 element.
 ///
 /// Drivers return this for elements the [`ErosionSet`](super::super::fracture::ductile::ErosionSet)
@@ -252,6 +355,80 @@ mod tests {
         Law2Flow, Law2State, Law36State, MaxRateEffect, RateCurve,
     };
     use crate::physics::solid::plasticity::update::von_mises_c1;
+
+    #[test]
+    fn objective_rigid_rotation_rotates_stress_without_plastic_work() {
+        let mesh = HexMesh::unit_cube(1.0);
+        let geom = HexExplicitGeom::from_mesh(&mesh, 0).unwrap();
+        let material = closed_form_jc();
+        let params = HexExplicitParams::new(7800.0, 4500.0);
+        let mut state = HexExplicitState::new(Law2State::new(293.0));
+        state.centroid.stress[0] = 100e6;
+        state.centroid.back_stress[0] = 15e6;
+        state.centroid.equiv_plastic_strain = 0.2;
+        let mut legacy = state.clone();
+        let mut velocities = [0.0; 24];
+        // Uniform z spin through exactly 90 degrees. Its symmetric velocity
+        // gradient vanishes; the analytical final stress has only sigma_yy.
+        let omega = std::f64::consts::FRAC_PI_2;
+        for (node, p) in mesh.coords.iter().enumerate() {
+            velocities[3 * node] = -omega * p[1];
+            velocities[3 * node + 1] = omega * p[0];
+        }
+        let old =
+            hex_plastic_forces(&geom, &mut legacy, &material, &velocities, 1.0, &params).unwrap();
+        assert!((old.base.stress[0] - 100e6).abs() < 1e-5);
+        let out =
+            hex_plastic_forces_objective(&geom, &mut state, &material, &velocities, 1.0, &params)
+                .unwrap();
+        for (actual, expected) in out.base.stress.iter().zip([0.0, 100e6, 0.0, 0.0, 0.0, 0.0]) {
+            assert!((actual - expected).abs() < 1e-5);
+        }
+        assert!((state.centroid.back_stress[1] - 15e6).abs() < 1e-6);
+        assert!((state.centroid.equiv_plastic_strain - 0.2).abs() < 1e-14);
+        assert_eq!(out.base.dep, 0.0);
+        assert_eq!(out.damage_increment, 0.0);
+        assert!(out.base.hg_power.abs() < 1e-7);
+        for (node, grad) in geom.grad_b.iter().enumerate() {
+            assert!(out.base.forces[3 * node].abs() < 1e-5);
+            assert!((out.base.forces[3 * node + 1] - 100e6 * grad[1]).abs() < 1e-5);
+            assert!(out.base.forces[3 * node + 2].abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn objective_update_rejects_nonfinite_inputs_without_mutating_history() {
+        let geom = HexExplicitGeom::from_mesh(&HexMesh::unit_cube(1.0), 0).unwrap();
+        let material = closed_form_jc();
+        let params = HexExplicitParams::new(7800.0, 4500.0);
+        let mut state = HexExplicitState::new(Law2State::new(293.0));
+        state.centroid.stress[0] = 100e6;
+        for dt in [0.0, -1.0, f64::INFINITY, f64::NAN] {
+            assert!(
+                hex_plastic_forces_objective(&geom, &mut state, &material, &[0.0; 24], dt, &params)
+                    .is_err()
+            );
+            assert_eq!(state.centroid.stress[0], 100e6);
+        }
+    }
+
+    #[test]
+    fn objective_law36_rotation_preserves_engineering_plastic_shear() {
+        let curve = RateCurve::new(0.0, vec![0.0, 0.5], vec![250e6, 250e6], 1.0).unwrap();
+        let material = Law36::new(200e9, 0.3, vec![curve], 0.0, 1e20, 1e20, 2e20, 3e20);
+        let mut state = Law36State::new();
+        state.plastic[0] = 0.04;
+        state.equiv_plastic_strain = 0.04;
+        // Rotate the axial plastic tensor 45 degrees around z. Analytically,
+        // eps_xx=eps_yy=.02 and engineering gamma_xy=.04.
+        let c = std::f64::consts::FRAC_1_SQRT_2;
+        let rotation = [c, -c, 0.0, c, c, 0.0, 0.0, 0.0, 1.0];
+        material.rotate_state(&mut state, &rotation);
+        for (actual, expected) in state.plastic.iter().zip([0.02, 0.02, 0.0, 0.04, 0.0, 0.0]) {
+            assert!((actual - expected).abs() < 1e-14);
+        }
+        assert_eq!(state.equiv_plastic_strain, 0.04);
+    }
 
     /// Isothermal rate-free Johnson-Cook steel for closed-form checks.
     ///

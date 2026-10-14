@@ -275,17 +275,20 @@ fn number(run: &serde_json::Value, key: &str) -> Result<f64, Box<dyn std::error:
         .ok_or_else(|| format!("missing finite native field {key}").into())
 }
 
-/// Compare full native open-hole histories against all original external probes.
+/// Compare complete matching native and external open-hole elastic histories.
+///
+/// The original discrete fixture is retained on both sides. Subdivision remains
+/// available through `probe` as a separate spatial study; its field cannot be
+/// compared to the unchanged coarse external discretization as mesh parity.
 ///
 /// # Errors
-/// Returns an error for changed original fixture identity, incomplete external
-/// measurements, failed native transients, or absent finite physical observations.
+/// Rejects changed original physics, incomplete histories, missing channels,
+/// failed native integration, and nonfinite physical observations.
 pub(super) fn parity_result(
     case: &RadExtendedCase,
     case_id: &str,
     engine: &str,
-    external: &[f64],
-    time: f64,
+    external: &sonium_qa::rad::TimeHistory,
     reference_passed: bool,
 ) -> Result<sonium_qa::QaResult, Box<dyn std::error::Error>> {
     let original = super::shell_oht_elastic_case();
@@ -298,116 +301,178 @@ pub(super) fn parity_result(
     {
         return Err("original open-hole fixture changed".into());
     }
-    if external.len() != 3
-        || external.iter().any(|v| !v.is_finite())
-        || !time.is_finite()
-        || time < case.base.stop_time_s - 1.05 * case.base.th_period_s
-        || time > case.base.stop_time_s
+    validate_reference(case, external)?;
+    let runs = [probe(1, 1e-6)?, probe(1, 5e-7)?];
+    build_result(case, case_id, engine, external, reference_passed, &runs)
+}
+
+fn validate_reference(
+    case: &RadExtendedCase,
+    external: &sonium_qa::rad::TimeHistory,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let times = &external.times;
+    if times.len() < 2
+        || times.iter().any(|v| !v.is_finite())
+        || times.windows(2).any(|w| w[1] <= w[0])
+        || times[0] < 0.0
+        || times[0] > case.base.th_period_s
+        || times[times.len() - 1] < case.base.stop_time_s - 1.05 * case.base.th_period_s
+        || times[times.len() - 1] > case.base.stop_time_s
     {
-        return Err("complete original external probes and final sample required".into());
+        return Err("complete finite original external history required".into());
     }
-    let runs = [
-        probe(1, 1e-6)?,
-        probe(2, 1e-6)?,
-        probe(3, 1e-6)?,
-        probe(3, 5e-7)?,
-    ];
-    build_result(
-        case,
-        case_id,
-        engine,
-        external,
-        time,
-        reference_passed,
-        &runs,
-    )
+    for probe in &case.base.probes {
+        let values = external.channel(&probe.channel)?;
+        if values.len() != times.len() || values.iter().any(|v| !v.is_finite()) {
+            return Err("complete finite original external channels required".into());
+        }
+    }
+    Ok(())
+}
+
+fn relative(a: &[f64], b: &[f64]) -> Result<f64, Box<dyn std::error::Error>> {
+    if a.len() != b.len() || a.is_empty() || a.iter().chain(b).any(|v| !v.is_finite()) {
+        return Err("aligned finite native/reference fields required".into());
+    }
+    let denominator = b.iter().map(|v| v * v).sum::<f64>();
+    if denominator <= 0.0 || !denominator.is_finite() {
+        return Err("nonzero finite reference field required".into());
+    }
+    Ok((a.iter().zip(b).map(|(x, y)| (x - y).powi(2)).sum::<f64>() / denominator).sqrt())
 }
 
 fn build_result(
     case: &RadExtendedCase,
     case_id: &str,
     engine: &str,
-    external: &[f64],
-    time: f64,
+    external: &sonium_qa::rad::TimeHistory,
     reference_passed: bool,
-    runs: &[serde_json::Value; 4],
+    runs: &[serde_json::Value; 2],
 ) -> Result<sonium_qa::QaResult, Box<dyn std::error::Error>> {
+    use sha2::{Digest, Sha256};
+    validate_reference(case, external)?;
+    let time = *external.times.last().ok_or("missing external stop")?;
+    let starter = sonium_qa::rad::write_extended_starter(case);
+    let deck = sonium_qa::rad::write_extended_engine(case);
+    let checksum = format!(
+        "{:x}",
+        Sha256::digest(format!("{starter}{deck}").as_bytes())
+    );
     let mut result=sonium_qa::QaResult::passed(case_id)
         .requested_backend("cpu+opencourant").actual_backend("cpu+opencourant")
-        .metric("external_reference_executed",1.0)
-        .metric("external_reference_health_passed",if reference_passed{1.0}else{0.0}).minimum("external_reference_health_passed",1.0)
+        .metric("external_reference_executed",1.0).minimum("external_reference_executed",1.0)
+        .metric("external_reference_health_passed",f64::from(reference_passed)).minimum("external_reference_health_passed",1.0)
         .metric("native_parity_executed",1.0).minimum("native_parity_executed",1.0)
-        .metric("native_complete_shell_histories",4.0).minimum("native_complete_shell_histories",4.0)
+        .metric("native_complete_shell_histories",2.0).minimum("native_complete_shell_histories",2.0)
+        .metric("external_history_coverage",time/case.base.stop_time_s).minimum("external_history_coverage",0.98)
         .metric("comparison_time_s",time).reference(engine)
-        .dimension("Original 128x32 mm, 1 mm thick homogenized elastic staircase-hole plate; E=52.7 GPa, nu=.24, rho=1600 kg/m3; 3900/15600/35100 native quads")
-        .formulation("Full six-DOF covariant MITC4, Allman-enriched physical stress at original fixed shell centroid; original 41 grip-node forces, root constraints and full 1 ms ramp/hold to 2 ms; checked compensated Newmark with independently recomputed physical force balance at every step. Native probes sampled at actual original external final output time.")
-        .tolerance("Native/external displacement and stress <=3%; thickness <=1e-6; original analytical compliance <=10%, staircase-hole Howland stress <=20%; spatial changes <=2% then .5%, contraction <=.6; timestep changes <=.3%; every-step physical residual <=1e-8. Elastic precursor only.");
-    for (index, key) in ["pulled_center_dx_m", "probe_sigma_xx_pa"]
+        .input_checksum(&checksum).reference_checksum(&checksum)
+        .dimension("Original 128x32 mm, 1 mm thick homogenized elastic staircase-hole plate; E=52.7 GPa, nu=.24, rho=1600 kg/m3; same original 3900 physical quads on both sides")
+        .formulation("Full six-DOF MITC4 with Allman physical stress at the original shell centroid; original 41 grip-node forces, root constraints and complete 1 ms ramp/hold to 2 ms. Two checked Newmark histories at original and half timestep, independent physical equilibrium at every step; all original channels compared at every actual external timestamp. Fixed original discrete elastic fixture; spatial subdivision remains a separate diagnostic, no continuum mesh-convergence claim.")
+        .tolerance("Full-history and final native/external displacement and stress <=3%; thickness <=1e-6; original analytical compliance <=10%, staircase-hole Howland stress <=20%; full-history and final timestep changes <=.3%; every-step physical residual <=1e-8; exact full native stop.");
+    for (i, run) in runs.iter().enumerate() {
+        let times = run["times_s"].as_array().ok_or("missing native times")?;
+        if times.len() < 2
+            || times
+                .iter()
+                .any(|v| v.as_f64().is_none_or(|x| !x.is_finite()))
+            || times
+                .windows(2)
+                .any(|w| w[1].as_f64().unwrap() <= w[0].as_f64().unwrap())
+            || times[0].as_f64() != Some(0.0)
+            || run["refinement_factor"].as_u64() != Some(1)
+            || run["quads"].as_u64() != Some(case.shells.quads.len() as u64)
+        {
+            return Err("complete original native discretization/history required".into());
+        }
+        for key in ["pulled_center_dx_m", "probe_sigma_xx_pa"] {
+            let values = run[key].as_array().ok_or("missing native values")?;
+            if values.len() != times.len()
+                || values
+                    .iter()
+                    .any(|v| v.as_f64().is_none_or(|x| !x.is_finite()))
+            {
+                return Err("complete finite native physical channels required".into());
+            }
+        }
+        let stop = format!("history_{i}_stop_time_error_s");
+        let end = number(run, "final_time_s")?;
+        let alignment = format!("history_{i}_final_sample_alignment_error_s");
+        let residual = format!("history_{i}_true_dynamic_residual");
+        result = result
+            .metric(&stop, (end - case.base.stop_time_s).abs())
+            .maximum(&stop, 1e-12)
+            .metric(
+                &alignment,
+                (times
+                    .last()
+                    .and_then(|v| v.as_f64())
+                    .ok_or("missing final native time")?
+                    - end)
+                    .abs(),
+            )
+            .maximum(&alignment, 1e-12)
+            .metric(&residual, number(run, "maximum_true_dynamic_residual")?)
+            .maximum(&residual, 1e-8);
+    }
+    let ratio = number(&runs[1], "steps")? / number(&runs[0], "steps")?;
+    result = result
+        .metric("native_timestep_step_ratio", ratio)
+        .minimum("native_timestep_step_ratio", 1.5);
+    for (index, key) in ["pulled_center_dx_m", "probe_sigma_xx_pa", "thickness_m"]
         .iter()
         .enumerate()
     {
-        let v = runs
+        let measured = external.channel(&case.base.probes[index].channel)?;
+        let sampled = runs
             .iter()
-            .map(|r| sample(r, key, time))
+            .map(|r| {
+                external
+                    .times
+                    .iter()
+                    .map(|t| {
+                        if index == 2 {
+                            number(r, key)
+                        } else {
+                            sample(r, key, *t)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()
+            })
             .collect::<Result<Vec<_>, _>>()?;
-        let first = (v[1] - v[0]).abs() / v[1].abs().max(1e-30);
-        let last = (v[2] - v[1]).abs() / v[2].abs().max(1e-30);
+        let fine = *sampled[1].last().ok_or("missing final native probe")?;
+        let coarse = *sampled[0].last().ok_or("missing final coarse probe")?;
+        let reference = *measured.last().ok_or("missing final reference probe")?;
         result = result
-            .metric(format!("native_{key}"), v[2])
-            .metric(format!("external_{key}"), external[index]);
-        for (suffix, value, bound) in [
+            .metric(format!("native_{key}"), fine)
+            .metric(format!("external_{key}"), reference);
+        let parity_budget = if index == 2 { 1e-6 } else { 0.03 };
+        for (suffix, value, budget) in [
+            (
+                "history_parity_relative_error",
+                relative(&sampled[1], measured)?,
+                parity_budget,
+            ),
             (
                 "parity_relative_error",
-                (v[2] - external[index]).abs() / external[index].abs().max(1e-30),
-                0.03,
+                relative(&[fine], &[reference])?,
+                parity_budget,
             ),
+            (
+                "history_temporal_relative_change",
+                relative(&sampled[0], &sampled[1])?,
+                0.003,
+            ),
+            ("temporal_change", relative(&[coarse], &[fine])?, 0.003),
             (
                 "analytical_relative_error",
-                (v[2] - case.base.probes[index].expected).abs()
-                    / case.base.probes[index].expected.abs(),
+                relative(&[fine], &[case.base.probes[index].expected])?,
                 case.base.probes[index].rel_tol,
-            ),
-            ("spatial_first_change", first, 0.02),
-            ("spatial_final_change", last, 0.005),
-            ("spatial_contraction", last / first.max(1e-15), 0.6),
-            (
-                "temporal_change",
-                (v[2] - v[3]).abs() / v[3].abs().max(1e-30),
-                0.003,
             ),
         ] {
             let metric = format!("{key}_{suffix}");
-            result = result.metric(&metric, value).maximum(metric, bound);
+            result = result.metric(&metric, value).maximum(&metric, budget);
         }
-    }
-    let thickness = number(&runs[2], "thickness_m")?;
-    result = result
-        .metric("native_thickness_m", thickness)
-        .metric(
-            "thickness_external_relative_error",
-            (thickness - external[2]).abs() / external[2].abs().max(1e-30),
-        )
-        .maximum("thickness_external_relative_error", 1e-6)
-        .metric(
-            "thickness_analytical_relative_error",
-            (thickness - case.base.probes[2].expected).abs() / case.base.probes[2].expected.abs(),
-        )
-        .maximum(
-            "thickness_analytical_relative_error",
-            case.base.probes[2].rel_tol,
-        );
-    for (i, r) in runs.iter().enumerate() {
-        let metric = format!("history_{i}_true_dynamic_residual");
-        result = result
-            .metric(&metric, number(r, "maximum_true_dynamic_residual")?)
-            .maximum(metric, 1e-8);
-        let metric = format!("history_{i}_stop_time_error_s");
-        result = result
-            .metric(
-                &metric,
-                (number(r, "final_time_s")? - case.base.stop_time_s).abs(),
-            )
-            .maximum(metric, 1e-12);
     }
     if let Err(error) = result.release_eligible() {
         result.status = sonium_qa::QaStatus::Failed;
@@ -421,26 +486,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn result_rejects_missing_physics_and_failed_measured_budgets() {
+    fn result_rejects_false_full_history_evidence() {
         let case = super::super::shell_oht_elastic_case();
-        let external = case
+        let expected = case
             .base
             .probes
             .iter()
             .map(|p| p.expected)
             .collect::<Vec<_>>();
-        let run = serde_json::json!({"times_s":[0.0,0.002],"pulled_center_dx_m":[0.0,external[0]],
-            "probe_sigma_xx_pa":[0.0,external[1]],"thickness_m":external[2],
-            "maximum_true_dynamic_residual":1e-12,"final_time_s":0.002});
-        let good = [run.clone(), run.clone(), run.clone(), run.clone()];
+        let history = sonium_qa::rad::TimeHistory {
+            times: vec![0.0, 0.001, 0.002],
+            channels: case
+                .base
+                .probes
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    (
+                        p.channel.clone(),
+                        if i == 2 {
+                            vec![expected[i]; 3]
+                        } else {
+                            vec![0.0, expected[i] * 0.5, expected[i]]
+                        },
+                    )
+                })
+                .collect(),
+        };
+        let run = serde_json::json!({"times_s":[0.0,0.001,0.002],"pulled_center_dx_m":[0.0,expected[0]*0.5,expected[0]],
+            "probe_sigma_xx_pa":[0.0,expected[1]*0.5,expected[1]],"thickness_m":expected[2],"steps":2000,
+            "refinement_factor":1,"quads":3900,"maximum_true_dynamic_residual":1e-12,"final_time_s":0.002});
+        let mut good = [run.clone(), run.clone()];
+        good[1]["steps"] = serde_json::json!(4000);
         assert!(
-            build_result(&case, "test", "test", &external, 0.002, true, &good)
+            build_result(&case, "test", "test", &history, true, &good)
                 .unwrap()
                 .release_eligible()
                 .is_ok()
         );
         assert!(
-            build_result(&case, "test", "test", &external, 0.002, false, &good)
+            build_result(&case, "test", "test", &history, false, &good)
                 .unwrap()
                 .release_eligible()
                 .is_err()
@@ -449,35 +534,40 @@ mod tests {
             ("maximum_true_dynamic_residual", serde_json::json!(1e-3)),
             ("final_time_s", serde_json::json!(0.001)),
             ("thickness_m", serde_json::json!(0.002)),
+            ("steps", serde_json::json!(2000)),
         ] {
             let mut bad = good.clone();
-            bad[2][key] = value;
+            bad[1][key] = value;
             assert!(
-                build_result(&case, "test", "test", &external, 0.002, true, &bad)
+                build_result(&case, "test", "test", &history, true, &bad)
                     .unwrap()
                     .release_eligible()
                     .is_err()
             );
         }
         let mut bad = good.clone();
-        bad[2]["probe_sigma_xx_pa"] = serde_json::json!([0.0, 2.0 * external[1]]);
+        bad[1]["probe_sigma_xx_pa"] = serde_json::json!([0.0, expected[1] * 2.0, expected[1]]);
+        let r = build_result(&case, "test", "test", &history, true, &bad).unwrap();
+        assert!(r.metrics["probe_sigma_xx_pa_parity_relative_error"] < 1e-12);
         assert!(
-            build_result(&case, "test", "test", &external, 0.002, true, &bad)
-                .unwrap()
-                .release_eligible()
-                .is_err()
+            r.release_eligible().is_err(),
+            "Matching final value must not hide a wrong intermediate history"
         );
-        let mut missing = good.clone();
-        missing[2]
-            .as_object_mut()
-            .unwrap()
-            .remove("maximum_true_dynamic_residual");
-        assert!(build_result(&case, "test", "test", &external, 0.002, true, &missing).is_err());
-        assert!(sample(&run, "pulled_center_dx_m", 0.003).is_err());
+        for key in ["times_s", "maximum_true_dynamic_residual"] {
+            let mut missing = good.clone();
+            missing[1].as_object_mut().unwrap().remove(key);
+            assert!(build_result(&case, "test", "test", &history, true, &missing).is_err());
+        }
+        let mut bad = good.clone();
+        bad[1]["refinement_factor"] = serde_json::json!(3);
+        assert!(build_result(&case, "test", "test", &history, true, &bad).is_err());
+        let mut malformed = history.clone();
+        malformed.times[1] = 0.002;
+        assert!(build_result(&case, "test", "test", &malformed, true, &good).is_err());
         let mut altered = case.clone();
         altered.base.cloads[0].force_scale_n *= 0.5;
-        assert!(parity_result(&altered, "test", "test", &external, 0.002, true).is_err());
-        assert!(parity_result(&case, "test", "test", &external, 0.001, true).is_err());
+        assert!(parity_result(&altered, "test", "test", &history, true).is_err());
+        assert!(sample(&run, "pulled_center_dx_m", 0.003).is_err());
     }
 
     #[test]

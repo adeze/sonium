@@ -5,11 +5,21 @@
 #[path = "shell_transient.rs"]
 mod transient;
 
+#[path = "scordelis_corotational.rs"]
+pub mod corotational;
+
+#[path = "scordelis_quad_corotational.rs"]
+pub mod quadrilateral;
+
 use sonium_qa::rad::{
     RadExtendedCase, RadMesh, scordelis_lo_shell_mesh, shel_channel, shell_scordelis_lo_case,
 };
 
-fn refined_case(cells: usize) -> Result<RadExtendedCase, Box<dyn std::error::Error>> {
+/// Refine the original roof while preserving physical inputs and probe coordinates.
+///
+/// # Errors
+/// Rejects odd or insufficient refinement and invalid original case metadata.
+pub fn refined_case(cells: usize) -> Result<RadExtendedCase, Box<dyn std::error::Error>> {
     if cells < 2 || !cells.is_multiple_of(2) {
         return Err("even roof refinement >=2 required".into());
     }

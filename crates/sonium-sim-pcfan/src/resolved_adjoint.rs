@@ -1095,6 +1095,49 @@ fn solve_transpose_gmres(
     tolerance: f64,
     max_iterations: usize,
 ) -> Result<(Vec<f64>, usize, f64), PcFanResolvedAdjointError> {
+    let mut solution = vec![0.0; matrix.dimension];
+    let mut residual = rhs.to_vec();
+    let mut residual_norm = l2_norm(&residual);
+    let mut iterations = 0;
+    while iterations < max_iterations && residual_norm > tolerance {
+        let (correction, used, _) =
+            solve_transpose_gmres_cycle(matrix, &residual, tolerance, max_iterations - iterations)?;
+        for (value, delta) in solution.iter_mut().zip(correction) {
+            *value += delta;
+        }
+        iterations += used;
+        residual = rhs
+            .iter()
+            .zip(matrix.apply_transpose(&solution))
+            .map(|(&right, value)| right - value)
+            .collect();
+        let next_norm = l2_norm(&residual);
+        if used == 0 || next_norm >= residual_norm {
+            residual_norm = next_norm;
+            break;
+        }
+        residual_norm = next_norm;
+        // Restart from the independently reassembled residual after a
+        // numerical Krylov breakdown. Correction iterations share the
+        // original total budget and the unscaled acceptance tolerance.
+    }
+    if residual_norm <= tolerance {
+        Ok((solution, iterations, residual_norm))
+    } else {
+        Err(PcFanResolvedAdjointError::DidNotConverge {
+            iterations,
+            residual: residual_norm,
+            tolerance,
+        })
+    }
+}
+
+fn solve_transpose_gmres_cycle(
+    matrix: &PcFanResolvedFlowSparseMatrix,
+    rhs: &[f64],
+    tolerance: f64,
+    max_iterations: usize,
+) -> Result<(Vec<f64>, usize, f64), PcFanResolvedAdjointError> {
     let dimension = matrix.dimension;
     let beta = l2_norm(rhs);
     if beta <= tolerance {
@@ -1125,14 +1168,21 @@ fn solve_transpose_gmres(
                     tolerance,
                 })?;
         let mut work = matrix.apply_transpose(&basis_vector);
-        for basis_index in 0..=iteration {
-            hessenberg[basis_index][iteration] = dot(&work, &basis[basis_index]);
-            for (work_value, &basis_value) in work.iter_mut().zip(&basis[basis_index]) {
-                *work_value -= hessenberg[basis_index][iteration] * basis_value;
+        let work_norm = l2_norm(&work);
+        // A second modified Gram-Schmidt pass preserves orthogonality for
+        // the ill-conditioned velocity/pressure saddle-point operator.
+        for _ in 0..2 {
+            for basis_index in 0..=iteration {
+                let projection = dot(&work, &basis[basis_index]);
+                hessenberg[basis_index][iteration] += projection;
+                for (work_value, &basis_value) in work.iter_mut().zip(&basis[basis_index]) {
+                    *work_value -= projection * basis_value;
+                }
             }
         }
         hessenberg[iteration + 1][iteration] = l2_norm(&work);
-        if hessenberg[iteration + 1][iteration] > f64::EPSILON {
+        let has_next_basis = hessenberg[iteration + 1][iteration] > f64::EPSILON * work_norm;
+        if has_next_basis {
             basis.push(
                 work.iter()
                     .map(|value| value / hessenberg[iteration + 1][iteration])
@@ -1149,7 +1199,7 @@ fn solve_transpose_gmres(
         }
         let denominator =
             hessenberg[iteration][iteration].hypot(hessenberg[iteration + 1][iteration]);
-        if denominator <= f64::EPSILON {
+        if denominator == 0.0 {
             used_iterations = iteration + 1;
             break;
         }
@@ -1180,6 +1230,9 @@ fn solve_transpose_gmres(
                 return Ok((solution, used_iterations, actual_residual));
             }
         }
+        if !has_next_basis {
+            break;
+        }
     }
 
     let actual_residual = l2_norm(
@@ -1188,15 +1241,7 @@ fn solve_transpose_gmres(
             .map(|(&right, value)| right - value)
             .collect::<Vec<_>>(),
     );
-    if actual_residual <= tolerance {
-        Ok((solution, used_iterations, actual_residual))
-    } else {
-        Err(PcFanResolvedAdjointError::DidNotConverge {
-            iterations: used_iterations,
-            residual: actual_residual.max(residual_estimate),
-            tolerance,
-        })
-    }
+    Ok((solution, used_iterations, actual_residual))
 }
 
 fn back_substitute(

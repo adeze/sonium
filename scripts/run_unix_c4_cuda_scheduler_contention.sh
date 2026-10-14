@@ -36,7 +36,7 @@ rm -f "$artifact" "$artifact.sha256" "$summary" "$summary.sha256" \
 TMPDIR="$runtime_dir" TMP="$runtime_dir" TEMP="$runtime_dir" XDG_RUNTIME_DIR="$runtime_dir" \
 SONIUM_REQUIRE_CUDA=1 SONIUM_OUTPUT_DIR="$output_dir" CARGO_TARGET_DIR="$target_dir" \
   cargo test --release -p sonium-compute --features cuda \
-    --test c4_cuda_scheduler_contention_evidence -- \
+    --test cuda_scheduler_contention_evidence -- \
     --nocapture --test-threads=1 > "$output_dir/c4-cuda-scheduler-contention-run.log" 2>&1
 
 (

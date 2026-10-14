@@ -11075,7 +11075,19 @@ fn solve_cfd_domain_with_derivative_policy(
                 }
                 if p_space.num_global_dofs(&mesh) > 0 {
                     let pressure_pin = pressure_pin_dof(&mesh, &p_space);
-                    jacobian[velocity_dimension + pressure_pin].fill(0.0);
+                    let row = velocity_dimension + pressure_pin;
+                    let matrix = &linearization.state_jacobian;
+                    // Only erase an actual gauge constraint. Natural open
+                    // boundaries anchor pressure through their traction, so
+                    // the corresponding continuity derivative remains active.
+                    let pinned = matrix.row_range(row).any(|entry| {
+                        matrix.col_indices[entry] == row && matrix.values[entry] == 1.0
+                    }) && matrix.row_range(row).all(|entry| {
+                        matrix.col_indices[entry] == row || matrix.values[entry] == 0.0
+                    });
+                    if pinned {
+                        jacobian[row].fill(0.0);
+                    }
                 }
                 Some(jacobian)
             })
@@ -14092,12 +14104,9 @@ mod tests {
 
     #[test]
     fn direct_linear_solver_passes_odd_cell_oseen_systems() {
-        // Reference mesh ladder midpoint: with GMRES+ILU the 3x3x3 level
-        // stalls its second Oseen solve, so Picard exits with
-        // `iterations == 1` (linear-solver-failure) while the discrete
-        // system is solvable. Exact inner solves complete both systems;
-        // the two-iteration budget then reports stagnation, never a
-        // linear failure.
+        // Exact inner solves complete the odd-cell Oseen systems. With
+        // shared face-center DOFs and natural outlet pressure, the second
+        // update meets the original five-percent nonlinear tolerance.
         let mut config = PcFanConfig::bench_120mm();
         config.operating_point.rpm = 1_300.0;
         config.operating_point.target_airflow_cfm *= 1_300.0 / 1_800.0;
@@ -14121,7 +14130,7 @@ mod tests {
         assert_eq!(solution.iterations, 2);
         assert_eq!(
             pc_fan_cfd_first_admission_violation(&config, &solution, 0.05),
-            Some("picard-stagnation")
+            None
         );
     }
 

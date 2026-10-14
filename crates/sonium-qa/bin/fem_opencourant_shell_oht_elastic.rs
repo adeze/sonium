@@ -351,11 +351,9 @@ fn main() {
     });
     println!("engine: {}", output.engine);
     let mut failed = false;
-    let mut external = Vec::new();
     for probe in &case.base.probes {
         match output.history.final_value(&probe.channel) {
             Ok(actual) => {
-                external.push(actual);
                 println!(
                     "probe {}: actual {actual:.6e}, expected {:.6e}",
                     probe.label, probe.expected
@@ -378,16 +376,10 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    let result = oht_native::parity_result(
-        &case,
-        CASE_ID,
-        &output.engine,
-        &external,
-        output.history.times.last().copied().unwrap_or(f64::NAN),
-        !failed,
-    )
-    .unwrap_or_else(|error| {
-        sonium_qa::rad::gate::execution_failure_result(CASE_ID, &error.to_string())
-    });
+    let result =
+        oht_native::parity_result(&case, CASE_ID, &output.engine, &output.history, !failed)
+            .unwrap_or_else(|error| {
+                sonium_qa::rad::gate::execution_failure_result(CASE_ID, &error.to_string())
+            });
     sonium_qa::rad::gate::publish_and_exit(result);
 }

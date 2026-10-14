@@ -942,6 +942,17 @@ where
         n_v,
         "velocity space returned the wrong number of DOF coordinates"
     );
+    // Constant pressure is a gauge only when its weak traction vanishes on
+    // every free velocity test. Natural open boundaries fix its level.
+    let divergence_system = crate::assembly::mixed::assemble_mixed(
+        &super::forms::StokesViscousForm::new(0.0),
+        &super::forms::StokesDivergenceForm,
+        v_space,
+        p_space,
+        mesh,
+        2,
+    );
+    let pin_pressure = pressure_constant_mode_is_free(&divergence_system.block_01, bc_dofs);
     let mesh_centroid = mesh.nodes.iter().fold([0.0_f64; 3], |mut sum, point| {
         sum[0] += point.x;
         sum[1] += point.y;
@@ -990,7 +1001,7 @@ where
         }
         None => vec![0.0; n_p],
     };
-    if n_p > 0 {
+    if n_p > 0 && pin_pressure {
         // Keep the prescribed-state map on the same gauge slice as the
         // boundary-conditioned tangent.  Without this, perturbing the pinned
         // pressure DOF changes free residual rows even though its tangent
@@ -1015,7 +1026,6 @@ where
     // model is non-laminar — it then depends on the current velocity
     // iterate via `μ_eff = μ + ρ·ν_t`. For laminar flow it stays at the
     // configured `config.mu`.
-    let div_form = super::forms::StokesDivergenceForm;
     let body_force_fn = std::sync::Arc::new(body_force_fn);
     let body_force_jacobian_fn = std::sync::Arc::new(body_force_jacobian_fn);
     let stabilisation_rho = config.rho.max(f64::EPSILON);
@@ -1208,14 +1218,7 @@ where
         }
 
         // Divergence coupling
-        let system = crate::assembly::mixed::assemble_mixed(
-            &super::forms::StokesViscousForm::new(0.0), // dummy for block_00, we'll replace
-            &div_form,
-            v_space,
-            p_space,
-            mesh,
-            2,
-        );
+        let system = &divergence_system;
 
         let forms_elapsed = iter_start.elapsed();
         let rest_start = std::time::Instant::now();
@@ -1342,8 +1345,9 @@ where
             is_bc[dof] = true;
             bc_values[dof] = bc_val[comp];
         }
-        if n_p > 0 {
-            // Incompressible pressure is defined up to an additive constant.
+        if n_p > 0 && pin_pressure {
+            // Only the closed-boundary constant-pressure nullspace needs a
+            // gauge. Open natural tractions already fix the pressure level.
             // Pin the DOF nearest the domain centroid. Pinning an arbitrary
             // corner breaks reflection/rotation symmetries in finite precision
             // and can contaminate small lift coefficients.
@@ -1469,7 +1473,14 @@ where
                     == LinearSolverCpuPreconditionerKind::IlutSchur
                 || config.linear_solver_backend_preconditioner
                     == BackendPreconditionerKind::JacobiSchur)
-                .then(|| pressure_mass_schur_csr(p_space, mesh, mu_eff, pressure_pin));
+                .then(|| {
+                    pressure_mass_schur_csr(
+                        p_space,
+                        mesh,
+                        mu_eff,
+                        pin_pressure.then_some(pressure_pin),
+                    )
+                });
             match solve_iterative_linear_system(
                 config,
                 &csr,
@@ -2902,11 +2913,41 @@ impl PicardVelocityField {
     }
 }
 
+fn pressure_constant_mode_is_free(
+    gradient: &crate::assembly::TripletMatrix<f64>,
+    bc_dofs: &[usize],
+) -> bool {
+    if gradient.num_cols == 0 {
+        return false;
+    }
+    let mut constrained = vec![false; gradient.num_rows];
+    for &dof in bc_dofs {
+        assert!(
+            dof < gradient.num_rows,
+            "velocity boundary DOF out of range"
+        );
+        constrained[dof] = true;
+    }
+    let mut constant_force = vec![0.0; gradient.num_rows];
+    let mut row_scale = vec![0.0; gradient.num_rows];
+    for i in 0..gradient.nnz() {
+        constant_force[gradient.rows[i]] += gradient.values[i];
+        row_scale[gradient.rows[i]] += gradient.values[i].abs();
+    }
+    // Partition-of-unity cancellation accumulates many element triplets.
+    // This relative roundoff bound detects a null mode, not a flow tolerance.
+    constant_force
+        .iter()
+        .zip(row_scale)
+        .zip(constrained)
+        .all(|((&force, scale), fixed)| fixed || force.abs() <= 1e-12 * scale)
+}
+
 fn pressure_mass_schur_csr<PSpace>(
     p_space: &PSpace,
     mesh: &crate::mesh::Mesh,
     mu_eff: f64,
-    pressure_pin: usize,
+    pressure_pin: Option<usize>,
 ) -> sonium_solvers::CsrMatrix<f64>
 where
     PSpace: crate::spaces::FunctionSpace,
@@ -2920,7 +2961,9 @@ where
     }
 
     let mut csr = schur.to_csr();
-    apply_local_dirichlet_to_csr(&mut csr, pressure_pin);
+    if let Some(pin) = pressure_pin {
+        apply_local_dirichlet_to_csr(&mut csr, pin);
+    }
     csr
 }
 
@@ -3352,7 +3395,9 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     ) {
                         Ok(preconditioner) => preconditioner,
                         Err(err) => {
-                            eprintln!("WARNING: backend polynomial preconditioner setup failed ({err}); falling back to CPU");
+                            eprintln!(
+                                "WARNING: backend polynomial preconditioner setup failed ({err}); falling back to CPU"
+                            );
                             return solve_iterative_cpu(
                                 config,
                                 csr,
@@ -3385,7 +3430,9 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     ) {
                         Ok(preconditioner) => preconditioner,
                         Err(err) => {
-                            eprintln!("WARNING: backend Chebyshev preconditioner setup failed ({err}); falling back to CPU");
+                            eprintln!(
+                                "WARNING: backend Chebyshev preconditioner setup failed ({err}); falling back to CPU"
+                            );
                             return solve_iterative_cpu(
                                 config,
                                 csr,
@@ -3573,7 +3620,9 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     ) {
                         Ok(preconditioner) => preconditioner,
                         Err(err) => {
-                            eprintln!("WARNING: mixed-precision backend polynomial preconditioner setup failed ({err}); falling back to CPU");
+                            eprintln!(
+                                "WARNING: mixed-precision backend polynomial preconditioner setup failed ({err}); falling back to CPU"
+                            );
                             return solve_iterative_cpu(
                                 config,
                                 csr,
@@ -3607,7 +3656,9 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     ) {
                         Ok(preconditioner) => preconditioner,
                         Err(err) => {
-                            eprintln!("WARNING: mixed-precision backend Chebyshev preconditioner setup failed ({err}); falling back to CPU");
+                            eprintln!(
+                                "WARNING: mixed-precision backend Chebyshev preconditioner setup failed ({err}); falling back to CPU"
+                            );
                             return solve_iterative_cpu(
                                 config,
                                 csr,
@@ -3697,7 +3748,9 @@ fn solve_iterative_via_backend<B: sonium_compute::Backend>(
                     ) {
                         Ok(preconditioner) => preconditioner,
                         Err(err) => {
-                            eprintln!("WARNING: mixed-precision backend saddle-point preconditioner setup failed ({err}); falling back to CPU");
+                            eprintln!(
+                                "WARNING: mixed-precision backend saddle-point preconditioner setup failed ({err}); falling back to CPU"
+                            );
                             return solve_iterative_cpu(
                                 config,
                                 csr,
@@ -5093,6 +5146,75 @@ mod tests {
     use sonium_solvers::LinearOperator;
 
     #[test]
+    fn pressure_gauge_respects_closed_and_natural_open_velocity_boundaries() {
+        let mesh = crate::mesh::generators::box_mesh_tetrahedra_symmetric(
+            0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 2, 2, 2,
+        );
+        let velocity = VectorH1Space::new(PolynomialDegree::P1, 3);
+        let pressure = H1Space::new(PolynomialDegree::P1);
+        let system = crate::assembly::mixed::assemble_mixed(
+            &super::super::forms::StokesViscousForm::new(0.0),
+            &super::super::forms::StokesDivergenceForm,
+            &velocity,
+            &pressure,
+            &mesh,
+            2,
+        );
+        let coords = velocity.dof_coordinates(&mesh).unwrap();
+        let side = coords
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| {
+                (p[0].abs() < 1e-12
+                    || (p[0] - 1.0).abs() < 1e-12
+                    || p[1].abs() < 1e-12
+                    || (p[1] - 1.0).abs() < 1e-12)
+                    .then_some(i)
+            })
+            .collect::<Vec<_>>();
+        let closed = coords
+            .iter()
+            .enumerate()
+            .filter_map(|(i, p)| {
+                p.iter()
+                    .any(|x| x.abs() < 1e-12 || (*x - 1.0).abs() < 1e-12)
+                    .then_some(i)
+            })
+            .collect::<Vec<_>>();
+        assert!(!pressure_constant_mode_is_free(&system.block_01, &side));
+        assert!(pressure_constant_mode_is_free(&system.block_01, &closed));
+        let nv = velocity.num_global_dofs(&mesh);
+        let np = pressure.num_global_dofs(&mesh);
+        let observation = assemble_steady_newton_linearization(
+            &mesh,
+            &velocity,
+            &pressure,
+            &NavierStokesConfig::default(),
+            &|_, _, _| vec![0.0; 3],
+            &side,
+            |_, _| vec![0.0; 3],
+            |_, _| [[0.0; 3]; 3],
+            &vec![0.0; nv],
+            &vec![1.0; np],
+        )
+        .unwrap();
+        // Uniform pressure has zero divergence/stabilization source. Its
+        // nonzero natural-end traction remains in momentum, and its value
+        // must not be overwritten by a fictitious interior pressure pin.
+        assert!(observation.state[nv..].iter().all(|p| *p == 1.0));
+        assert!(
+            observation.state_residual[nv..]
+                .iter()
+                .all(|r| r.abs() < 1e-12)
+        );
+        assert!(
+            observation.state_residual[..nv]
+                .iter()
+                .any(|r| r.abs() > 1e-3)
+        );
+    }
+
+    #[test]
     fn transported_element_field_publishes_exact_fixed_history_bdf_tangent() {
         let mesh = crate::mesh::generators::box_mesh_tetrahedra_symmetric(
             0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 2, 1, 1,
@@ -5786,7 +5908,11 @@ mod tests {
         assert!((at[2] - 0.75).abs() < 1.0e-12);
         let comps = field.velocity_components_at([0.25, 0.25, 0.25]);
         assert_eq!(comps.len(), 3);
-        assert!((field.velocity_magnitude_at([0.25, 0.25, 0.25]) - 0.25f64.hypot(0.50).hypot(0.75)).abs() < 1.0e-12);
+        assert!(
+            (field.velocity_magnitude_at([0.25, 0.25, 0.25]) - 0.25f64.hypot(0.50).hypot(0.75))
+                .abs()
+                < 1.0e-12
+        );
     }
 
     #[test]

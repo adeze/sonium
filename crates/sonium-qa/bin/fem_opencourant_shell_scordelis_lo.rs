@@ -2,9 +2,11 @@
 //!
 //! Verifies the checked-in decks match the `sonium_qa::rad` extended writer, then runs the
 //! starter and engine when `OPENCOURANT_EXE` (or legacy `RADISS_EXE`) is set and compares the
-//! free-edge midspan deflection against a REGRESSION baseline (-0.2574), not the MacNeal target
-//! (-0.3024): the engine's quads lock 15% stiff on this curved membrane benchmark (see
-//! `shell_scordelis_lo_case`).
+//! free-edge midspan deflection against the full-load nonlinear regression baseline
+//! (-0.2574). The published MacNeal target (-0.3024) describes the linear benchmark.
+//! Agreement with the regression alone does not validate linear benchmark accuracy.
+//! Full-load and reduced-load diagnostics show load sensitivity; the difference
+//! from the linear target cannot by itself establish shell locking.
 //!
 //! Missing references emit a structured optional skip, or fail when
 //! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release

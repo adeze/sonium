@@ -7,8 +7,9 @@
 //! Frame note: `sonium_qa::rad` currently offers no initial-velocity card, so the bar starts at
 //! rest while the wall rises at the impact speed. By Galilean equivalence the contact force
 //! matches the flying-bar test exactly; the displacement probe uses the laboratory-frame value.
-//! The mushroom-profile and plastic-work probes need the plastic LAW cards tracked for Worker 1
-//! (see the Phase-B report).
+//! The complete copper plastic leg continues to 80 us with isothermal Johnson-Cook
+//! flow and validates the full mushroom shape and plastic-strain field against an
+//! independent viscous-stabilization reference at the same physical timestamp.
 //!
 //! Missing references emit a structured optional skip, or fail when
 //! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
@@ -21,6 +22,11 @@ use sonium_qa::rad::{
     assert_probe_close, engine_exe, probes_json, run_case, write_engine, write_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/taylor_full_fixture.rs"]
+pub mod taylor_full_fixture;
+#[path = "support/taylor_native.rs"]
+pub mod taylor_native;
 
 const NAME: &str = "taylor_bar";
 const LENGTH: f64 = 0.0254;
@@ -112,7 +118,7 @@ pub fn taylor_bar_case() -> OpenCourantCase {
 /// and projects region-boundary nodes radially; the impact face floats
 /// one approach gap above the wall. Returns the mesh, the impact-face
 /// node set, and the face-center node id.
-fn cylinder_mesh(nz: usize, n: usize) -> (RadMesh, Vec<usize>, usize) {
+pub fn cylinder_mesh(nz: usize, n: usize) -> (RadMesh, Vec<usize>, usize) {
     let gap = VELOCITY * 1.0e-6;
     let step = 2.0 * RADIUS / n as f64;
     let corner = |i: usize| -RADIUS + step * i as f64;
@@ -297,9 +303,12 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
-        CASE_ID,
-        &output.engine,
-        !failed,
-    ));
+    let result = taylor_native::parity_result(&case, CASE_ID, &output.engine, !failed)
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(CASE_ID, error.to_string())
+                .metric("external_reference_health_passed", f64::from(!failed))
+                .metric("native_parity_executed", 0.0)
+                .reference(&output.engine)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

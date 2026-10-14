@@ -155,6 +155,31 @@ pub struct ExplicitContact {
     spotwelds: SpotweldSet,
 }
 
+/// Invalid solid-contact topology or normal-stiffness stability data.
+#[derive(Debug, thiserror::Error)]
+pub enum SolidContactError {
+    /// A connectivity index lies outside the parent node array.
+    #[error("solid contact node index lies outside the parent node array")]
+    NodeOutOfRange,
+    /// A triangle or brick repeats a node index.
+    #[error("solid contact connectivity repeats a node index")]
+    DegenerateConnectivity,
+    /// A triangle does not belong to exactly one brick boundary face.
+    #[error("solid contact triangle must belong to exactly one brick boundary face")]
+    TriangleNotBoundary,
+    /// Reference coordinates, edge lengths or search distances are invalid.
+    #[error("solid contact requires finite reference geometry and nonnegative search distances")]
+    InvalidGeometry,
+    /// Parent masses, coordinates or penalty parameters are invalid.
+    #[error(
+        "contact stability requires matching finite coordinates, positive masses and nonnegative stiffness"
+    )]
+    InvalidStabilityData,
+    /// The normal-only bound cannot admit tangential friction dynamics.
+    #[error("normal contact stability bound requires frictionless contact")]
+    UnsupportedFriction,
+}
+
 impl ExplicitContact {
     /// Creates a two-body operator from master faces and slave nodes.
     ///
@@ -190,6 +215,159 @@ impl ExplicitContact {
         }
     }
 
+    /// Creates solid self-contact with a volume neighborhood exclusion.
+    ///
+    /// Each triangle must belong to exactly one hexahedral boundary face.
+    /// Excludes nodes in its owner brick and every brick sharing an owner
+    /// node, in addition to the existing surface adjacency filter. Also
+    /// excludes reference brick-edge paths no longer than the contact
+    /// search margin, so refinement does not expose adjacent material.
+    /// These fixed material paths use undeformed coordinates, allowing
+    /// distant material to meet later without being newly excluded. This
+    /// prevents neighboring material near solid corners from contacting
+    /// its own boundary. Distant material remains eligible during folding.
+    /// Coordinates, face orientation, gap and timestep admission remain
+    /// the caller's responsibility; this validates connectivity only.
+    ///
+    /// # Errors
+    /// Rejects out-of-range or repeated connectivity indices, triangles
+    /// off the brick faces, triangles on shared interior faces, nonfinite
+    /// reference geometry, zero-length edges or invalid search distances.
+    pub fn new_self_solid(
+        faces: &[[usize; 3]],
+        bricks: &[[usize; 8]],
+        reference_coordinates: &[[f64; 3]],
+        config: ExplicitContactConfig,
+    ) -> Result<Self, SolidContactError> {
+        use std::collections::{BTreeMap, BTreeSet, VecDeque};
+
+        let num_parent_nodes = reference_coordinates.len();
+        let margin = config.search_radius + config.thickness_offset;
+        // Summed reference edge lengths at the cutoff can differ by a few
+        // ULPs after coordinate subtraction. This relative roundoff bound
+        // applies only to material exclusions, not contact gap or forces.
+        let material_margin = margin * (1.0 + 64.0 * f64::EPSILON);
+        if reference_coordinates
+            .iter()
+            .flatten()
+            .any(|v| !v.is_finite())
+            || !margin.is_finite()
+            || config.search_radius < 0.0
+            || config.thickness_offset < 0.0
+        {
+            return Err(SolidContactError::InvalidGeometry);
+        }
+
+        for nodes in faces
+            .iter()
+            .map(|v| v.as_slice())
+            .chain(bricks.iter().map(|v| v.as_slice()))
+        {
+            if nodes.iter().any(|n| *n >= num_parent_nodes) {
+                return Err(SolidContactError::NodeOutOfRange);
+            }
+            if nodes.iter().copied().collect::<BTreeSet<_>>().len() != nodes.len() {
+                return Err(SolidContactError::DegenerateConnectivity);
+            }
+        }
+        // Standard eight-node hexahedron face incidence. Winding is
+        // preserved from the supplied triangles, not inferred here.
+        const HEX_FACES: [[usize; 4]; 6] = [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [0, 1, 5, 4],
+            [1, 2, 6, 5],
+            [2, 3, 7, 6],
+            [3, 0, 4, 7],
+        ];
+        let mut node_bricks = vec![Vec::new(); num_parent_nodes];
+        // Physical edge lengths define a material path, rather than
+        // excluding every pair that happened to be close in space.
+        const HEX_EDGES: [[usize; 2]; 12] = [
+            [0, 1],
+            [1, 2],
+            [2, 3],
+            [3, 0],
+            [4, 5],
+            [5, 6],
+            [6, 7],
+            [7, 4],
+            [0, 4],
+            [1, 5],
+            [2, 6],
+            [3, 7],
+        ];
+        let mut edge_neighbors = vec![BTreeMap::new(); num_parent_nodes];
+        for (index, brick) in bricks.iter().enumerate() {
+            for &node in brick {
+                node_bricks[node].push(index);
+            }
+            for [a, b] in HEX_EDGES {
+                let (a, b) = (brick[a], brick[b]);
+                let length = (0..3)
+                    .map(|axis| {
+                        (reference_coordinates[a][axis] - reference_coordinates[b][axis]).powi(2)
+                    })
+                    .sum::<f64>()
+                    .sqrt();
+                if !length.is_finite() || length <= 0.0 {
+                    return Err(SolidContactError::InvalidGeometry);
+                }
+                edge_neighbors[a].insert(b, length);
+                edge_neighbors[b].insert(a, length);
+            }
+        }
+        let mut contact = Self::new_self(faces, num_parent_nodes, config);
+        for triangle in &mut contact.master.triangles {
+            let owners = node_bricks[triangle.nodes[0]]
+                .iter()
+                .copied()
+                .filter(|&index| {
+                    HEX_FACES.iter().any(|face| {
+                        triangle
+                            .nodes
+                            .iter()
+                            .all(|node| face.iter().any(|slot| bricks[index][*slot] == *node))
+                    })
+                })
+                .collect::<Vec<_>>();
+            let [owner] = owners.as_slice() else {
+                return Err(SolidContactError::TriangleNotBoundary);
+            };
+            let mut excluded = triangle
+                .adjacent_nodes
+                .iter()
+                .copied()
+                .collect::<BTreeSet<_>>();
+            for &node in &bricks[*owner] {
+                for &neighbor in &node_bricks[node] {
+                    excluded.extend(bricks[neighbor]);
+                }
+            }
+            let mut distances = BTreeMap::new();
+            let mut queue = VecDeque::new();
+            for &node in &triangle.nodes {
+                distances.insert(node, 0.0);
+                queue.push_back(node);
+            }
+            while let Some(node) = queue.pop_front() {
+                let distance = distances[&node];
+                for (&next, &length) in &edge_neighbors[node] {
+                    let candidate = distance + length;
+                    if candidate <= material_margin
+                        && distances.get(&next).is_none_or(|old| candidate < *old)
+                    {
+                        distances.insert(next, candidate);
+                        queue.push_back(next);
+                    }
+                }
+            }
+            excluded.extend(distances.keys());
+            triangle.adjacent_nodes = excluded.into_iter().collect();
+        }
+        Ok(contact)
+    }
+
     /// Counts the slave nodes.
     pub fn num_slave_nodes(&self) -> usize {
         self.slaves.len()
@@ -198,6 +376,81 @@ impl ExplicitContact {
     /// Borrows the contact parameters.
     pub fn config(&self) -> &ExplicitContactConfig {
         &self.config
+    }
+
+    /// Bound the mass-normalized frozen normal-spring contact stiffness.
+    ///
+    /// Returns a Gershgorin upper bound in inverse seconds squared for nearby
+    /// closest projections, including positive gaps inside the search margin.
+    /// Each spring transfers force to the master through its actual projection
+    /// weights. Thus a heavily loaded master contributes to the bound too.
+    /// This covers normal springs with frozen geometry, not geometric stiffness,
+    /// tangential friction, bulk elasticity or newly encountered distant faces.
+    /// Callers must combine it with their other timestep and motion limits.
+    ///
+    /// # Errors
+    /// Rejects incompatible/nonfinite coordinates, nonpositive masses, invalid
+    /// penalty/search parameters, unsupported friction or nonfinite projections.
+    pub fn normal_stiffness_mass_bound(
+        &self,
+        deformed_coords: &[f64],
+        masses: &[f64],
+    ) -> Result<f64, SolidContactError> {
+        let count = self.master.parent_to_surface.len();
+        if deformed_coords.len() != 3 * count
+            || masses.len() != count
+            || deformed_coords.iter().any(|v| !v.is_finite())
+            || masses.iter().any(|m| !m.is_finite() || *m <= 0.0)
+            || !self.config.penalty.is_finite()
+            || self.config.penalty < 0.0
+            || !self.config.search_radius.is_finite()
+            || self.config.search_radius < 0.0
+            || !self.config.thickness_offset.is_finite()
+            || self.config.thickness_offset < 0.0
+            || !(self.config.search_radius + self.config.thickness_offset).is_finite()
+        {
+            return Err(SolidContactError::InvalidStabilityData);
+        }
+        if self.config.friction_coefficient != 0.0 {
+            return Err(SolidContactError::UnsupportedFriction);
+        }
+        let mut row_sums = vec![0.0; 3 * count];
+        for (slave, entry) in self
+            .closest_projections(deformed_coords)
+            .into_iter()
+            .enumerate()
+        {
+            let Some((triangle, projection)) = entry else {
+                continue;
+            };
+            let master = self.master.triangles[triangle].nodes;
+            let nodes = [slave, master[0], master[1], master[2]];
+            let weights = [
+                1.0,
+                -(1.0 - projection.xi - projection.eta),
+                -projection.xi,
+                -projection.eta,
+            ];
+            let coefficients =
+                std::array::from_fn::<_, 4, _>(|i| weights[i] / masses[nodes[i]].sqrt());
+            let absolute_sum = coefficients.iter().map(|c| c.abs()).sum::<f64>()
+                * projection.normal.iter().map(|n| n.abs()).sum::<f64>();
+            if !absolute_sum.is_finite() {
+                return Err(SolidContactError::InvalidStabilityData);
+            }
+            for (&node, &coefficient) in nodes.iter().zip(&coefficients) {
+                for (axis, &normal) in projection.normal.iter().enumerate() {
+                    row_sums[3 * node + axis] +=
+                        self.config.penalty * coefficient.abs() * normal.abs() * absolute_sum;
+                }
+            }
+        }
+        let bound = row_sums.into_iter().fold(0.0, f64::max);
+        if bound.is_finite() {
+            Ok(bound)
+        } else {
+            Err(SolidContactError::InvalidStabilityData)
+        }
     }
 
     /// Registers a spotweld connector, returning its id.
@@ -268,25 +521,11 @@ impl ExplicitContact {
         pairs
     }
 
-    /// Penalty normal plus friction scatter, optionally recording pairs.
-    ///
-    /// Shared by [`apply`](Self::apply) and
-    /// [`apply_with_pairs`](Self::apply_with_pairs) so force values never
-    /// diverge between the scatter-only and handoff paths.
-    fn penalty_pass(
+    fn closest_projections(
         &self,
         deformed_coords: &[f64],
-        velocities: &[f64],
-        forces: &mut [f64],
-        mut pairs: Option<&mut Vec<PenaltyPair>>,
-    ) {
+    ) -> Vec<Option<(usize, ProjectionResult)>> {
         let num_nodes = self.master.parent_to_surface.len();
-        assert!(
-            deformed_coords.len() >= 3 * num_nodes
-                && velocities.len() >= 3 * num_nodes
-                && forces.len() >= 3 * num_nodes,
-            "explicit contact needs flat 3N coordinate, velocity, and force buffers"
-        );
         let margin = self.config.search_radius + self.config.thickness_offset;
         let bvh = self.master.build_bvh(deformed_coords, margin);
         let candidates =
@@ -310,6 +549,12 @@ impl ExplicitContact {
                 node_at(tri.nodes[1]),
                 node_at(tri.nodes[2]),
             );
+            // Expanded triangle and query boxes only provide broad-phase
+            // candidates. Reject geometrically distant points before gap
+            // selection, including points behind a thin solid's other skin.
+            if projection.distance > margin {
+                continue;
+            }
             let deeper = match &best[slave] {
                 None => true,
                 Some((_, prev)) => projection.gap < prev.gap,
@@ -318,6 +563,29 @@ impl ExplicitContact {
                 best[slave] = Some((tri_idx, projection));
             }
         }
+        best
+    }
+
+    /// Penalty normal plus friction scatter, optionally recording pairs.
+    ///
+    /// Shared by [`apply`](Self::apply) and
+    /// [`apply_with_pairs`](Self::apply_with_pairs) so force values never
+    /// diverge between the scatter-only and handoff paths.
+    fn penalty_pass(
+        &self,
+        deformed_coords: &[f64],
+        velocities: &[f64],
+        forces: &mut [f64],
+        mut pairs: Option<&mut Vec<PenaltyPair>>,
+    ) {
+        let num_nodes = self.master.parent_to_surface.len();
+        assert!(
+            deformed_coords.len() >= 3 * num_nodes
+                && velocities.len() >= 3 * num_nodes
+                && forces.len() >= 3 * num_nodes,
+            "explicit contact needs flat 3N coordinate, velocity, and force buffers"
+        );
+        let best = self.closest_projections(deformed_coords);
         for (slave, entry) in best.iter().enumerate() {
             let Some((tri_idx, projection)) = entry else {
                 continue;
@@ -1389,6 +1657,111 @@ pub fn symmetric_penalty_pass(
 mod tests {
     use super::*;
 
+    #[test]
+    fn normal_mass_bound_recovers_two_node_spring_and_guards_nearby_contact() {
+        let mut contact = ExplicitContact::new_two_body(
+            &[[0, 1, 2]],
+            &[3],
+            4,
+            ExplicitContactConfig {
+                penalty: 100.0,
+                search_radius: 0.01,
+                ..Default::default()
+            },
+        );
+        let mut positions = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -0.001,
+        ];
+        let mass = vec![2.0; 4];
+        // At a triangle vertex the frozen normal spring connects exactly two
+        // nodes. Its nonzero eigenvalue is k/m_slave + k/m_master = 100/s².
+        let bound = contact
+            .normal_stiffness_mass_bound(&positions, &mass)
+            .unwrap();
+        assert!((bound - 100.0).abs() < 1e-12);
+        let mut force = vec![0.0; positions.len()];
+        assert_eq!(
+            contact
+                .apply_with_pairs(&positions, &vec![0.0; positions.len()], &mut force)
+                .len(),
+            1
+        );
+        positions[11] = 0.001;
+        assert!(
+            contact
+                .apply_with_pairs(&positions, &vec![0.0; positions.len()], &mut force)
+                .is_empty()
+        );
+        assert!(
+            (contact
+                .normal_stiffness_mass_bound(&positions, &mass)
+                .unwrap()
+                - 100.0)
+                .abs()
+                < 1e-12
+        );
+        positions[11] = 1.0;
+        assert_eq!(
+            contact
+                .normal_stiffness_mass_bound(&positions, &mass)
+                .unwrap(),
+            0.0
+        );
+    }
+
+    #[test]
+    fn normal_mass_bound_rejects_bad_masses_and_tangential_contact() {
+        let positions = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.25, 0.25, -0.001,
+        ];
+        let mut config = ExplicitContactConfig {
+            penalty: 100.0,
+            search_radius: 0.01,
+            ..Default::default()
+        };
+        let contact = ExplicitContact::new_two_body(&[[0, 1, 2]], &[3], 4, config);
+        assert!(
+            contact
+                .normal_stiffness_mass_bound(&positions, &[1.0, 1.0, 1.0])
+                .is_err()
+        );
+        assert!(
+            contact
+                .normal_stiffness_mass_bound(&positions, &[1.0, 1.0, 1.0, 0.0])
+                .is_err()
+        );
+        config.friction_coefficient = 0.1;
+        let contact = ExplicitContact::new_two_body(&[[0, 1, 2]], &[3], 4, config);
+        assert!(matches!(
+            contact.normal_stiffness_mass_bound(&positions, &[1.0; 4]),
+            Err(SolidContactError::UnsupportedFriction)
+        ));
+    }
+
+    #[test]
+    fn normal_mass_bound_accumulates_springs_on_shared_master() {
+        let contact = ExplicitContact::new_two_body(
+            &[[0, 1, 2]],
+            &[3, 4],
+            5,
+            ExplicitContactConfig {
+                penalty: 100.0,
+                search_radius: 0.01,
+                ..Default::default()
+            },
+        );
+        let positions = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, -0.001, 0.0, 0.0, -0.002,
+        ];
+        // Two equal springs share a unit-mass master: the three-node star
+        // has eigenvalues 0,k,3k. Its master absolute row sum is 4k.
+        let bound = contact
+            .normal_stiffness_mass_bound(&positions, &[1.0; 5])
+            .unwrap();
+        assert!(bound >= 300.0);
+        assert!((bound - 400.0).abs() < 1e-12);
+    }
+
     /// Master plate (two triangles, z = 0, outward +z) plus slave node.
     fn plate_setup(slave: [f64; 3]) -> (Vec<f64>, ExplicitContact) {
         let coords = vec![
@@ -1481,6 +1854,106 @@ mod tests {
         contact.apply(&coords, &velocities, &mut forces);
         // Separated tetrahedron draws no self-contact force.
         assert!(forces.iter().all(|f| *f == 0.0));
+    }
+
+    #[test]
+    fn expanded_boxes_do_not_contact_a_distant_backside() {
+        // Both boxes expand by the radius, admitting the 1.5mm backside
+        // point. The actual 1mm search radius excludes it.
+        let faces = [[0, 1, 2]];
+        let config = ExplicitContactConfig {
+            search_radius: 0.001,
+            penalty: 10.0,
+            ..ExplicitContactConfig::default()
+        };
+        let mut contact = ExplicitContact::new_two_body(&faces, &[3], 4, config);
+        let mut coordinates = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.25, 0.25, -0.0015,
+        ];
+        let velocities = vec![0.0; 12];
+        let mut forces = vec![0.0; 12];
+        assert!(
+            contact
+                .apply_with_pairs(&coordinates, &velocities, &mut forces)
+                .is_empty()
+        );
+        assert!(forces.iter().all(|f| *f == 0.0));
+
+        // Within the radius, the same point produces the analytic normal
+        // force and an equal, opposite reaction on the triangle.
+        coordinates[11] = -0.0005;
+        let pairs = contact.apply_with_pairs(&coordinates, &velocities, &mut forces);
+        assert_eq!(pairs.len(), 1);
+        assert!((forces[11] - 0.005).abs() < 1e-14);
+        for axis in 0..3 {
+            assert!(forces.iter().skip(axis).step_by(3).sum::<f64>().abs() < 1e-14);
+        }
+    }
+
+    #[test]
+    fn solid_neighborhood_preserves_distant_fold_contact_and_rejects_invalid_faces() {
+        // Three stacked bricks form one connected solid. Its distant
+        // upper surface may meet the lower exterior after deformation.
+        let bricks = [
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            [4, 5, 6, 7, 8, 9, 10, 11],
+            [8, 9, 10, 11, 12, 13, 14, 15],
+        ];
+        let faces = [[0, 3, 2], [12, 13, 14]];
+        let config = ExplicitContactConfig {
+            penalty: 2000.0,
+            search_radius: 0.001,
+            ..Default::default()
+        };
+        let mut coordinates = vec![
+            0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 0.0,
+            1.0, 1.0, 1.0, 1.0, 0.0, 1.0, 1.0, 0.0, 0.0, 2.0, 1.0, 0.0, 2.0, 1.0, 1.0, 2.0, 0.0,
+            1.0, 2.0, 0.0, 0.0, 3.0, 1.0, 0.0, 3.0, 1.0, 1.0, 3.0, 0.0, 1.0, 3.0,
+        ];
+        let reference = coordinates
+            .chunks_exact(3)
+            .map(|p| [p[0], p[1], p[2]])
+            .collect::<Vec<_>>();
+        let mut contact =
+            ExplicitContact::new_self_solid(&faces, &bricks, &reference, config).unwrap();
+        let mut forces = vec![0.0; 48];
+        let velocities = vec![0.0; 48];
+        assert!(
+            contact
+                .apply_with_pairs(&coordinates, &velocities, &mut forces)
+                .is_empty()
+        );
+        coordinates[36..39].copy_from_slice(&[0.25, 0.75, 0.0005]);
+        let pairs = contact.apply_with_pairs(&coordinates, &velocities, &mut forces);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].slave, 12);
+        assert!((forces[38] + 1.0).abs() < 1e-12);
+        for axis in 0..3 {
+            assert!(forces.iter().skip(axis).step_by(3).sum::<f64>().abs() < 1e-12);
+        }
+        assert!(matches!(
+            ExplicitContact::new_self_solid(&[[0, 2, 6]], &bricks, &reference, config),
+            Err(SolidContactError::TriangleNotBoundary)
+        ));
+        assert!(matches!(
+            ExplicitContact::new_self_solid(&[[0, 0, 1]], &bricks, &reference, config),
+            Err(SolidContactError::DegenerateConnectivity)
+        ));
+        assert!(matches!(
+            ExplicitContact::new_self_solid(&[[0, 1, 16]], &bricks, &reference, config),
+            Err(SolidContactError::NodeOutOfRange)
+        ));
+        let shared = [bricks[0], [4, 5, 6, 7, 8, 9, 10, 11]];
+        assert!(matches!(
+            ExplicitContact::new_self_solid(&[[4, 5, 6]], &shared, &reference, config),
+            Err(SolidContactError::TriangleNotBoundary)
+        ));
+        let mut bad_reference = reference.clone();
+        bad_reference[0][0] = f64::NAN;
+        assert!(matches!(
+            ExplicitContact::new_self_solid(&faces, &bricks, &bad_reference, config),
+            Err(SolidContactError::InvalidGeometry)
+        ));
     }
 
     #[test]

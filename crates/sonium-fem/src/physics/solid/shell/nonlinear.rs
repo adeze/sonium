@@ -5,12 +5,15 @@
 //! 2. Project displacements to corotated local frame
 //! 3. Evaluate CST membrane forces + DKT bending moments using existing
 //!    analytical B-matrices and constitutive laws
-//! 4. Transform internal forces back to global frame
+//! 4. Apply the corotated-displacement derivative transpose to local forces
 //! 5. Tangent = numerical derivative of the complete corotated residual
 
 use super::element::ShellElement;
 
 /// Corotational shell form for geometrically nonlinear analysis.
+///
+/// Internal forces differentiate the corotated elastic potential, including
+/// the position-dependent frame. The tangent differentiates those forces.
 ///
 /// Implements [`NonlinearElementForm<f64>`](crate::forms::NonlinearElementForm).
 pub struct CorotationalShellForm {
@@ -25,7 +28,7 @@ impl CorotationalShellForm {
         Self { elements, n_dofs }
     }
 
-    /// Compute reference node positions in global coordinates.
+    /// Compute reference positions relative to the element origin, in global axes.
     fn reference_points(&self, elem_idx: usize) -> [[f64; 3]; 3] {
         let elem = &self.elements[elem_idx];
         let rot = &elem.rotation;
@@ -33,32 +36,35 @@ impl CorotationalShellForm {
 
         for (i, &(lx, ly)) in elem.local_coords.iter().enumerate() {
             points[i] = [
-                elem.origin[0] + rot[0] * lx + rot[1] * ly,
-                elem.origin[1] + rot[3] * lx + rot[4] * ly,
-                elem.origin[2] + rot[6] * lx + rot[7] * ly,
+                rot[0] * lx + rot[1] * ly,
+                rot[3] * lx + rot[4] * ly,
+                rot[6] * lx + rot[7] * ly,
             ];
         }
 
         points
     }
 
-    /// Compute deformed node positions from global solution.
+    /// Compute deformed relative positions from the global displacement solution.
     pub(crate) fn deformed_points(&self, elem_idx: usize, u: &[f64]) -> [[f64; 3]; 3] {
         let elem = &self.elements[elem_idx];
         let mut points = self.reference_points(elem_idx);
 
-        // Add displacements
+        // Orientations and strains depend only on position differences. Avoid
+        // adding a large world origin or rigid translation and subtracting it
+        // again: that loses the small elastic deformation in force evaluation.
+        let anchor = elem.nodes[0] * 6;
         for (i, &node) in elem.nodes.iter().enumerate() {
-            points[i][0] += u[node * 6];
-            points[i][1] += u[node * 6 + 1];
-            points[i][2] += u[node * 6 + 2];
+            points[i][0] += u[node * 6] - u[anchor];
+            points[i][1] += u[node * 6 + 1] - u[anchor + 1];
+            points[i][2] += u[node * 6 + 2] - u[anchor + 2];
         }
 
         points
     }
 
     /// Rotate a global vector into the current local frame.
-    fn global_to_local(rot: &[f64; 9], vector: [f64; 3]) -> [f64; 3] {
+    pub(super) fn global_to_local(rot: &[f64; 9], vector: [f64; 3]) -> [f64; 3] {
         [
             rot[0] * vector[0] + rot[3] * vector[1] + rot[6] * vector[2],
             rot[1] * vector[0] + rot[4] * vector[1] + rot[7] * vector[2],
@@ -67,7 +73,7 @@ impl CorotationalShellForm {
     }
 
     /// Small-rotation vector of `reference^T * current`, in reference-local axes.
-    fn relative_rotation_vector(reference: &[f64; 9], current: &[f64; 9]) -> [f64; 3] {
+    pub(super) fn relative_rotation_vector(reference: &[f64; 9], current: &[f64; 9]) -> [f64; 3] {
         let mut relative = [0.0; 9];
         for row in 0..3 {
             for column in 0..3 {
@@ -178,6 +184,53 @@ impl CorotationalShellForm {
         ]
     }
 
+    /// Differentiate the current frame with respect to one nodal translation.
+    pub(super) fn deformed_rotation_variation(
+        pts: &[[f64; 3]; 3],
+        rotation: &[f64; 9],
+        node: usize,
+        component: usize,
+    ) -> [f64; 9] {
+        let dot = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).map(|(x, y)| x * y).sum::<f64>();
+        let cross = |a: [f64; 3], b: [f64; 3]| {
+            [
+                a[1] * b[2] - a[2] * b[1],
+                a[2] * b[0] - a[0] * b[2],
+                a[0] * b[1] - a[1] * b[0],
+            ]
+        };
+        let a = std::array::from_fn(|i| pts[1][i] - pts[0][i]);
+        let b = std::array::from_fn(|i| pts[2][i] - pts[0][i]);
+        let normal = cross(a, b);
+        let length = dot(a, a).sqrt();
+        let area2 = dot(normal, normal).sqrt();
+        if !length.is_finite()
+            || length <= f64::EPSILON
+            || !area2.is_finite()
+            || area2 <= f64::EPSILON
+        {
+            // The degenerate branch of deformed_rotation uses a constant frame.
+            return [0.0; 9];
+        }
+        let ex = [rotation[0], rotation[3], rotation[6]];
+        let ez = [rotation[2], rotation[5], rotation[8]];
+        let mut da = [0.0; 3];
+        let mut db = [0.0; 3];
+        da[component] = f64::from(node == 1) - f64::from(node == 0);
+        db[component] = f64::from(node == 2) - f64::from(node == 0);
+        let de = std::array::from_fn(|i| (da[i] - ex[i] * dot(ex, da)) / length);
+        let first = cross(da, b);
+        let second = cross(a, db);
+        let dn = std::array::from_fn(|i| first[i] + second[i]);
+        let dz = std::array::from_fn(|i| (dn[i] - ez[i] * dot(ez, dn)) / area2);
+        let first = cross(dz, ex);
+        let second = cross(ez, de);
+        let dy: [f64; 3] = std::array::from_fn(|i| first[i] + second[i]);
+        [
+            de[0], dy[0], dz[0], de[1], dy[1], dz[1], de[2], dy[2], dz[2],
+        ]
+    }
+
     /// Build the 18x18 block-diagonal local-to-global rotation matrix.
     pub(crate) fn build_rotation_18x18(rot: &[f64; 9]) -> Vec<f64> {
         let n = 18;
@@ -216,7 +269,6 @@ impl crate::forms::NonlinearElementForm<f64> for CorotationalShellForm {
         // Deformed configuration
         let def_pts = self.deformed_points(elem_idx, global_solution);
         let rot_def = Self::deformed_rotation(&def_pts);
-        let t18 = Self::build_rotation_18x18(&rot_def);
 
         let d_local = self.corotated_local_displacement(elem_idx, global_solution, &rot_def);
 
@@ -226,15 +278,43 @@ impl crate::forms::NonlinearElementForm<f64> for CorotationalShellForm {
         let mut f_local = [0.0; 18];
         for i in 0..18 {
             for j in 0..18 {
-                f_local[i] += k_local[i * 18 + j] * d_local[j];
+                // The elastic potential is 1/2 q^T K q; remove roundoff-only
+                // skew in the material stiffness when forming its derivative.
+                f_local[i] += 0.5 * (k_local[i * 18 + j] + k_local[j * 18 + i]) * d_local[j];
             }
         }
 
-        // Transform back to global: f_global = T * f_local
+        // Elastic virtual work: f_global = (dq/du)^T K q. The current frame
+        // depends on translations. Merely rotating Kq omits its variation
+        // and produces nonconservative forces and a nonsymmetric Jacobian.
         let mut f_global = vec![0.0; 18];
-        for i in 0..18 {
-            for j in 0..18 {
-                f_global[i] += t18[i * 18 + j] * f_local[j];
+        let dofs = elem.global_dofs();
+        for node in 0..3 {
+            for component in 0..3 {
+                let variation =
+                    Self::deformed_rotation_variation(&def_pts, &rot_def, node, component);
+                let rigid_variation = Self::relative_rotation_vector(&elem.rotation, &variation);
+                for local_node in 0..3 {
+                    let relative = std::array::from_fn(|i| def_pts[local_node][i] - def_pts[0][i]);
+                    let mut motion = [0.0; 3];
+                    motion[component] = f64::from(node == local_node) - f64::from(node == 0);
+                    let frame_motion = Self::global_to_local(&variation, relative);
+                    let direct_motion = Self::global_to_local(&rot_def, motion);
+                    let theta =
+                        std::array::from_fn(|i| global_solution[dofs[6 * local_node + 3 + i]]);
+                    let frame_theta = Self::global_to_local(&variation, theta);
+                    for i in 0..3 {
+                        f_global[6 * node + component] += f_local[6 * local_node + i]
+                            * (frame_motion[i] + direct_motion[i])
+                            + f_local[6 * local_node + 3 + i]
+                                * (frame_theta[i] - rigid_variation[i]);
+                    }
+                }
+                // Rotational unknowns do not change the position-defined frame.
+                for i in 0..3 {
+                    f_global[6 * node + 3 + component] +=
+                        rot_def[3 * component + i] * f_local[6 * node + 3 + i];
+                }
             }
         }
 
@@ -246,13 +326,10 @@ impl crate::forms::NonlinearElementForm<f64> for CorotationalShellForm {
         // current-frame rotation. The previous transformed-material tangent
         // omitted this geometric contribution and was not a Newton tangent.
         //
-        // Do NOT symmetrise: the rotated-local force is not an exact energy
-        // gradient (the force rotation omits the frame-derivative transpose),
-        // so its Jacobian is genuinely nonsymmetric once membrane strains
-        // couple to frame rotation. Symmetrising corrupts the Newton
-        // direction into an ascent direction and stalls deep-deflection
-        // solves in a period-2 limit cycle. All consumers (sparse LU Newton,
-        // imperfection buckling) accept a nonsymmetric tangent.
+        // The residual is now the complete elastic-energy derivative. Its
+        // exact tangent is symmetric; retain this direct numerical derivative
+        // so finite-difference error is visible to independent checks rather
+        // than hiding it with post-hoc symmetrization.
         let dofs = self.elements[elem_idx].global_dofs();
         let mut tangent = vec![0.0; 18 * 18];
         for (column, &dof) in dofs.iter().enumerate() {
@@ -305,11 +382,41 @@ mod tests {
     }
 
     #[test]
+    fn world_origin_and_rigid_translation_do_not_corrupt_elastic_forces() {
+        let (elements, n_dofs) = test_shell_elements();
+        let mut translated = elements.clone();
+        translated[0].origin = [1e12, -1e12, 1e12];
+        let reference = CorotationalShellForm::new(elements, n_dofs);
+        let distant = CorotationalShellForm::new(translated, n_dofs);
+        // Binary-exact displacement differences also remain representable
+        // when the complete element undergoes a large rigid translation.
+        let mut u = vec![0.0; n_dofs];
+        u[6] = 1.0 / 128.0;
+        u[13] = -1.0 / 64.0;
+        u[14] = 1.0 / 256.0;
+        u[10] = 1.0 / 128.0;
+        let expected = reference.element_residual(0, &u);
+        assert!(expected.iter().any(|v| v.abs() > 1.0));
+        assert_eq!(distant.element_residual(0, &u), expected);
+        assert_eq!(
+            distant.element_tangent(0, &u),
+            reference.element_tangent(0, &u)
+        );
+        for node in 0..3 {
+            for component in 0..3 {
+                u[6 * node + component] += 1e8;
+            }
+        }
+        assert_eq!(reference.element_residual(0, &u), expected);
+        assert_eq!(distant.element_residual(0, &u), expected);
+    }
+
+    #[test]
     fn test_corotational_shell_tangent_matches_fine_step_derivative() {
         // The numerical tangent must agree with an independent central
         // difference at 100x smaller step, evaluated at a bent state where
-        // frame rotation couples into the Jacobian. This guards the exact
-        // Jacobian; symmetrising it would break Newton (see element_tangent).
+        // frame rotation couples into the Jacobian. This guards the complete
+        // derivative without hiding differentiation error by symmetrizing it.
         let (elements, n_dofs) = test_shell_elements();
         let dofs = elements[0].global_dofs();
         let form = CorotationalShellForm::new(elements, n_dofs);
@@ -341,6 +448,63 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn corotational_forces_match_independent_elastic_energy_derivative() {
+        let (elements, n_dofs) = test_shell_elements();
+        let form = CorotationalShellForm::new(elements, n_dofs);
+        let mut u = vec![0.0; n_dofs];
+        u[6] = 0.015;
+        u[13] = -0.01;
+        u[2] = 0.05;
+        u[8] = 0.03;
+        u[14] = -0.02;
+        u[3] = 0.1;
+        u[10] = -0.08;
+        let energy = |state: &[f64]| {
+            let rotation =
+                CorotationalShellForm::deformed_rotation(&form.deformed_points(0, state));
+            let d = form.corotated_local_displacement(0, state, &rotation);
+            let k = form.elements[0].stiffness_local_combined();
+            (0..18)
+                .map(|i| {
+                    (0..18)
+                        .map(|j| 0.5 * d[i] * k[i * 18 + j] * d[j])
+                        .sum::<f64>()
+                })
+                .sum::<f64>()
+        };
+        let force = form.element_residual(0, &u);
+        let derivative = (0..n_dofs)
+            .map(|i| {
+                let mut plus = u.clone();
+                let mut minus = u.clone();
+                let h = 1e-7;
+                plus[i] += h;
+                minus[i] -= h;
+                (energy(&plus) - energy(&minus)) / (2.0 * h)
+            })
+            .collect::<Vec<_>>();
+        let error = force
+            .iter()
+            .zip(&derivative)
+            .map(|(f, d)| (f - d).powi(2))
+            .sum::<f64>()
+            .sqrt()
+            / derivative.iter().map(|d| d * d).sum::<f64>().sqrt();
+        assert!(
+            error < 2e-7,
+            "elastic virtual-work relative error {error:e}"
+        );
+        let tangent = form.element_tangent(0, &u);
+        let asymmetry = (0..18)
+            .flat_map(|i| (0..18).map(move |j| (i, j)))
+            .map(|(i, j)| (tangent[i * 18 + j] - tangent[j * 18 + i]).powi(2))
+            .sum::<f64>()
+            .sqrt()
+            / tangent.iter().map(|v| v * v).sum::<f64>().sqrt();
+        assert!(asymmetry < 2e-7, "elastic tangent asymmetry {asymmetry:e}");
     }
 
     #[test]

@@ -1,4 +1,7 @@
 //! Certify external refinement of the original complete restrained-warping transient.
+//!
+//! Optional axial-cell and section-factor arguments run one additional level.
+//! A single level records a full reference history without certifying convergence.
 
 // Rust guideline compliant 2026-02-21
 
@@ -15,9 +18,15 @@ use sonium_qa::rad::{assert_probe_close, engine_exe, run_case, write_engine, wri
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = engine_exe().ok_or("OpenCourant engine required for the reference study")?;
     let output_path = std::env::var("P2_WARPING_REFERENCE_OUTPUT")?;
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let requested = match args.as_slice() {
+        [] => vec![(40, 2), (60, 3), (80, 4)],
+        [axial, section] => vec![(axial.parse::<usize>()?, section.parse::<usize>()?)],
+        _ => return Err("provide both axial-cell count and section factor, or neither".into()),
+    };
     let mut levels = Vec::new();
     let mut values = Vec::new();
-    for (axial, section) in [(40, 2), (60, 3), (80, 4)] {
+    for (axial, section) in requested {
         let case = reference::refined_reference_case(axial, section)?;
         let work = std::env::temp_dir().join(format!(
             "p2_warping_reference_{}_{}_{}",
@@ -67,6 +76,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "status":"incomplete","levels":levels,
             "scope":"Original material, full root restraint, exact tip force couple coordinates and 0.5 s ramp/hold history; original midspan and tip DZ pairs; external mesh refinement only"}))?,
         )?;
+    }
+    if levels.len() == 1 {
+        std::fs::write(
+            output_path,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "status":"complete single reference level; refinement and native parity unproven",
+                "levels":levels,
+                "physical_stop_time_s":0.5,
+                "scope":"Original material, root restraint, tip force couple, full ramp/hold duration and original midspan/tip probes. Must be compared with independently completed neighboring mesh levels before convergence admission."
+            }))?,
+        )?;
+        return Ok(());
     }
     let mut refinements = Vec::new();
     let mut passed = true;

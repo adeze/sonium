@@ -8,7 +8,9 @@
 //!
 //! Missing references emit a structured optional skip, or fail when
 //! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
-//! success also requires a matching native solve and full named phenomenon.
+//! success also requires two complete native contact histories and an independent
+//! full-Q1-quadrature reference, compared at the actual reference timestamps.
+//! The geometry, material, walls, velocity and full duration remain identical.
 
 // Rust guideline compliant 2026-02-21
 
@@ -17,6 +19,9 @@ use sonium_qa::rad::{
     write_starter,
 };
 use std::path::PathBuf;
+
+#[path = "support/hertz_native.rs"]
+mod hertz_native;
 
 fn decks_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("decks/hertz_sphere")
@@ -135,9 +140,12 @@ fn main() {
         }
     }
     std::fs::remove_dir_all(&work).ok();
-    sonium_qa::rad::gate::publish_and_exit(sonium_qa::rad::gate::reference_health_result(
-        CASE_ID,
-        &output.engine,
-        !failed,
-    ));
+    let result = hertz_native::parity_result(&case, CASE_ID, &output.engine, !failed)
+        .unwrap_or_else(|error| {
+            sonium_qa::QaResult::failed(CASE_ID, error.to_string())
+                .metric("external_reference_health_passed", f64::from(!failed))
+                .metric("native_parity_executed", 0.0)
+                .reference(&output.engine)
+        });
+    sonium_qa::rad::gate::publish_and_exit(result);
 }

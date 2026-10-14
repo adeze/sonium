@@ -5,8 +5,9 @@
 //! elongation against the elastic bar closed form (FL/EA) at a sub-yield load.
 //!
 //! The full necking bar has no closed form: this deck plus the Wolfram incremental reference
-//! and the Consider/Bridgman checks in `qa-fem-necking-bar` are the validation legs. Considere-
-//! strain and post-necking probes need the plastic LAW cards tracked for Worker 1.
+//! and the Considere/Bridgman checks in `qa-fem-necking-bar` are separate validation
+//! legs. The shared complete plastic fixture adds explicit hardening and pulling
+//! beyond the elastic regime; its native parity and necking gate remain pending.
 //!
 //! Missing references emit a structured optional skip, or fail when
 //! SONIUM_QA_REQUIRE_OPENCOURANT=1. External probe health is recorded separately; release
@@ -23,8 +24,11 @@ use std::path::PathBuf;
 
 const NAME: &str = "necking_bar";
 
+#[path = "support/necking_full_fixture.rs"]
+pub mod necking_full_fixture;
+
 /// Builds the necking bar case on the real `sonium_qa::rad` API.
-fn necking_bar_case() -> OpenCourantCase {
+pub(crate) fn necking_bar_case() -> OpenCourantCase {
     let length = 0.1;
     let section = 0.01;
     let youngs = 200.0e9;

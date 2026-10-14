@@ -43,7 +43,7 @@ if [[ "$mode" == cpu || "$mode" == both ]]; then
     SONIUM_OUTPUT_DIR="$output_dir" \
     CARGO_TARGET_DIR="$target_dir" \
     cargo test --release --no-default-features --features cpu \
-      -p sonium-compute --test c4_memory_quota_evidence -- \
+      -p sonium-compute --test memory_quota_evidence -- \
       --nocapture --test-threads=1 > "$output_dir/c4-memory-run.log" 2>&1
     (
         cd "$output_dir"
@@ -69,7 +69,7 @@ if [[ "$mode" == cuda || "$mode" == both ]]; then
     SONIUM_OUTPUT_DIR="$cuda_output" \
     CARGO_TARGET_DIR="$target_dir" \
     cargo test --release -p sonium-compute --features cuda \
-      --test c4_cuda_memory_quota_evidence -- \
+      --test cuda_memory_quota_evidence -- \
       --nocapture --test-threads=1 > "$cuda_output/c4-cuda-memory-run.log" 2>&1
     (
         cd "$cuda_output"

@@ -1185,40 +1185,55 @@ pub fn try_box_mesh_tetrahedra_symmetric(
         |i: usize, j: usize, k: usize| -> usize { k * (ny + 1) * (nx + 1) + j * (nx + 1) + i };
     let n_corners = (nx + 1) * (ny + 1) * (nz + 1);
 
-    // 2. Face-centre nodes — one per cell-face. We materialise them per
-    //    cube to keep indexing trivial; duplicates on internal faces are
-    //    harmless for FEM assembly (each cube uses its own copy and the
-    //    boundary is detected via topology). For symmetry purposes the
-    //    important thing is that each cube uses face centres at its own
-    //    geometric face centroids.
+    // 2. Shared face-centre nodes. Adjacent cubes must use the same DOF
+    //    on their common face to preserve continuity and interior topology.
     let face_centres_start = n_corners;
-    // 6 faces × nx·ny·nz cubes, in order: −x, +x, −y, +y, −z, +z.
     for k in 0..nz {
         for j in 0..ny {
+            for i in 0..=nx {
+                mesh.add_node(Point::new_3d(
+                    x_min + i as f64 * dx,
+                    y_min + (j as f64 + 0.5) * dy,
+                    z_min + (k as f64 + 0.5) * dz,
+                ));
+            }
+        }
+    }
+    let y_faces_start = mesh.num_nodes();
+    for k in 0..nz {
+        for j in 0..=ny {
             for i in 0..nx {
-                let x0 = x_min + i as f64 * dx;
-                let y0 = y_min + j as f64 * dy;
-                let z0 = z_min + k as f64 * dz;
-                let xc = x0 + 0.5 * dx;
-                let yc = y0 + 0.5 * dy;
-                let zc = z0 + 0.5 * dz;
-                // Face centroids
-                mesh.add_node(Point::new_3d(x0, yc, zc)); // −x
-                mesh.add_node(Point::new_3d(x0 + dx, yc, zc)); // +x
-                mesh.add_node(Point::new_3d(xc, y0, zc)); // −y
-                mesh.add_node(Point::new_3d(xc, y0 + dy, zc)); // +y
-                mesh.add_node(Point::new_3d(xc, yc, z0)); // −z
-                mesh.add_node(Point::new_3d(xc, yc, z0 + dz)); // +z
+                mesh.add_node(Point::new_3d(
+                    x_min + (i as f64 + 0.5) * dx,
+                    y_min + j as f64 * dy,
+                    z_min + (k as f64 + 0.5) * dz,
+                ));
+            }
+        }
+    }
+    let z_faces_start = mesh.num_nodes();
+    for k in 0..=nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                mesh.add_node(Point::new_3d(
+                    x_min + (i as f64 + 0.5) * dx,
+                    y_min + (j as f64 + 0.5) * dy,
+                    z_min + k as f64 * dz,
+                ));
             }
         }
     }
     let face_centre = |i: usize, j: usize, k: usize, face: usize| -> usize {
-        // face: 0=−x, 1=+x, 2=−y, 3=+y, 4=−z, 5=+z
-        face_centres_start + 6 * (k * ny * nx + j * nx + i) + face
+        match face {
+            0 | 1 => face_centres_start + (k * ny + j) * (nx + 1) + i + face,
+            2 | 3 => y_faces_start + (k * (ny + 1) + j + face - 2) * nx + i,
+            4 | 5 => z_faces_start + ((k + face - 4) * ny + j) * nx + i,
+            _ => unreachable!("cube has six faces"),
+        }
     };
 
     // 3. Cube-centroid nodes — one per cube.
-    let centroids_start = face_centres_start + 6 * nx * ny * nz;
+    let centroids_start = mesh.num_nodes();
     for k in 0..nz {
         for j in 0..ny {
             for i in 0..nx {
@@ -3361,6 +3376,32 @@ mod tests {
         let mesh = box_mesh_tetrahedra_symmetric(-1.0, 1.0, -1.0, 1.0, -1.0, 1.0, 2, 2, 2);
         assert_eq!(mesh.num_elements(), 192);
         assert_eq!(mesh.dimension, 3);
+    }
+
+    #[test]
+    fn symmetric_box_shares_interior_faces() {
+        // Unequal axis counts exercise all three shared-face index layouts.
+        let (nx, ny, nz) = (2, 3, 4);
+        let mesh = box_mesh_tetrahedra_symmetric(0.0, 1.0, 0.0, 1.0, 0.0, 1.0, nx, ny, nz);
+        let expected_nodes = (nx + 1) * (ny + 1) * (nz + 1)
+            + (nx + 1) * ny * nz
+            + nx * (ny + 1) * nz
+            + nx * ny * (nz + 1)
+            + nx * ny * nz;
+        assert_eq!(mesh.num_nodes(), expected_nodes);
+        assert_eq!(mesh.boundaries.len(), 8 * (nx * ny + nx * nz + ny * nz));
+        for face in &mesh.boundaries {
+            assert!(
+                (0..3).any(|axis| [0.0, 1.0].iter().any(|&plane| {
+                    face.nodes.iter().all(|&node| {
+                        let p = &mesh.nodes[node];
+                        ([p.x, p.y, p.z][axis] - plane).abs() < 1e-12
+                    })
+                })),
+                "interior face incorrectly classified as boundary: {:?}",
+                face.nodes
+            );
+        }
     }
 
     #[test]
