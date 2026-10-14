@@ -473,8 +473,21 @@ fn main() {
     let result = values
         .ok_or_else(|| "external paired displacement unavailable".to_string())
         .and_then(|values| {
-            warping_native::parity_result(&case, CASE_ID, &output.engine, &values, !failed)
-                .map_err(|error| error.to_string())
+            let reference_time = output
+                .history
+                .times
+                .last()
+                .copied()
+                .ok_or("external observation timestamp unavailable")?;
+            warping_native::parity_result(
+                &case,
+                CASE_ID,
+                &output.engine,
+                &values,
+                reference_time,
+                !failed,
+            )
+            .map_err(|error| error.to_string())
         })
         .unwrap_or_else(|error| {
             sonium_qa::QaResult::failed(

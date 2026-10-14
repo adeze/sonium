@@ -96,8 +96,48 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 j.values.clone(),
             )?;
             let rhs = r.iter().map(|v| -v).collect::<Vec<_>>();
-            let delta = SparseLuFactorization::factorize(&matrix)?.solve(&rhs)?;
+            let direction_kind =
+                std::env::var("P2_PCFAN_TANGENT_DIRECTION").unwrap_or_else(|_| "newton".into());
+            let delta = match direction_kind.as_str() {
+                "newton" => {
+                    let factors = match std::env::var("SONIUM_PCFAN_LU_BACKEND").as_deref() {
+                        Ok("supernodal") => SparseLuFactorization::factorize_supernodal(&matrix)?,
+                        Ok("simplicial") | Err(_) => SparseLuFactorization::factorize(&matrix)?,
+                        _ => {
+                            return Err(
+                                "SONIUM_PCFAN_LU_BACKEND must be simplicial or supernodal".into()
+                            );
+                        }
+                    };
+                    factors.solve(&rhs)?
+                }
+                "deterministic" => {
+                    // Perturb every unconstrained velocity and pressure field,
+                    // independently of the potentially singular Newton solve.
+                    // Keep identity-row prescribed values fixed, but include
+                    // all rows in each measured derivative residual below.
+                    (0..state.len())
+                        .map(|i| {
+                            let prescribed = matrix.row_range(i).all(|entry| {
+                                let value = matrix.values[entry];
+                                value == 0.0 || (matrix.col_indices[entry] == i && value == 1.0)
+                            }) && matrix.get(i, i) == 1.0;
+                            if prescribed {
+                                0.0
+                            } else {
+                                ((i * 17 % 37) as f64 - 18.0) / 18.0 * state[i].abs().max(1e-3)
+                            }
+                        })
+                        .collect()
+                }
+                _ => {
+                    return Err("P2_PCFAN_TANGENT_DIRECTION must be newton or deterministic".into());
+                }
+            };
             let analytic = matrix.apply(&delta);
+            if !norm(&analytic).is_finite() || norm(&analytic) == 0.0 {
+                return Err("diagnostic tangent direction has zero or invalid action".into());
+            }
             let linear_error = analytic
                 .iter()
                 .zip(r)
@@ -129,11 +169,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .zip(&analytic)
                     .map(|((a, b), expected)| (a - b) / (2.0 * epsilon) - expected)
                     .collect::<Vec<_>>();
-                samples.push(serde_json::json!({"epsilon":epsilon,"relative_directional_derivative_error":norm(&error)/norm(&analytic)}));
+                samples.push(serde_json::json!({"epsilon":epsilon,
+                    "relative_directional_derivative_error":norm(&error)/norm(&analytic),
+                    "momentum_directional_derivative_error_norm":norm(&error[..3*nodes]),
+                    "continuity_directional_derivative_error_norm":norm(&error[3*nodes..]),
+                    "momentum_analytic_action_norm":norm(&analytic[..3*nodes]),
+                    "continuity_analytic_action_norm":norm(&analytic[3*nodes..])}));
             }
             Some(
-                serde_json::json!({"state_norm":norm(&state),"newton_direction_norm":norm(&delta),
-                "actual_linear_relative_residual":norm(&linear_error)/norm(r),"central_difference_samples":samples}),
+                serde_json::json!({"state_norm":norm(&state),"direction_kind":direction_kind,
+                    "direction_norm":norm(&delta),
+                    "newton_direction_norm":(direction_kind=="newton").then(|| norm(&delta)),
+                    "actual_linear_relative_residual":(direction_kind=="newton").then(|| norm(&linear_error)/norm(r)),
+                    "central_difference_samples":samples}),
             )
         }
         Ok("0") | Err(_) => None,

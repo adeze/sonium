@@ -19,9 +19,11 @@
 // Rust guideline compliant 2026-02-21
 
 use super::candidates::PenaltyPair;
-use super::detection::ContactSurface;
+use super::detection::{Aabb, ContactSurface};
 use super::gap::{ProjectionResult, project_point_to_triangle};
 use crate::physics::solid::fracture::cohesive::{CohesiveState, MixedModeCohesiveLaw};
+use rayon::prelude::*;
+use std::sync::Mutex;
 
 /// Suggested nodal penalty stiffness in N/m.
 ///
@@ -153,6 +155,17 @@ pub struct ExplicitContact {
     config: ExplicitContactConfig,
     /// Spotweld and tiebreak connectors.
     spotwelds: SpotweldSet,
+    /// Optional independent slave projection queries; scatter remains ordered.
+    parallel_projections: bool,
+    /// Reuse geometry only when every supplied coordinate has identical bits.
+    projection_cache_enabled: bool,
+    projection_cache: Mutex<Option<ProjectionCache>>,
+}
+
+#[derive(Debug)]
+struct ProjectionCache {
+    coordinates: Vec<f64>,
+    closest: Vec<Option<(usize, ProjectionResult)>>,
 }
 
 /// Invalid solid-contact topology or normal-stiffness stability data.
@@ -191,11 +204,18 @@ impl ExplicitContact {
         num_parent_nodes: usize,
         config: ExplicitContactConfig,
     ) -> Self {
+        let mut master = ContactSurface::from_boundary_faces(master_faces, num_parent_nodes);
+        for triangle in &mut master.triangles {
+            triangle.adjacent_nodes.sort_unstable();
+        }
         Self {
-            master: ContactSurface::from_boundary_faces(master_faces, num_parent_nodes),
+            master,
             slaves: slave_nodes.to_vec(),
             config,
             spotwelds: SpotweldSet::new(),
+            parallel_projections: false,
+            projection_cache_enabled: false,
+            projection_cache: Mutex::new(None),
         }
     }
 
@@ -205,13 +225,19 @@ impl ExplicitContact {
         num_parent_nodes: usize,
         config: ExplicitContactConfig,
     ) -> Self {
-        let master = ContactSurface::from_boundary_faces(faces, num_parent_nodes);
+        let mut master = ContactSurface::from_boundary_faces(faces, num_parent_nodes);
+        for triangle in &mut master.triangles {
+            triangle.adjacent_nodes.sort_unstable();
+        }
         let slaves = master.node_indices.clone();
         Self {
             master,
             slaves,
             config,
             spotwelds: SpotweldSet::new(),
+            parallel_projections: false,
+            projection_cache_enabled: false,
+            projection_cache: Mutex::new(None),
         }
     }
 
@@ -378,6 +404,31 @@ impl ExplicitContact {
         &self.config
     }
 
+    /// Enables independent parallel slave projections without changing scatter order.
+    ///
+    /// Disabled initially. Large slave lists use the current Rayon pool while
+    /// smaller lists retain the serial query path. BVH traversal and deepest-pair
+    /// tie selection keep their original order within each slave query.
+    pub fn set_parallel_projections(&mut self, enabled: bool) {
+        self.parallel_projections = enabled;
+    }
+
+    /// Enables exact-coordinate projection reuse between force and stability evaluations.
+    ///
+    /// Disabled initially. Cached geometry is reused only when all coordinate
+    /// bits match; changed geometry always rebuilds the detection result. Forces
+    /// and stability bounds still use the current velocities, masses and weld
+    /// state. Disabling this option releases the cache.
+    pub fn set_projection_cache_enabled(&mut self, enabled: bool) {
+        self.projection_cache_enabled = enabled;
+        if !enabled {
+            *self
+                .projection_cache
+                .get_mut()
+                .unwrap_or_else(|e| e.into_inner()) = None;
+        }
+    }
+
     /// Bound the mass-normalized frozen normal-spring contact stiffness.
     ///
     /// Returns a Gershgorin upper bound in inverse seconds squared for nearby
@@ -525,9 +576,102 @@ impl ExplicitContact {
         &self,
         deformed_coords: &[f64],
     ) -> Vec<Option<(usize, ProjectionResult)>> {
+        if !self.projection_cache_enabled {
+            return self.compute_closest_projections(deformed_coords);
+        }
+        let mut cache = self
+            .projection_cache
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(cached) = cache.as_ref()
+            && cached.coordinates.len() == deformed_coords.len()
+            && cached
+                .coordinates
+                .iter()
+                .zip(deformed_coords)
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+        {
+            return cached.closest.clone();
+        }
+        let closest = self.compute_closest_projections(deformed_coords);
+        *cache = Some(ProjectionCache {
+            coordinates: deformed_coords.to_vec(),
+            closest: closest.clone(),
+        });
+        closest
+    }
+
+    fn compute_closest_projections(
+        &self,
+        deformed_coords: &[f64],
+    ) -> Vec<Option<(usize, ProjectionResult)>> {
         let num_nodes = self.master.parent_to_surface.len();
         let margin = self.config.search_radius + self.config.thickness_offset;
         let bvh = self.master.build_bvh(deformed_coords, margin);
+        // Below 256 slaves, task dispatch can exceed the query work. The serial
+        // path also avoids needless scheduling when a caller uses one worker.
+        if self.parallel_projections && self.slaves.len() >= 256 && rayon::current_num_threads() > 1
+        {
+            let per_slave = self
+                .slaves
+                .par_iter()
+                .map(|&slave| {
+                    let position = [
+                        deformed_coords[3 * slave],
+                        deformed_coords[3 * slave + 1],
+                        deformed_coords[3 * slave + 2],
+                    ];
+                    let query = Aabb {
+                        min: position.map(|x| x - margin),
+                        max: position.map(|x| x + margin),
+                    };
+                    let mut candidates = Vec::new();
+                    bvh.query(&query, &mut candidates);
+                    let mut best: Option<(usize, ProjectionResult)> = None;
+                    for triangle in candidates {
+                        // This private surface is normalized at construction;
+                        // solid material neighborhoods are likewise sorted.
+                        // Membership changes no BVH hit or tie-selection order.
+                        if self.master.triangles[triangle]
+                            .adjacent_nodes
+                            .binary_search(&slave)
+                            .is_ok()
+                        {
+                            continue;
+                        }
+                        let nodes = self.master.triangles[triangle].nodes;
+                        let node_at = |n: usize| {
+                            [
+                                deformed_coords[3 * n],
+                                deformed_coords[3 * n + 1],
+                                deformed_coords[3 * n + 2],
+                            ]
+                        };
+                        let projection = project_point_to_triangle(
+                            node_at(slave),
+                            node_at(nodes[0]),
+                            node_at(nodes[1]),
+                            node_at(nodes[2]),
+                        );
+                        if projection.distance > margin {
+                            continue;
+                        }
+                        if best
+                            .as_ref()
+                            .is_none_or(|(_, previous)| projection.gap < previous.gap)
+                        {
+                            best = Some((triangle, projection));
+                        }
+                    }
+                    best
+                })
+                .collect::<Vec<_>>();
+            let mut best = vec![None; num_nodes];
+            for (&slave, projection) in self.slaves.iter().zip(per_slave) {
+                best[slave] = projection;
+            }
+            return best;
+        }
         let candidates =
             self.master
                 .find_candidates_for(&self.slaves, deformed_coords, &bvh, margin);
@@ -1656,6 +1800,98 @@ pub fn symmetric_penalty_pass(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parallel_cached_projections_preserve_active_forces_bounds_and_geometry_changes() {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap();
+        let slaves = (4..516).collect::<Vec<_>>();
+        let mut reference = vec![0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 1.0, 0.0];
+        for i in 0..slaves.len() {
+            reference.extend([
+                0.02 + 0.96 * (i % 32) as f64 / 31.0,
+                0.02 + 0.96 * (i / 32) as f64 / 15.0,
+                0.0,
+            ]);
+        }
+        let mut saw_active = false;
+        let mut saw_empty = false;
+        for friction in [0.0, 0.3] {
+            let config = ExplicitContactConfig {
+                penalty: 1e5,
+                search_radius: 0.05,
+                friction_coefficient: friction,
+                ..Default::default()
+            };
+            let mut serial =
+                ExplicitContact::new_two_body(&[[0, 1, 2], [0, 2, 3]], &slaves, 516, config);
+            let mut cached =
+                ExplicitContact::new_two_body(&[[0, 1, 2], [0, 2, 3]], &slaves, 516, config);
+            cached.set_parallel_projections(true);
+            cached.set_projection_cache_enabled(true);
+            for (step, gap) in [0.002, -0.003, -0.006, 0.2, -0.008].into_iter().enumerate() {
+                let mut coordinates = reference.clone();
+                for node in &slaves {
+                    coordinates[3 * node + 2] = gap;
+                }
+                // Move a master as well as the slaves: reuse must invalidate on
+                // every geometry change, including signed-zero coordinate bits.
+                coordinates[0] = if step == 0 { -0.0 } else { 0.001 * step as f64 };
+                for repeat in 0..2 {
+                    let masses = (0..516)
+                        .map(|n| 1.0 + (n % 7 + repeat) as f64)
+                        .collect::<Vec<_>>();
+                    if friction == 0.0 {
+                        let a = serial
+                            .normal_stiffness_mass_bound(&coordinates, &masses)
+                            .unwrap();
+                        let b = pool
+                            .install(|| cached.normal_stiffness_mass_bound(&coordinates, &masses))
+                            .unwrap();
+                        assert_eq!(a.to_bits(), b.to_bits());
+                    }
+                    let mut velocity = vec![0.0; coordinates.len()];
+                    for &node in &slaves {
+                        velocity[3 * node] = 0.01 * (repeat + 1) as f64;
+                        velocity[3 * node + 1] = -0.005 * (step + 1) as f64;
+                    }
+                    let mut a = vec![0.125; coordinates.len()];
+                    let mut b = a.clone();
+                    let a_pairs = serial.apply_with_pairs(&coordinates, &velocity, &mut a);
+                    let b_pairs =
+                        pool.install(|| cached.apply_with_pairs(&coordinates, &velocity, &mut b));
+                    assert_eq!(a_pairs.len(), b_pairs.len());
+                    saw_active |= !a_pairs.is_empty();
+                    saw_empty |= a_pairs.is_empty();
+                    for (a, b) in a.iter().zip(b) {
+                        assert_eq!(a.to_bits(), b.to_bits());
+                    }
+                    for (a, b) in a_pairs.iter().zip(b_pairs) {
+                        assert_eq!(a.slave, b.slave);
+                        assert_eq!(a.gap.to_bits(), b.gap.to_bits());
+                        for (a, b) in a
+                            .normal
+                            .iter()
+                            .chain(&a.force)
+                            .zip(b.normal.iter().chain(&b.force))
+                        {
+                            assert_eq!(a.to_bits(), b.to_bits());
+                        }
+                    }
+                    let cache = cached.projection_cache.lock().unwrap();
+                    assert_eq!(
+                        cache.as_ref().unwrap().coordinates[0].to_bits(),
+                        coordinates[0].to_bits()
+                    );
+                }
+            }
+            cached.set_projection_cache_enabled(false);
+            assert!(cached.projection_cache.lock().unwrap().is_none());
+        }
+        assert!(saw_active && saw_empty);
+    }
 
     #[test]
     fn normal_mass_bound_recovers_two_node_spring_and_guards_nearby_contact() {

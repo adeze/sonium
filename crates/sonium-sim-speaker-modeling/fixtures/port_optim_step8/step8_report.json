@@ -1,0 +1,575 @@
+{
+  "schema_version": 1,
+  "provenance": "PortOptimStep8Finalist[Tier2SnapshotNoise,Round3DSpotCheckNightly]",
+  "case": {
+    "schema_version": 1,
+    "density_kg_per_m3": 1.2,
+    "sound_speed_m_per_s": 343.0,
+    "dynamic_viscosity_pa_s": 0.0000185,
+    "thermal_diffusivity_m2_per_s": 0.000022,
+    "box_volume_m3": 0.005,
+    "driver_mms_kg": 0.02,
+    "driver_rms_kg_per_s": 1.0,
+    "driver_kms_n_per_m": 4000.0,
+    "voice_coil_resistance_ohm": 6.0,
+    "voice_coil_inductance_h": 0.0005,
+    "voice_coil_bl_n_per_a": 10.0,
+    "diaphragm_area_m2": 0.01,
+    "xmax_m": 0.005,
+    "port_radius_r0_m": 0.025,
+    "port_length_l_m": 0.1,
+    "end_correction_radius_factor": 1.46,
+    "tier1_chamber_length_m": 0.05,
+    "tier1_chamber_radius_m": 0.08,
+    "tier1_mesh_size_m": 0.01,
+    "tier1_frequency_factors": [
+      0.75,
+      1.0,
+      1.25
+    ],
+    "tier2_duct_length_m": 0.1,
+    "tier2_duct_height_m": 0.02,
+    "tier2_chamber_length_m": 0.05,
+    "tier2_chamber_height_m": 0.08,
+    "tier2_mesh_size_m": 0.01,
+    "tier2_samples_per_cycle": 252,
+    "tier2_total_cycles": 40,
+    "tier2_tail_cycles": 8,
+    "tier2_drives_v_peak": [
+      0.01,
+      0.1,
+      1.0
+    ]
+  },
+  "f_target_hz": 92.60634465596921,
+  "n_control_points": 5,
+  "winner_u": [
+    0.0153777489057228,
+    0.028578258339773364
+  ],
+  "noise": [
+    {
+      "voltage_peak_v": 0.01,
+      "n_snapshots": 96,
+      "snapshot_interval_s": 0.0005236028878861931,
+      "straight": {
+        "observer": {
+          "position_m": [
+            1.15,
+            0.0,
+            0.0
+          ]
+        },
+        "spectrum": [
+          {
+            "frequency_hz": 159.15369311606253,
+            "method": "CompactLighthill",
+            "compactness_ka": 0.29154289975807957,
+            "pressure_peak_pa": [
+              -6.196089565894744e-15,
+              -7.641301372905471e-15
+            ],
+            "pressure_rms_pa": 6.9563285064808704e-15,
+            "spl_db": -189.17299825350005
+          },
+          {
+            "frequency_hz": 318.30738623212505,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.5830857995161591,
+            "pressure_peak_pa": [
+              1.3520867581552033e-8,
+              -9.977252752114046e-9
+            ],
+            "pressure_rms_pa": 1.1881907099397637e-8,
+            "spl_db": -64.52287686422639
+          },
+          {
+            "frequency_hz": 477.4610793481876,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.8746286992742387,
+            "pressure_peak_pa": [
+              3.736750907528409e-11,
+              9.988312358857382e-11
+            ],
+            "pressure_rms_pa": 7.540878301730426e-11,
+            "spl_db": -108.47216127338955
+          },
+          {
+            "frequency_hz": 636.6147724642501,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.1661715990323183,
+            "pressure_peak_pa": [
+              -1.8105575073358604e-11,
+              -2.1026232723607028e-11
+            ],
+            "pressure_rms_pa": 1.9620325064640332e-11,
+            "spl_db": -120.16647594556098
+          },
+          {
+            "frequency_hz": 795.7684655803126,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.457714498790398,
+            "pressure_peak_pa": [
+              9.262120754584348e-12,
+              7.289077842654094e-12
+            ],
+            "pressure_rms_pa": 8.33419272241688e-12,
+            "spl_db": -127.60332913336836
+          }
+        ],
+        "integrated_noise_floor_db": -64.52268796306679
+      },
+      "winner": {
+        "observer": {
+          "position_m": [
+            1.15,
+            0.0,
+            0.0
+          ]
+        },
+        "spectrum": [
+          {
+            "frequency_hz": 159.15369311606253,
+            "method": "CompactLighthill",
+            "compactness_ka": 0.29154289975807957,
+            "pressure_peak_pa": [
+              2.0320828127925624e-15,
+              1.8103669696397874e-14
+            ],
+            "pressure_rms_pa": 1.288161901769963e-14,
+            "spl_db": -183.8211909039451
+          },
+          {
+            "frequency_hz": 318.30738623212505,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.5830857995161591,
+            "pressure_peak_pa": [
+              8.44997698614334e-9,
+              -1.361770427545008e-8
+            ],
+            "pressure_rms_pa": 1.1332342670427051e-8,
+            "spl_db": -64.93420594607244
+          },
+          {
+            "frequency_hz": 477.4610793481876,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.8746286992742387,
+            "pressure_peak_pa": [
+              6.916005892306522e-11,
+              8.091495561899245e-11
+            ],
+            "pressure_rms_pa": 7.526733618597569e-11,
+            "spl_db": -108.48846899267471
+          },
+          {
+            "frequency_hz": 636.6147724642501,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.1661715990323183,
+            "pressure_peak_pa": [
+              -2.418095125372054e-11,
+              -1.3428432475074889e-11
+            ],
+            "pressure_rms_pa": 1.9558133886857083e-11,
+            "spl_db": -120.19405161723671
+          },
+          {
+            "frequency_hz": 795.7684655803126,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.457714498790398,
+            "pressure_peak_pa": [
+              1.0957980266986925e-11,
+              3.0171117193724856e-12
+            ],
+            "pressure_rms_pa": 8.036799570066732e-12,
+            "spl_db": -127.91893716162684
+          }
+        ],
+        "integrated_noise_floor_db": -64.9339992472416
+      },
+      "delta_integrated_db": -0.4113112841748148,
+      "straight_provenance": "M1UnsteadyFields->Lighthill/FWH->FreeFieldObserver",
+      "winner_provenance": "M1UnsteadyFields->Lighthill/FWH->FreeFieldObserver"
+    },
+    {
+      "voltage_peak_v": 0.1,
+      "n_snapshots": 96,
+      "snapshot_interval_s": 0.0005236028878861931,
+      "straight": {
+        "observer": {
+          "position_m": [
+            1.15,
+            0.0,
+            0.0
+          ]
+        },
+        "spectrum": [
+          {
+            "frequency_hz": 159.15369311606253,
+            "method": "CompactLighthill",
+            "compactness_ka": 0.29154289975807957,
+            "pressure_peak_pa": [
+              -4.99515568698192e-13,
+              -8.252531757854083e-13
+            ],
+            "pressure_rms_pa": 6.821138495573082e-13,
+            "spl_db": -149.34346256361096
+          },
+          {
+            "frequency_hz": 318.30738623212505,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.5830857995161591,
+            "pressure_peak_pa": [
+              1.0017175154291887e-7,
+              -4.7398857477774265e-8
+            ],
+            "pressure_rms_pa": 7.836144299773526e-8,
+            "spl_db": -48.13855141782522
+          },
+          {
+            "frequency_hz": 477.4610793481876,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.8746286992742387,
+            "pressure_peak_pa": [
+              3.634284818154726e-10,
+              1.0533442752811485e-9
+            ],
+            "pressure_rms_pa": 7.879132006960751e-10,
+            "spl_db": -88.09103237909865
+          },
+          {
+            "frequency_hz": 636.6147724642501,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.1661715990323183,
+            "pressure_peak_pa": [
+              -1.670641396869391e-10,
+              -2.136492889742724e-10
+            ],
+            "pressure_rms_pa": 1.917764915840172e-10,
+            "spl_db": -100.36469252823125
+          },
+          {
+            "frequency_hz": 795.7684655803126,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.457714498790398,
+            "pressure_peak_pa": [
+              8.792001855878787e-11,
+              7.186563243882313e-11
+            ],
+            "pressure_rms_pa": 8.029507702595979e-11,
+            "spl_db": -107.92682153223925
+          }
+        ],
+        "integrated_noise_floor_db": -48.13808179870172
+      },
+      "winner": {
+        "observer": {
+          "position_m": [
+            1.15,
+            0.0,
+            0.0
+          ]
+        },
+        "spectrum": [
+          {
+            "frequency_hz": 159.15369311606253,
+            "method": "CompactLighthill",
+            "compactness_ka": 0.29154289975807957,
+            "pressure_peak_pa": [
+              8.479150005171294e-12,
+              2.2992531871083873e-11
+            ],
+            "pressure_rms_pa": 1.732848098727935e-11,
+            "spl_db": -121.24539002975285
+          },
+          {
+            "frequency_hz": 318.30738623212505,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.5830857995161591,
+            "pressure_peak_pa": [
+              4.813534045593869e-8,
+              -6.707193659118263e-8
+            ],
+            "pressure_rms_pa": 5.8376603527872153e-8,
+            "spl_db": -50.69582344865133
+          },
+          {
+            "frequency_hz": 477.4610793481876,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.8746286992742387,
+            "pressure_peak_pa": [
+              6.830768408545504e-10,
+              8.664037374227292e-10
+            ],
+            "pressure_rms_pa": 7.801440273218485e-10,
+            "spl_db": -88.17710415442215
+          },
+          {
+            "frequency_hz": 636.6147724642501,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.1661715990323183,
+            "pressure_peak_pa": [
+              -2.2793091545933887e-10,
+              -1.3771466317601395e-10
+            ],
+            "pressure_rms_pa": 1.8830537787834851e-10,
+            "spl_db": -100.52334544608074
+          },
+          {
+            "frequency_hz": 795.7684655803126,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.457714498790398,
+            "pressure_peak_pa": [
+              1.0493177196022798e-10,
+              2.9169646469067394e-11
+            ],
+            "pressure_rms_pa": 7.701150901600247e-11,
+            "spl_db": -108.28948724654771
+          }
+        ],
+        "integrated_noise_floor_db": -50.69499476498393
+      },
+      "delta_integrated_db": -2.556912966282212,
+      "straight_provenance": "M1UnsteadyFields->Lighthill/FWH->FreeFieldObserver",
+      "winner_provenance": "M1UnsteadyFields->Lighthill/FWH->FreeFieldObserver"
+    },
+    {
+      "voltage_peak_v": 1.0,
+      "n_snapshots": 96,
+      "snapshot_interval_s": 0.0005236028878861931,
+      "straight": {
+        "observer": {
+          "position_m": [
+            1.15,
+            0.0,
+            0.0
+          ]
+        },
+        "spectrum": [
+          {
+            "frequency_hz": 159.15369311606253,
+            "method": "CompactLighthill",
+            "compactness_ka": 0.29154289975807957,
+            "pressure_peak_pa": [
+              -8.0666722733191e-11,
+              -9.935741115258532e-10
+            ],
+            "pressure_rms_pa": 7.048746822134066e-10,
+            "spl_db": -89.05836167730803
+          },
+          {
+            "frequency_hz": 318.30738623212505,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.5830857995161591,
+            "pressure_peak_pa": [
+              -2.496115059753524e-6,
+              4.773611990191777e-6
+            ],
+            "pressure_rms_pa": 3.8090656219361093e-6,
+            "spl_db": -14.404230819739078
+          },
+          {
+            "frequency_hz": 477.4610793481876,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.8746286992742387,
+            "pressure_peak_pa": [
+              2.6830563227742563e-8,
+              4.8243552294492294e-8
+            ],
+            "pressure_rms_pa": 3.90340842156525e-8,
+            "spl_db": -54.191720017799724
+          },
+          {
+            "frequency_hz": 636.6147724642501,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.1661715990323183,
+            "pressure_peak_pa": [
+              -2.8220840841603924e-10,
+              -2.5218558859493825e-9
+            ],
+            "pressure_rms_pa": 1.7943520690319191e-9,
+            "spl_db": -80.94244671730713
+          },
+          {
+            "frequency_hz": 795.7684655803126,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.457714498790398,
+            "pressure_peak_pa": [
+              4.260319755048826e-10,
+              6.339659741167851e-10
+            ],
+            "pressure_rms_pa": 5.401000372571905e-10,
+            "spl_db": -91.37111576848554
+          }
+        ],
+        "integrated_noise_floor_db": -14.403773569946727
+      },
+      "winner": {
+        "observer": {
+          "position_m": [
+            1.15,
+            0.0,
+            0.0
+          ]
+        },
+        "spectrum": [
+          {
+            "frequency_hz": 159.15369311606253,
+            "method": "CompactLighthill",
+            "compactness_ka": 0.29154289975807957,
+            "pressure_peak_pa": [
+              7.647451360885435e-9,
+              1.9144970153979927e-8
+            ],
+            "pressure_rms_pa": 1.4577609449321426e-8,
+            "spl_db": -62.74687369713858
+          },
+          {
+            "frequency_hz": 318.30738623212505,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.5830857995161591,
+            "pressure_peak_pa": [
+              -3.1731708488182674e-6,
+              6.24905331213567e-6
+            ],
+            "pressure_rms_pa": 4.955788561556265e-6,
+            "spl_db": -12.118344534292877
+          },
+          {
+            "frequency_hz": 477.4610793481876,
+            "method": "PermeableFwh",
+            "compactness_ka": 0.8746286992742387,
+            "pressure_peak_pa": [
+              3.1499049559155184e-8,
+              4.885341636043327e-8
+            ],
+            "pressure_rms_pa": 4.1102593672516354e-8,
+            "spl_db": -53.74321535793774
+          },
+          {
+            "frequency_hz": 636.6147724642501,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.1661715990323183,
+            "pressure_peak_pa": [
+              -9.285459278378296e-10,
+              -1.7898296466821669e-9
+            ],
+            "pressure_rms_pa": 1.4257783320429976e-9,
+            "spl_db": -82.93955970666131
+          },
+          {
+            "frequency_hz": 795.7684655803126,
+            "method": "PermeableFwh",
+            "compactness_ka": 1.457714498790398,
+            "pressure_peak_pa": [
+              6.125557584003017e-10,
+              2.1997723110915983e-10
+            ],
+            "pressure_rms_pa": 4.602252379845229e-10,
+            "spl_db": -92.76119129386427
+          }
+        ],
+        "integrated_noise_floor_db": -12.118007829967421
+      },
+      "delta_integrated_db": 2.285765739979306,
+      "straight_provenance": "M1UnsteadyFields->Lighthill/FWH->FreeFieldObserver",
+      "winner_provenance": "M1UnsteadyFields->Lighthill/FWH->FreeFieldObserver"
+    }
+  ],
+  "spot3d_runs": [
+    {
+      "provenance": "Tier2Round3D[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure,IterativeJacobiSchur]+nightly",
+      "tier": "nightly",
+      "profile_normalized": [
+        0.0,
+        0.0
+      ],
+      "voltage_peak_v": 0.01,
+      "drive_frequency_hz": 46.303172327984605,
+      "dt_s": 0.0006748997623455099,
+      "steps_completed": 128,
+      "port_flow_rms_m3s": 8.159527901451844e-6,
+      "thd_fraction": 0.0000682606243237645,
+      "cap_continuity_relative_error": 0.0009034632923617431,
+      "mesh_nodes": 1785,
+      "mesh_tetrahedra": 8736
+    },
+    {
+      "provenance": "Tier2Round3D[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure,IterativeJacobiSchur]+nightly",
+      "tier": "nightly",
+      "profile_normalized": [
+        0.015377748905722948,
+        0.02857825833977346
+      ],
+      "voltage_peak_v": 0.01,
+      "drive_frequency_hz": 46.303172327984605,
+      "dt_s": 0.0006748997623455099,
+      "steps_completed": 128,
+      "port_flow_rms_m3s": 8.182760344009715e-6,
+      "thd_fraction": 0.00006838545646537223,
+      "cap_continuity_relative_error": 0.0009079424313450725,
+      "mesh_nodes": 1785,
+      "mesh_tetrahedra": 8736
+    },
+    {
+      "provenance": "Tier2Round3D[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure,IterativeJacobiSchur]+nightly",
+      "tier": "nightly",
+      "profile_normalized": [
+        0.0,
+        0.0
+      ],
+      "voltage_peak_v": 1.0,
+      "drive_frequency_hz": 46.303172327984605,
+      "dt_s": 0.0006748997623455099,
+      "steps_completed": 128,
+      "port_flow_rms_m3s": 0.000814803556496989,
+      "thd_fraction": 0.004196636534285251,
+      "cap_continuity_relative_error": 0.010047220657255636,
+      "mesh_nodes": 1785,
+      "mesh_tetrahedra": 8736
+    },
+    {
+      "provenance": "Tier2Round3D[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure,IterativeJacobiSchur]+nightly",
+      "tier": "nightly",
+      "profile_normalized": [
+        0.015377748905722948,
+        0.02857825833977346
+      ],
+      "voltage_peak_v": 1.0,
+      "drive_frequency_hz": 46.303172327984605,
+      "dt_s": 0.0006748997623455099,
+      "steps_completed": 128,
+      "port_flow_rms_m3s": 0.000817138942485741,
+      "thd_fraction": 0.004202866846518484,
+      "cap_continuity_relative_error": 0.010133509562240389,
+      "mesh_nodes": 1785,
+      "mesh_tetrahedra": 8736
+    }
+  ],
+  "spot3d": [
+    {
+      "voltage_peak_v": 0.01,
+      "drive_frequency_hz": 46.303172327984605,
+      "q_ratio_2d": 1.0008116054060907,
+      "q_ratio_3d": 1.0028472777884292,
+      "q_disagreement_rel": 0.0020340215594447323,
+      "thd_ratio_2d": 0.9562183780064781,
+      "thd_ratio_3d": 1.0018287576892888,
+      "thd_disagreement_rel": 0.047698706416727826,
+      "verdict": "Agree",
+      "tier": "nightly"
+    },
+    {
+      "voltage_peak_v": 1.0,
+      "drive_frequency_hz": 46.303172327984605,
+      "q_ratio_2d": 1.0008113019609368,
+      "q_ratio_3d": 1.002866195133944,
+      "q_disagreement_rel": 0.002053227385602922,
+      "thd_ratio_2d": 0.5599982476503457,
+      "thd_ratio_3d": 1.0014845965768857,
+      "thd_disagreement_rel": 0.78837094719303,
+      "verdict": "Investigate",
+      "tier": "nightly"
+    }
+  ],
+  "notes": "Step-8 leg: snapshot Tier-2 (252 spc, 40/8 cycles, stride 21, 96 tail snapshots) noise at [0.01, 0.1, 1.0] V; 3D smoke spot-checks (0.02 m mesh, 32 spc, 2+2 cycles, f=46.303172 Hz) at [0.01, 1.0] V. Winner u=[0.0153777489057228, 0.028578258339773364]."
+}

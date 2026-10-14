@@ -296,7 +296,7 @@ pub struct HexForceOut {
 ///
 /// Advances the centroid C1 material by the uniform-strain increment
 /// from the nodal velocities over `dt`, commits it, and returns `V B^T
-/// (sigma + q I)` plus viscous hourglass forces. Rate-dependent
+/// (sigma - q I)` plus viscous hourglass forces. Rate-dependent
 /// materials evaluate at the estimated step rate, reported back in
 /// [`HexForceOut::strain_rate`] alongside the committed
 /// [`HexForceOut::stress`] for damage drivers. Hourglass energy
@@ -358,7 +358,8 @@ where
     let mut forces = [0.0; 24];
     for (node, grad) in geom.grad_b.iter().enumerate() {
         let s = update.stress;
-        let n = [s[0] + bulk_q, s[1] + bulk_q, s[2] + bulk_q];
+        // Positive shock pressure is compressive; material Cauchy stress is tensile-positive.
+        let n = [s[0] - bulk_q, s[1] - bulk_q, s[2] - bulk_q];
         forces[node * 3] = (n[0] * grad[0] + s[3] * grad[1] + s[5] * grad[2]) * geom.volume;
         forces[node * 3 + 1] = (s[3] * grad[0] + n[1] * grad[1] + s[4] * grad[2]) * geom.volume;
         forces[node * 3 + 2] = (s[5] * grad[0] + s[4] * grad[1] + n[2] * grad[2]) * geom.volume;
@@ -416,6 +417,56 @@ mod tests {
 
     fn unit_cube() -> HexExplicitGeom {
         HexExplicitGeom::from_mesh(&HexMesh::unit_cube(1.0), 0).unwrap()
+    }
+
+    #[test]
+    fn artificial_bulk_pressure_dissipates_compressive_mechanical_power() {
+        let geom = unit_cube();
+        let mesh = HexMesh::unit_cube(1.0);
+        for (quadratic, linear) in [(1.1, 0.0), (0.0, 0.05)] {
+            for rate in [-0.01, 0.01] {
+                let velocity = std::array::from_fn(|i| mesh.coords[i / 3][i % 3] * rate);
+                let mut base_params = HexExplicitParams::new(7800.0, 4500.0);
+                base_params.bulk_c0 = 0.0;
+                base_params.bulk_c1 = 0.0;
+                let mut viscous = base_params.clone();
+                viscous.bulk_c0 = quadratic;
+                viscous.bulk_c1 = linear;
+                let baseline = hex_explicit_forces(
+                    &geom,
+                    &mut HexExplicitState::new(PlasticState::new_3d()),
+                    &elastic_j2(),
+                    &velocity,
+                    1e-6,
+                    &base_params,
+                )
+                .unwrap();
+                let output = hex_explicit_forces(
+                    &geom,
+                    &mut HexExplicitState::new(PlasticState::new_3d()),
+                    &elastic_j2(),
+                    &velocity,
+                    1e-6,
+                    &viscous,
+                )
+                .unwrap();
+                let power = -output
+                    .forces
+                    .iter()
+                    .zip(&baseline.forces)
+                    .zip(velocity)
+                    .map(|((f, base), v)| (f - base) * v)
+                    .sum::<f64>();
+                let expected = output.bulk_q * 3.0 * rate * geom.volume;
+                assert!((power - expected).abs() < 1e-10 * expected.abs().max(1.0));
+                if rate < 0.0 {
+                    assert!(power < 0.0);
+                } else {
+                    assert_eq!(power, 0.0);
+                }
+                assert_eq!(baseline.stress, output.stress);
+            }
+        }
     }
 
     #[test]

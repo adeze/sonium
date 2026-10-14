@@ -1238,6 +1238,35 @@ fn wall_reaction(
     reaction
 }
 
+/// Adopt an engaging normal velocity and measure its physical impulse energy.
+fn adopt_multiplier_wall_velocity(
+    state: &mut ExplicitState,
+    wall: &NativeWall,
+    slave: usize,
+) -> (f64, f64, f64, [f64; 3]) {
+    let before: [f64; 3] = std::array::from_fn(|axis| state.velocities[3 * slave + axis]);
+    let relative = (0..3)
+        .map(|axis| (before[axis] - wall.velocity[axis]) * wall.normal[axis])
+        .sum::<f64>();
+    if relative >= 0.0 {
+        return (0.0, 0.0, 0.0, [0.0; 3]);
+    }
+    let mass = state.masses[slave];
+    let impulse = std::array::from_fn(|axis| -mass * relative * wall.normal[axis]);
+    let mut kinetic_change = 0.0;
+    let mut wall_work = 0.0;
+    for axis in 0..3 {
+        let after = before[axis] - relative * wall.normal[axis];
+        state.velocities[3 * slave + axis] = after;
+        kinetic_change += 0.5 * mass * (after * after - before[axis] * before[axis]);
+        wall_work += impulse[axis] * wall.velocity[axis];
+    }
+    // Normal inelastic projection loses half m v_relative^2. Keep this
+    // dissipation separate from actual moving-wall work and kinetic change.
+    let dissipation = 0.5 * mass * relative * relative;
+    (kinetic_change, wall_work, dissipation, impulse)
+}
+
 /// Native concentrated load parsed from one `/CLOAD` block.
 #[derive(Debug, Clone)]
 struct NativeCload {
@@ -3129,12 +3158,36 @@ fn sonium_repeat_plastic(
 /// Complete native plastic observations, independent of benchmark verdicts.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct NativePlasticityHistory {
+    /// Artificial pressure enters tensile-positive Cauchy stress as minus q times identity.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artificial_bulk_pressure_convention: Option<String>,
+    /// Actual quadratic and linear artificial bulk-viscosity coefficients, in that order.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bulk_viscosity_coefficients: Option<[f64; 2]>,
+    /// Explicit diagnostic rigid-wall formulation, when selected.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rigid_wall_formulation: Option<String>,
+    /// Actual kinetic-energy change from normal engagement velocity adoption.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_adoption_kinetic_change_j: Option<f64>,
+    /// Physical moving-wall work during normal engagement impulses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_adoption_work_j: Option<f64>,
+    /// Inelastic loss during normal engagement impulses.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_adoption_dissipation_j: Option<f64>,
+    /// Accumulated engagement impulses on nodes, in original wall order.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub wall_adoption_impulses_kg_m_s: Vec<[f64; 3]>,
     /// Optional explicitly selected integration formulation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub integration_formulation: Option<String>,
     /// Explicitly requested bulk execution mode; numerical equations are unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bulk_execution: Option<String>,
+    /// Selected self-contact detection execution policy, when explicitly present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub self_contact_execution: Option<String>,
     /// Actual penetrating native self-contact pairs, if explicitly enabled.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub self_contact_peak_pairs: Option<usize>,
@@ -3170,6 +3223,9 @@ pub struct NativePlasticityHistory {
     /// Actual element plastic strains interpolated at the same observation time.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub profile_sample_element_plastic_strain: Vec<f64>,
+    /// Current-volume averaged Gauss plastic strain, interpolated at the same profile time.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub profile_sample_element_volume_average_plastic_strain: Vec<f64>,
 }
 
 #[derive(Debug)]
@@ -3247,6 +3303,63 @@ where
         let velocity = std::array::from_fn(|i| step.velocities[3 * conn[i / 3] + i % 3]);
         Some(HexGaussPlasticGeom::new(coordinates).and_then(|geom| {
             hex_gauss_plastic_forces(&geom, state, material, &velocity, step.dt, params)
+        }))
+    };
+    Ok(if step.parallel {
+        states.par_iter_mut().enumerate().map(update).collect()
+    } else {
+        states.iter_mut().enumerate().map(update).collect()
+    })
+}
+
+fn native_centroid_parallel(elements: usize) -> Result<bool, String> {
+    match std::env::var("SONIUM_NATIVE_CENTROID_PARALLEL").as_deref() {
+        Ok("1") => Ok(true),
+        Ok("0") => Ok(false),
+        Err(std::env::VarError::NotPresent) => {
+            // Larger independent material updates amortize pool dispatch;
+            // smaller meshes retain the original serial path.
+            Ok(elements >= 256 && rayon::current_num_threads() > 1)
+        }
+        _ => Err("SONIUM_NATIVE_CENTROID_PARALLEL must be0or1".into()),
+    }
+}
+
+fn centroid_bulk_responses<M: ObjectivePlasticMaterial + Sync>(
+    mesh: &HexMesh,
+    states: &mut [HexExplicitState<M::State>],
+    material: &M,
+    step: &GaussBulkStep<'_>,
+    params: &HexExplicitParams,
+    active: &[bool],
+    objective: bool,
+) -> Result<Vec<Option<Result<HexPlasticOut, HexExplicitError>>>, HexExplicitError>
+where
+    M::State: Send,
+{
+    if states.len() != mesh.conn.len()
+        || active.len() != states.len()
+        || step.positions.len() != 3 * mesh.num_nodes()
+        || step.velocities.len() != step.positions.len()
+    {
+        return Err(HexExplicitError::new(
+            "centroid bulk states, connectivity and kinematics must align",
+        ));
+    }
+    let update = |(elem, state): (usize, &mut HexExplicitState<M::State>)| {
+        if !active[elem] {
+            return None;
+        }
+        let conn = &mesh.conn[elem];
+        let coordinates =
+            std::array::from_fn(|i| std::array::from_fn(|a| step.positions[3 * conn[i] + a]));
+        let velocity = std::array::from_fn(|i| step.velocities[3 * conn[i / 3] + i % 3]);
+        Some(HexExplicitGeom::new(coordinates).and_then(|geom| {
+            if objective {
+                hex_plastic_forces_objective(&geom, state, material, &velocity, step.dt, params)
+            } else {
+                hex_plastic_forces(&geom, state, material, &velocity, step.dt, params)
+            }
         }))
     };
     Ok(if step.parallel {
@@ -3548,7 +3661,15 @@ pub fn rail_plastic_history(
     {
         return Err("contact operator and bulk solve must share exact compact geometry".into());
     }
-    let contact = RefCell::new(native.operator);
+    let fast_contact = match std::env::var("SONIUM_NATIVE_CONTACT_FAST").as_deref() {
+        Ok("1") => true,
+        Ok("0") | Err(std::env::VarError::NotPresent) => false,
+        _ => return Err("SONIUM_NATIVE_CONTACT_FAST must be0 or1".into()),
+    };
+    let mut operator = native.operator;
+    operator.set_parallel_projections(fast_contact);
+    operator.set_projection_cache_enabled(fast_contact);
+    let contact = RefCell::new(operator);
     let probes = (1..=2)
         .map(|wall| Probe {
             label: format!("physical platen{wall} axial force"),
@@ -3587,6 +3708,14 @@ pub fn rail_plastic_history(
             capture: Some(&mut history),
         },
     )?;
+    history.self_contact_execution = Some(if fast_contact {
+        format!(
+            "rayon:{};exact-coordinate-cache;ordered-force-scatter",
+            rayon::current_num_threads()
+        )
+    } else {
+        "serial;uncached".into()
+    });
     history.times_s.insert(0, 0.0);
     for values in &mut history.probe_values {
         values.insert(0, 0.0);
@@ -3969,6 +4098,20 @@ where
                 | "rail_crush"
                 | "rail_crush_full_platens"
         );
+    let multiplier_walls = match std::env::var("SONIUM_NATIVE_PLASTIC_MULTIPLIER_WALLS") {
+        Ok(value) if value == "1" => true,
+        Ok(value) if value == "0" => false,
+        Err(std::env::VarError::NotPresent) => false,
+        _ => return Err("SONIUM_NATIVE_PLASTIC_MULTIPLIER_WALLS must be0or1".into()),
+    };
+    if multiplier_walls
+        && (!capture_profile
+            || !matches!(deck, "necking_bar_full_plastic" | "rail_crush_full_platens"))
+    {
+        return Err(
+            "plastic multiplier walls require an explicit full necking or rail diagnostic".into(),
+        );
+    }
     // Full one-second tension needs millions of physical contact-resolution
     // steps,including the independent half-CFL study and mesh refinements.
     // Only this explicit diagnostic gets more runtime; mass,CFL and duration
@@ -3986,6 +4129,22 @@ where
     if num_nodes == 0 || num_elems == 0 {
         return Err("native model holds no mesh".to_string());
     }
+    let centroid_parallel = !options.gauss_bbar && native_centroid_parallel(num_elems)?;
+    let centroid_threads = if centroid_parallel {
+        rayon::current_num_threads().min(8)
+    } else {
+        1
+    };
+    let centroid_pool = if centroid_parallel && rayon::current_num_threads() > centroid_threads {
+        Some(
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(centroid_threads)
+                .build()
+                .map_err(|error| format!("centroid material pool: {error}"))?,
+        )
+    } else {
+        None
+    };
     let mut masses = vec![0.0; num_nodes];
     let mut char_lengths = Vec::with_capacity(num_elems);
     for elem in 0..num_elems {
@@ -4009,7 +4168,9 @@ where
     let dilatational = ((elastic.lambda + 2.0 * elastic.mu) / model.density).sqrt();
     let sound_speeds = vec![dilatational; num_elems];
     let dt_crit = critical_dt(&char_lengths, &sound_speeds);
-    let dt_max = if model.walls.is_empty() {
+    let dt_max = if multiplier_walls {
+        0.9 * dt_crit
+    } else if model.walls.is_empty() {
         dt_crit
     } else {
         // Contact RESOLUTION cap (leg precedent), not just stability:
@@ -4052,14 +4213,45 @@ where
         }
     }
     let mut params = HexExplicitParams::new(model.density, dilatational);
-    // The linear bulk term has a kink at zero volumetric rate (it fires
-    // in compression only), which chatters under velocity-Verlet on
-    // quasi-static ramps: the thick cylinder grew 55%/step from roundoff
-    // noise into a 13 mm plastic limit cycle with the default c1 = 0.05
-    // and matches the engine to 1.5% with c1 = 0. The quadratic term is
-    // C1-smooth at zero rate (no kink) and stays on for shock capturing;
-    // Taylor impact probes pass identically either way.
+    // Retain the existing zero linear coefficient for these benchmark paths.
+    // Full diagnostics may select the reference coefficients explicitly below.
+    // Compression pressure now has the dissipative sign in every explicit
+    // solid kernel; earlier instability attributed to this coefficient was
+    // measured before that correction. Export the actual coefficients.
     params.bulk_c1 = 0.0;
+    let mut viscosity_overridden = false;
+    for (name, coefficient) in [
+        ("SONIUM_NATIVE_PLASTIC_BULK_C0", &mut params.bulk_c0),
+        ("SONIUM_NATIVE_PLASTIC_BULK_C1", &mut params.bulk_c1),
+    ] {
+        let value = match std::env::var(name) {
+            Ok(value) => value,
+            Err(std::env::VarError::NotPresent) => continue,
+            Err(error) => return Err(format!("invalid {name}: {error}")),
+        };
+        if !capture_profile
+            || !matches!(deck, "necking_bar_full_plastic" | "rail_crush_full_platens")
+        {
+            return Err(
+                "bulk-viscosity override requires an explicit full necking or rail diagnostic"
+                    .into(),
+            );
+        }
+        let value: f64 = value
+            .parse()
+            .map_err(|error| format!("invalid {name}: {error}"))?;
+        if !value.is_finite() || value < 0.0 {
+            return Err(format!("{name} requires a finite nonnegative coefficient"));
+        }
+        *coefficient = value;
+        viscosity_overridden = true;
+    }
+    if viscosity_overridden {
+        println!(
+            "explicit plastic bulk viscosity: quadratic {}, linear {}; full physical QA unproven",
+            params.bulk_c0, params.bulk_c1
+        );
+    }
     let gauss_states = RefCell::new(if options.gauss_bbar {
         initial
             .iter()
@@ -4092,6 +4284,28 @@ where
         }
     };
     let plastic_values = || (0..num_elems).map(&center_ep).collect::<Vec<_>>();
+    let volume_plastic_values = |positions: &[f64]| -> Result<Vec<f64>, String> {
+        let states = gauss_states.borrow();
+        if states.len() != num_elems || positions.len() != 3 * num_nodes {
+            return Err("volume-average histories and complete mesh must align".into());
+        }
+        mesh.conn
+            .iter()
+            .zip(states.iter())
+            .map(|(conn, state)| {
+                let coordinates = std::array::from_fn(|slot| {
+                    std::array::from_fn(|axis| positions[3 * conn[slot] + axis])
+                });
+                let geometry =
+                    HexGaussPlasticGeom::new(coordinates).map_err(|error| error.to_string())?;
+                let value = state.volume_features(material, &geometry).0;
+                if !value.is_finite() {
+                    return Err("nonfinite volume-average plastic observation".into());
+                }
+                Ok(value)
+            })
+            .collect()
+    };
     let erosion = RefCell::new(ErosionSet::new(num_elems));
     let step_dt = RefCell::new(dt_max);
     let max_ep = RefCell::new(0.0f64);
@@ -4118,30 +4332,70 @@ where
     // wall-force probes read the penalty spring alone, leg precedent).
     let damp_dissipated = RefCell::new(0.0f64);
     let self_contact_peak_pairs = RefCell::new(0usize);
+    let wall_bulk_cache =
+        multiplier_walls.then(|| RefCell::new(InternalForceCache::new(3 * num_nodes)));
+    let engaged = RefCell::new(
+        model
+            .walls
+            .iter()
+            .map(|wall| vec![false; wall.slaves.len()])
+            .collect::<Vec<_>>(),
+    );
+    let wall_transitions = RefCell::new(Vec::<(usize, usize)>::new());
+    let multiplier_reactions = RefCell::new(vec![[0.0; 3]; model.walls.len()]);
+    let mut adoption_kinetic = 0.0;
+    let mut adoption_work = 0.0;
+    let mut adoption_dissipation = 0.0;
+    let mut adoption_impulses = vec![[0.0; 3]; model.walls.len()];
 
-    let internal_force = |positions: &[f64], velocities: &[f64], _: f64| {
+    let internal_force = |positions: &[f64], velocities: &[f64], time: f64| {
         let dt = *step_dt.borrow();
         let mut forces = vec![0.0; positions.len()];
         let mut states = states.borrow_mut();
         let mut erosion = erosion.borrow_mut();
         let mut features = Vec::with_capacity(num_elems);
-        let mut gauss_responses = if options.gauss_bbar {
+        let mut bulk_responses = if options.gauss_bbar || centroid_parallel {
             let active = (0..num_elems)
                 .map(|e| erosion.is_active(e))
                 .collect::<Vec<_>>();
-            let response = gauss_bulk_responses(
-                &mesh,
-                &mut gauss_states.borrow_mut(),
-                material,
-                &GaussBulkStep {
-                    positions,
-                    velocities,
-                    dt,
-                    parallel: options.parallel_gauss,
+            let step = GaussBulkStep {
+                positions,
+                velocities,
+                dt,
+                parallel: if options.gauss_bbar {
+                    options.parallel_gauss
+                } else {
+                    true
                 },
-                &params,
-                &active,
-            );
+            };
+            let response = if options.gauss_bbar {
+                gauss_bulk_responses(
+                    &mesh,
+                    &mut gauss_states.borrow_mut(),
+                    material,
+                    &step,
+                    &params,
+                    &active,
+                )
+            } else {
+                let states = states.as_mut_slice();
+                let mut update = || {
+                    centroid_bulk_responses(
+                        &mesh,
+                        states,
+                        material,
+                        &step,
+                        &params,
+                        &active,
+                        options.objective,
+                    )
+                };
+                if let Some(pool) = &centroid_pool {
+                    pool.install(update)
+                } else {
+                    update()
+                }
+            };
             match response {
                 Ok(responses) => responses,
                 Err(error) => {
@@ -4171,10 +4425,10 @@ where
                 vel[slot * 3 + 1] = velocities[3 * node + 1];
                 vel[slot * 3 + 2] = velocities[3 * node + 2];
             }
-            let response = if options.gauss_bbar {
-                let response = gauss_responses[elem]
+            let response = if options.gauss_bbar || centroid_parallel {
+                let response = bulk_responses[elem]
                     .take()
-                    .expect("active element has Gauss response");
+                    .expect("active element has bulk response");
                 if let Err(error) = &response {
                     *material_error.borrow_mut() = Some(format!("element{elem}: {error}"));
                     return vec![f64::NAN; positions.len()];
@@ -4232,11 +4486,16 @@ where
                 }
             }
         }
+        if let Some(cache) = &wall_bulk_cache {
+            cache
+                .borrow_mut()
+                .store(positions, velocities, time, &forces);
+        }
         forces
     };
     let external_force = |positions: &[f64], velocities: &[f64], time: f64| {
         let mut forces = vec![0.0; positions.len()];
-        for wall in &model.walls {
+        for wall in model.walls.iter().filter(|_| !multiplier_walls) {
             let point = [
                 wall.point[0] + wall.velocity[0] * time,
                 wall.point[1] + wall.velocity[1] * time,
@@ -4274,6 +4533,41 @@ where
                 forces[3 * node + cload.axis] += cload.scale * shape;
             }
         }
+        if let Some(cache) = &wall_bulk_cache {
+            let cache = cache.borrow();
+            if !cache.matches(positions, velocities, time) {
+                // Re-evaluation would advance plastic histories twice. Reject
+                // a changed driver call order instead of silently recomputing.
+                *material_error.borrow_mut() = Some("plastic wall bulk cache mismatch".into());
+                return vec![f64::NAN; positions.len()];
+            }
+            let mut running = forces.clone();
+            let mut flags = engaged.borrow_mut();
+            let mut transitions = wall_transitions.borrow_mut();
+            let mut reactions = multiplier_reactions.borrow_mut();
+            for (index, wall) in model.walls.iter().enumerate() {
+                let point =
+                    std::array::from_fn(|axis| wall.point[axis] + wall.velocity[axis] * time);
+                let mut rigid = RigidWall::new(point, wall.normal, 0.0);
+                rigid.velocity = wall.velocity;
+                let mut fresh = Vec::new();
+                reactions[index] = rigid_wall_multiplier(
+                    &rigid,
+                    [0.0; 3],
+                    &wall.slaves,
+                    &masses,
+                    positions,
+                    velocities,
+                    &cache.forces,
+                    &running,
+                    &mut flags[index],
+                    &mut fresh,
+                    &mut forces,
+                );
+                transitions.extend(fresh.into_iter().map(|slot| (index, slot)));
+                running.copy_from_slice(&forces);
+            }
+        }
         for (node, axes) in model.pinned.iter().enumerate() {
             for axis in 0..3 {
                 if axes[axis] {
@@ -4301,12 +4595,22 @@ where
     let mut probe_times: Vec<f64> = Vec::new();
     let mut probe_values: Vec<Vec<f64>> = vec![Vec::new(); targets.len()];
     let mut sampled_profile: Option<(f64, Vec<[f64; 3]>, Vec<f64>)> = None;
+    let mut volume_average_profile = Vec::new();
     // Reuse the observation buffer; it never enters the physical force closure.
     let mut reaction_scratch = vec![0.0; state.positions.len()];
     let start = std::time::Instant::now();
     let mut steps: u64 = 0;
     let mut dt_last = dt_max;
     let mut sampled: Vec<Vec<(f64, [f64; 3])>> = vec![Vec::new(); model.walls.len()];
+    let progress_stride: u64 = std::env::var("SONIUM_NATIVE_PROGRESS_STEPS")
+        .ok()
+        .map(|value| value.parse())
+        .transpose()
+        .map_err(|e| format!("invalid native progress interval: {e}"))?
+        .unwrap_or(100_000);
+    if progress_stride == 0 {
+        return Err("SONIUM_NATIVE_PROGRESS_STEPS must be positive".into());
+    }
     while state.time < model.stop {
         if steps >= step_budget {
             return Err(format!(
@@ -4317,6 +4621,10 @@ where
         if (steps as usize).is_multiple_of(stride) {
             let mut scratch = vec![0.0; state.positions.len()];
             for (index, wall) in model.walls.iter().enumerate() {
+                if multiplier_walls {
+                    sampled[index].push((state.time, multiplier_reactions.borrow()[index]));
+                    continue;
+                }
                 let point = [
                     wall.point[0] + wall.velocity[0] * state.time,
                     wall.point[1] + wall.velocity[1] * state.time,
@@ -4374,13 +4682,35 @@ where
                 sampled_profile.is_none() && state.time <= *time && *time <= state.time + dt
             })
             .map(|time| (time, state.time, state.positions.clone(), plastic_values()));
+        let before_volume_profile = if before_profile.is_some() && options.gauss_bbar {
+            Some(volume_plastic_values(&state.positions)?)
+        } else {
+            None
+        };
         *step_dt.borrow_mut() = dt;
+        wall_transitions.borrow_mut().clear();
         if let Err(error) = driver.step_fixed(&mut state, internal_force, external_force, dt) {
             return Err(format!(
                 "unstable at t = {:.6e}s after {steps} steps: {error};material error {:?}",
                 state.time,
                 material_error.borrow().as_ref()
             ));
+        }
+        if multiplier_walls {
+            let flags = engaged.borrow();
+            for &(index, slot) in wall_transitions.borrow().iter() {
+                if flags[index][slot] {
+                    let wall = &model.walls[index];
+                    let (kinetic, work, dissipation, impulse) =
+                        adopt_multiplier_wall_velocity(&mut state, wall, wall.slaves[slot]);
+                    adoption_kinetic += kinetic;
+                    adoption_work += work;
+                    adoption_dissipation += dissipation;
+                    for (sum, value) in adoption_impulses[index].iter_mut().zip(impulse) {
+                        *sum += value;
+                    }
+                }
+            }
         }
         if let Some((time, before_time, before_positions, before_plastic)) = before_profile {
             let after_plastic = plastic_values();
@@ -4394,10 +4724,19 @@ where
                 &after_plastic,
             )?;
             sampled_profile = Some((time, positions, plastic));
+            if let Some(before) = before_volume_profile {
+                let after = volume_plastic_values(&state.positions)?;
+                let weight = (time - before_time) / (state.time - before_time);
+                volume_average_profile = before
+                    .iter()
+                    .zip(after)
+                    .map(|(a, b)| a * (1.0 - weight) + b * weight)
+                    .collect();
+            }
         }
         dt_last = dt;
         steps += 1;
-        if capture_profile && steps.is_multiple_of(100_000) {
+        if capture_profile && steps.is_multiple_of(progress_stride) {
             println!(
                 "Native {deck} progress: physical_time={:.9e}s/{:.9e}s,steps={steps},wall={:.3}s,max_ep={:.6e},self_contact_peak_pairs={}",
                 state.time,
@@ -4416,6 +4755,9 @@ where
                     }
                     Some(ProbeTarget::ElemStress { comp, elem }) => center_stress(elem)[comp],
                     Some(ProbeTarget::ElemPlas { elem }) => center_ep(elem),
+                    Some(ProbeTarget::WallForce { axis, wall }) if multiplier_walls => {
+                        multiplier_reactions.borrow()[wall][axis]
+                    }
                     Some(ProbeTarget::WallForce { axis, wall }) => wall_reaction(
                         &model.walls[wall],
                         state.time,
@@ -4526,16 +4868,41 @@ where
         println!("FAIL: {failure}");
     }
     let balance = driver.balance().clone();
-    let energy_scale = balance.kinetic + balance.internal.abs();
+    let final_kinetic = if multiplier_walls {
+        state
+            .velocities
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .zip(&state.masses)
+            .map(|(v, mass)| 0.5 * mass * v.iter().map(|x| x * x).sum::<f64>())
+            .sum()
+    } else {
+        balance.kinetic
+    };
+    let corrected_drift = if multiplier_walls {
+        balance.drift + (final_kinetic - balance.kinetic) - adoption_kinetic
+    } else {
+        balance.drift
+    };
+    let energy_scale = final_kinetic + balance.internal.abs();
     let drift_frac = if energy_scale > 0.0 {
-        balance.drift.abs() / energy_scale
+        corrected_drift.abs() / energy_scale
     } else {
         f64::INFINITY
     };
     println!(
         "energy: KE {:.6e}J, IE {:.6e}J, Wext {:.6e}J, drift {:.3e} rel",
-        balance.kinetic, balance.internal, balance.external_work, drift_frac
+        final_kinetic,
+        balance.internal,
+        balance.external_work + adoption_work,
+        drift_frac
     );
+    if multiplier_walls {
+        println!(
+            "wall adoption: kinetic change {adoption_kinetic:.6e}J, moving-wall work {adoption_work:.6e}J, inelastic loss {adoption_dissipation:.6e}J"
+        );
+    }
     if !drift_frac.is_finite() || drift_frac > DRIFT_TOL {
         failures.push(format!(
             "energy drift {drift_frac:.3e} exceeds {DRIFT_TOL:.3e}"
@@ -4579,13 +4946,33 @@ where
                 .sum()
         });
         *capture = NativePlasticityHistory {
+            artificial_bulk_pressure_convention: Some(
+                "tensile-positive-Cauchy;compressive-artificial-pressure-minus-q-I".into(),
+            ),
+            bulk_viscosity_coefficients: Some([params.bulk_c0, params.bulk_c1]),
+            rigid_wall_formulation: multiplier_walls
+                .then(|| "frictionless-multiplier;normal-velocity-adoption".into()),
+            wall_adoption_kinetic_change_j: multiplier_walls.then_some(adoption_kinetic),
+            wall_adoption_work_j: multiplier_walls.then_some(adoption_work),
+            wall_adoption_dissipation_j: multiplier_walls.then_some(adoption_dissipation),
+            wall_adoption_impulses_kg_m_s: if multiplier_walls {
+                adoption_impulses
+            } else {
+                Vec::new()
+            },
             integration_formulation: options.gauss_bbar.then(|| "gauss-bbar".into()),
-            bulk_execution: (options.gauss_bbar && options.parallel_gauss).then(|| {
-                format!(
-                    "rayon:{};ordered-force-scatter",
-                    rayon::current_num_threads()
-                )
-            }),
+            bulk_execution: ((options.gauss_bbar && options.parallel_gauss) || centroid_parallel)
+                .then(|| {
+                    format!(
+                        "rayon:{};ordered-force-scatter",
+                        if centroid_parallel {
+                            centroid_threads
+                        } else {
+                            rayon::current_num_threads()
+                        }
+                    )
+                }),
+            self_contact_execution: None,
             self_contact_peak_pairs: options
                 .self_contact
                 .map(|_| *self_contact_peak_pairs.borrow()),
@@ -4603,9 +4990,9 @@ where
             final_element_plastic_strain: plastic_values(),
             final_time_s: state.time,
             steps,
-            kinetic_energy_j: balance.kinetic,
+            kinetic_energy_j: final_kinetic,
             internal_energy_j: balance.internal,
-            external_work_j: balance.external_work,
+            external_work_j: balance.external_work + adoption_work,
             relative_energy_drift: drift_frac,
             eroded_elements: eroded,
             node_ids: if capture_profile {
@@ -4633,6 +5020,7 @@ where
             profile_sample_time_s,
             profile_sample_positions_m,
             profile_sample_element_plastic_strain,
+            profile_sample_element_volume_average_plastic_strain: volume_average_profile,
             ..NativePlasticityHistory::default()
         };
     }
@@ -4878,6 +5266,111 @@ fn main() {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn centroid_bulk_parallel_preserves_evolving_plastic_states_and_ordered_forces() {
+        use std::time::{Duration, Instant};
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(8)
+            .build()
+            .unwrap();
+        let mesh = HexMesh::brick(10, 8, 7, [0.0; 3], [0.2, 0.05, 0.05]);
+        let curve =
+            RateCurve::new(0.0, vec![0.0, 0.1, 1.0], vec![250e6, 350e6, 550e6], 1.0).unwrap();
+        let material = Law36::new(200e9, 0.3, vec![curve], 0.0, 1e30, 1e30, 2e30, 1e30);
+        let params = HexExplicitParams::new(7800.0, 5000.0);
+        for objective in [false, true] {
+            let mut serial = vec![HexExplicitState::new(Law36State::new()); mesh.conn.len()];
+            let mut parallel = serial.clone();
+            let mut active = vec![true; mesh.conn.len()];
+            active[17] = false;
+            let mut positions = mesh.coords.iter().flatten().copied().collect::<Vec<_>>();
+            let mut serial_time = Duration::ZERO;
+            let mut parallel_time = Duration::ZERO;
+            for _ in 0..80 {
+                let velocities = positions
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .flat_map(|p| {
+                        [
+                            0.05 * p[0] - 0.3 * p[1],
+                            0.3 * p[0] - 0.015 * p[1],
+                            -0.015 * p[2],
+                        ]
+                    })
+                    .collect::<Vec<_>>();
+                for (p, v) in positions.iter_mut().zip(&velocities) {
+                    *p += 1e-3 * v;
+                }
+                let mut step = GaussBulkStep {
+                    positions: &positions,
+                    velocities: &velocities,
+                    dt: 1e-3,
+                    parallel: false,
+                };
+                let start = Instant::now();
+                let a = centroid_bulk_responses(
+                    &mesh,
+                    &mut serial,
+                    &material,
+                    &step,
+                    &params,
+                    &active,
+                    objective,
+                )
+                .unwrap();
+                serial_time += start.elapsed();
+                step.parallel = true;
+                let start = Instant::now();
+                let b = pool
+                    .install(|| {
+                        centroid_bulk_responses(
+                            &mesh,
+                            &mut parallel,
+                            &material,
+                            &step,
+                            &params,
+                            &active,
+                            objective,
+                        )
+                    })
+                    .unwrap();
+                parallel_time += start.elapsed();
+                let mut f_serial = vec![0.0; positions.len()];
+                let mut f_parallel = f_serial.clone();
+                for (elem, (a, b)) in a.into_iter().zip(b).enumerate() {
+                    match (a, b) {
+                        (None, None) => assert!(!active[elem]),
+                        (Some(Ok(a)), Some(Ok(b))) => {
+                            assert!(a.base.forces.iter().all(|force| force.is_finite()));
+                            assert!(a.features.0.is_finite());
+                            assert_eq!(format!("{a:?}"), format!("{b:?}"));
+                            for (slot, node) in mesh.conn[elem].iter().enumerate() {
+                                for axis in 0..3 {
+                                    f_serial[3 * node + axis] -= a.base.forces[3 * slot + axis];
+                                    f_parallel[3 * node + axis] -= b.base.forces[3 * slot + axis];
+                                }
+                            }
+                        }
+                        _ => panic!("active centroid response must agree and be valid"),
+                    }
+                    assert_eq!(
+                        format!("{:?}", serial[elem]),
+                        format!("{:?}", parallel[elem])
+                    );
+                }
+                for (a, b) in f_serial.iter().zip(&f_parallel) {
+                    assert_eq!(a.to_bits(), b.to_bits());
+                }
+            }
+            assert!(serial.iter().any(|s| s.centroid.equiv_plastic_strain > 0.0));
+            assert_eq!(serial[17].centroid.equiv_plastic_strain, 0.0);
+            println!(
+                "Centroid objective={objective}:serial={serial_time:?},parallel8={parallel_time:?};bitwise ordered forces and full material debug state agree"
+            );
+        }
+    }
+
+    #[test]
     fn gauss_bulk_parallel_preserves_evolving_plastic_histories_and_force_order() {
         use std::time::{Duration, Instant};
         let pool = rayon::ThreadPoolBuilder::new()
@@ -4998,6 +5491,83 @@ mod tests {
     }
     use super::*;
     use sonium_fem::physics::solid::nonlinear_solid::q1_element_residual;
+
+    #[test]
+    fn multiplier_velocity_adoption_accounts_impulse_work_and_inelastic_loss() {
+        for (normal, wall_velocity, initial_velocity) in [
+            ([1.0, 0.0, 0.0], [2.0, 0.0, 0.0], [0.0, 3.0, -4.0]),
+            ([0.6, 0.8, 0.0], [0.0; 3], [-3.0, -4.0, 2.0]),
+        ] {
+            let wall = NativeWall {
+                number: 1,
+                point: [0.0; 3],
+                normal,
+                velocity: wall_velocity,
+                slaves: vec![0],
+            };
+            let mut state = ExplicitState::new(2);
+            state.masses.copy_from_slice(&[3.0, 1.0]);
+            state.velocities[..3].copy_from_slice(&initial_velocity);
+            state.velocities[3..].copy_from_slice(&[1.0, 2.0, 3.0]);
+            let before = state.velocities.clone();
+            let (kinetic, work, loss, impulse) =
+                adopt_multiplier_wall_velocity(&mut state, &wall, 0);
+            assert!(loss > 0.0);
+            assert!((work - kinetic - loss).abs() < 1e-12);
+            let relative_normal = (0..3)
+                .map(|axis| (state.velocities[axis] - wall_velocity[axis]) * normal[axis])
+                .sum::<f64>();
+            assert!(relative_normal.abs() < 1e-12);
+            for axis in 0..3 {
+                assert!(
+                    (3.0 * (state.velocities[axis] - before[axis]) - impulse[axis]).abs() < 1e-12
+                );
+            }
+            assert_eq!(state.velocities[3..], before[3..]);
+            let after = state.velocities.clone();
+            assert_eq!(
+                adopt_multiplier_wall_velocity(&mut state, &wall, 0),
+                (0.0, 0.0, 0.0, [0.0; 3])
+            );
+            assert_eq!(state.velocities, after);
+        }
+    }
+
+    #[test]
+    fn explicit_driver_reuses_each_bulk_evaluation_for_wall_constraints() {
+        let mut state = ExplicitState::new(1);
+        state.masses[0] = 1.0;
+        let cache = RefCell::new(InternalForceCache::new(3));
+        let calls = std::cell::Cell::new(0usize);
+        let internal = |positions: &[f64], velocities: &[f64], time: f64| {
+            calls.set(calls.get() + 1);
+            let force = vec![-2.0, 0.0, 0.0];
+            cache
+                .borrow_mut()
+                .store(positions, velocities, time, &force);
+            force
+        };
+        let external = |positions: &[f64], velocities: &[f64], time: f64| {
+            let cache = cache.borrow();
+            assert!(cache.matches(positions, velocities, time));
+            cache.forces.iter().map(|force| -force).collect::<Vec<_>>()
+        };
+        let mut driver =
+            ExplicitStepDriver::new(AdaptiveDtConfig::new(0.9, 1e-12, 0.01, 1.1).unwrap()).unwrap();
+        for _ in 0..4 {
+            driver
+                .step_fixed(&mut state, internal, external, 0.01)
+                .unwrap();
+        }
+        assert_eq!(calls.get(), 5);
+        assert_eq!(state.positions, vec![0.0; 3]);
+        assert!(
+            !cache
+                .borrow()
+                .matches(&state.positions, &[-0.0, 0.0, 0.0], state.time)
+        );
+        assert_eq!(calls.get(), 5);
+    }
 
     #[test]
     fn wall_history_observation_tracks_moving_plane_and_action_reaction() {

@@ -128,6 +128,34 @@ impl<S: Clone> HexGaussPlasticState<S> {
                 (a.0 + b.0 / 8.0, a.1 + b.1 / 8.0, a.2 + b.2 / 8.0)
             })
     }
+
+    /// Average material features over the current element volume.
+    ///
+    /// Uses the positive Gauss Jacobian volumes rather than natural-center
+    /// interpolation weights. Geometry must describe the configuration of
+    /// these histories. Observation does not modify state or erosion criteria.
+    pub fn volume_features<M: ObjectivePlasticMaterial<State = S>>(
+        &self,
+        material: &M,
+        geometry: &HexGaussPlasticGeom,
+    ) -> (f64, f64, f64) {
+        let volume = geometry
+            .points
+            .iter()
+            .map(|point| point.weight)
+            .sum::<f64>();
+        self.points
+            .iter()
+            .zip(&geometry.points)
+            .map(|(state, point)| (material.erosion_features(state), point.weight / volume))
+            .fold((0.0, 0.0, 0.0), |sum, (value, weight)| {
+                (
+                    sum.0 + weight * value.0,
+                    sum.1 + weight * value.1,
+                    sum.2 + weight * value.2,
+                )
+            })
+    }
 }
 
 /// Advance objective B-bar material histories and integrate current forces.
@@ -284,9 +312,9 @@ pub fn hex_gauss_plastic_forces<M: ObjectivePlasticMaterial>(
     for (point, stress) in geom.points.iter().zip(stresses) {
         let local_pressure = (stress[0] + stress[1] + stress[2]) / 3.0;
         let n = [
-            stress[0] - local_pressure + pressure + bulk_q,
-            stress[1] - local_pressure + pressure + bulk_q,
-            stress[2] - local_pressure + pressure + bulk_q,
+            stress[0] - local_pressure + pressure - bulk_q,
+            stress[1] - local_pressure + pressure - bulk_q,
+            stress[2] - local_pressure + pressure - bulk_q,
         ];
         for (node, g) in point.gradients.iter().enumerate() {
             forces[3 * node] += (n[0] * g[0] + stress[3] * g[1] + stress[5] * g[2]) * point.weight;
@@ -337,6 +365,87 @@ mod tests {
             f64::INFINITY,
             f64::INFINITY,
         )
+    }
+
+    #[test]
+    fn volume_feature_observation_matches_an_independent_tapered_cube_integral() {
+        let mesh = HexMesh::unit_cube(1.0);
+        let coordinates = mesh
+            .element_coords(0)
+            .map(|p| [p[0], p[1] * (1.0 + p[0]), p[2]]);
+        let geometry = HexGaussPlasticGeom::new(coordinates).unwrap();
+        let mut state = HexGaussPlasticState::new(Law36State::new());
+        for (point, (natural, _)) in state.points.iter_mut().zip(hex_quadrature()) {
+            point.equiv_plastic_strain = (natural[0] + 1.0) / 2.0;
+        }
+        let before = format!("{state:?}");
+        let center = state.center_features(&material()).0;
+        let volume = state.volume_features(&material(), &geometry).0;
+        // Mapping y=(1+x)*eta gives dV=(1+x) dx d_eta dz.
+        // Integral x*(1+x) / integral (1+x) = (1/2+1/3)/(1+1/2).
+        assert!((center - 0.5).abs() < 1e-14);
+        assert!((volume - 5.0 / 9.0).abs() < 1e-14);
+        assert_eq!(format!("{state:?}"), before);
+        let uniform = HexGaussPlasticGeom::new(mesh.element_coords(0)).unwrap();
+        assert!((state.volume_features(&material(), &uniform).0 - center).abs() < 1e-14);
+    }
+
+    #[test]
+    fn artificial_bulk_pressure_dissipates_compressive_mechanical_power() {
+        let mesh = HexMesh::unit_cube(1.0);
+        let coordinates = mesh.element_coords(0);
+        let geom = HexGaussPlasticGeom::new(coordinates).unwrap();
+        for (quadratic, linear) in [(1.1, 0.0), (0.0, 0.05)] {
+            for rate in [-0.01, 0.01] {
+                let velocity = std::array::from_fn(|i| coordinates[i / 3][i % 3] * rate);
+                let mut unviscous = HexExplicitParams::new(7800.0, 5000.0);
+                unviscous.bulk_c0 = 0.0;
+                unviscous.bulk_c1 = 0.0;
+                let mut viscous = unviscous.clone();
+                viscous.bulk_c0 = quadratic;
+                viscous.bulk_c1 = linear;
+                let baseline = hex_gauss_plastic_forces(
+                    &geom,
+                    &mut HexGaussPlasticState::new(Law36State::new()),
+                    &material(),
+                    &velocity,
+                    1e-6,
+                    &unviscous,
+                )
+                .unwrap();
+                let output = hex_gauss_plastic_forces(
+                    &geom,
+                    &mut HexGaussPlasticState::new(Law36State::new()),
+                    &material(),
+                    &velocity,
+                    1e-6,
+                    &viscous,
+                )
+                .unwrap();
+                // These are internal tractions: physical acceleration uses -f.
+                let physical_power = -output
+                    .base
+                    .forces
+                    .iter()
+                    .zip(&baseline.base.forces)
+                    .zip(velocity)
+                    .map(|((f, base), v)| (f - base) * v)
+                    .sum::<f64>();
+                let expected = output.base.bulk_q * 3.0 * rate * geom.volume;
+                if rate < 0.0 {
+                    assert!(output.base.bulk_q > 0.0);
+                    assert!(
+                        physical_power < 0.0,
+                        "viscosity must remove energy, got{physical_power}"
+                    );
+                } else {
+                    assert_eq!(output.base.bulk_q, 0.0);
+                    assert_eq!(physical_power, 0.0);
+                }
+                assert!((physical_power - expected).abs() < 1e-10 * expected.abs().max(1.0));
+                assert_eq!(baseline.base.stress, output.base.stress);
+            }
+        }
     }
 
     #[test]

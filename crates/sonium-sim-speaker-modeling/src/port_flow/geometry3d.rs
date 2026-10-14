@@ -13,6 +13,7 @@ use sonium_fem::mesh::SurfaceFacet;
 use sonium_fem::mesh::{BoundaryType, ElementType, Mesh, Point};
 use sonium_mesher::mesh::refinement::uniform_refine_checked;
 
+use super::profile::SplinePortProfile;
 use super::{MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL, PortFlowError};
 
 const MAX_SUBDIVISIONS: usize = 4096;
@@ -188,6 +189,206 @@ fn subdivisions(length: f64, mesh_size: f64) -> usize {
     (length / mesh_size).ceil().max(1.0) as usize
 }
 
+/// Axisymmetric chamber–duct–chamber port geometry carrying a spline profile.
+///
+/// The duct wall `r(x)` on `[0, Ld]` comes from [`SplinePortProfile`]; each
+/// duct end joins its chamber through a cubic smoothstep over `flare_length_m`
+/// (the same polynomial as [`RoundPortGeometry`], blending to the profile end
+/// radii). A zero flare is only valid when the chambers already match the
+/// bore, i.e. the straight-cylinder limit with a (possibly dipped) spline
+/// duct; sharp chamber-to-duct shoulders are rejected on the spline path
+/// because one axial layer cannot carry two radii in a single sweep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SplineRoundPortGeometry {
+    /// Duct (profile) length `Ld` in m; must match the profile length.
+    pub duct_length_m: f64,
+    /// Straight-bore radius `R0` in m; must match the profile bore.
+    pub bore_radius_m: f64,
+    /// Axial length of each end-effect chamber in m.
+    pub chamber_length_m: f64,
+    /// Chamber radius in m; must be at least the bore radius.
+    pub chamber_radius_m: f64,
+    /// Axial extent of each smooth chamber-to-duct transition in m.
+    pub flare_length_m: f64,
+    /// Target cell size in m.
+    pub mesh_size_m: f64,
+    /// Explicit circumferential sector count, or `None` for the automatic
+    /// `ceil(2π·Rc/h)` (minimum 20). An explicit count decouples angular
+    /// resolution from the axial/radial mesh size so the polygon-area deficit
+    /// of the reference solve can be reduced without over-refining the sweep;
+    /// values below the 20-sector minimum are rejected.
+    pub angular_sectors: Option<usize>,
+    /// Duct wall profile `r(x)` on `[0, Ld]`.
+    pub profile: SplinePortProfile,
+}
+
+impl SplineRoundPortGeometry {
+    fn validate(&self) -> Result<(), PortFlowError> {
+        for (name, value) in [
+            ("duct_length_m", self.duct_length_m),
+            ("bore_radius_m", self.bore_radius_m),
+            ("chamber_length_m", self.chamber_length_m),
+            ("chamber_radius_m", self.chamber_radius_m),
+            ("mesh_size_m", self.mesh_size_m),
+        ] {
+            if !(value.is_finite() && value > 0.0) {
+                return Err(PortFlowError::InvalidConfig(format!(
+                    "{name} must be positive and finite, got {value}"
+                )));
+            }
+        }
+        if !(self.flare_length_m.is_finite() && self.flare_length_m >= 0.0) {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "flare_length_m must be finite and non-negative, got {}",
+                self.flare_length_m
+            )));
+        }
+        if self.chamber_radius_m < self.bore_radius_m {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "chamber_radius_m ({}) must be at least bore_radius_m ({})",
+                self.chamber_radius_m, self.bore_radius_m
+            )));
+        }
+        if self.flare_length_m > self.chamber_length_m {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "flare_length_m ({}) must not exceed chamber_length_m ({})",
+                self.flare_length_m, self.chamber_length_m
+            )));
+        }
+        if self.flare_length_m == 0.0 && self.chamber_radius_m != self.bore_radius_m {
+            return Err(PortFlowError::InvalidConfig(
+                "spline round-port geometry with a chamber wider than the bore needs a nonzero flare_length_m; sharp shoulders are unsupported on the spline path"
+                    .into(),
+            ));
+        }
+        if let Some(sectors) = self.angular_sectors
+            && sectors < MIN_ANGULAR_STEPS
+        {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "angular_sectors ({sectors}) must be at least the {MIN_ANGULAR_STEPS}-sector minimum"
+            )));
+        }
+        let length_tol = 1.0e-9 * self.duct_length_m.max(1.0e-12);
+        if (self.profile.length_m() - self.duct_length_m).abs() > length_tol {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "spline profile length {} does not match duct_length_m {}",
+                self.profile.length_m(),
+                self.duct_length_m
+            )));
+        }
+        let bore_tol = 1.0e-9 * self.bore_radius_m.max(1.0e-12);
+        if (self.profile.bore_radius_m() - self.bore_radius_m).abs() > bore_tol {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "spline profile bore {} does not match bore_radius_m {}",
+                self.profile.bore_radius_m(),
+                self.bore_radius_m
+            )));
+        }
+        // Re-audit the profile so a deserialized geometry cannot smuggle an
+        // illegal wall into a solve.
+        self.profile.validate()?;
+        let h = self.mesh_size_m;
+        let axial = checked_subdivisions(
+            self.duct_length_m + 2.0 * self.chamber_length_m,
+            h,
+            "axial extent",
+        )?;
+        let radial = checked_subdivisions(self.chamber_radius_m, h, "radial extent")?;
+        let angular = self.angular_sectors.unwrap_or(
+            checked_subdivisions(TAU * self.chamber_radius_m, h, "circumference")?
+                .max(MIN_ANGULAR_STEPS),
+        );
+        let radius_change = checked_subdivisions(
+            self.chamber_radius_m - self.bore_radius_m,
+            h,
+            "chamber-to-duct radius change",
+        )?;
+        let layers = axial
+            .checked_add(
+                radius_change
+                    .checked_mul(2)
+                    .ok_or_else(|| PortFlowError::InvalidConfig("layer count overflow".into()))?,
+            )
+            .and_then(|value| value.checked_add(8))
+            .ok_or_else(|| PortFlowError::InvalidConfig("layer count overflow".into()))?;
+        let nodes_per_layer = radial
+            .checked_mul(angular)
+            .and_then(|value| value.checked_add(1))
+            .ok_or_else(|| PortFlowError::InvalidConfig("node count overflow".into()))?;
+        let estimated_nodes = layers
+            .checked_mul(nodes_per_layer)
+            .ok_or_else(|| PortFlowError::InvalidConfig("node count overflow".into()))?;
+        let triangles_per_disk = radial
+            .checked_mul(2)
+            .and_then(|value| value.checked_sub(1))
+            .and_then(|value| value.checked_mul(angular))
+            .ok_or_else(|| PortFlowError::InvalidConfig("element count overflow".into()))?;
+        let estimated_elements = layers
+            .saturating_sub(1)
+            .checked_mul(triangles_per_disk)
+            .and_then(|value| value.checked_mul(3))
+            .ok_or_else(|| PortFlowError::InvalidConfig("element count overflow".into()))?;
+        if estimated_nodes > MAX_MESH_NODES || estimated_elements > MAX_MESH_ELEMENTS {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "requested mesh exceeds resource limits: estimated nodes={estimated_nodes} (max {MAX_MESH_NODES}), elements={estimated_elements} (max {MAX_MESH_ELEMENTS})"
+            )));
+        }
+        Ok(())
+    }
+
+    /// Circular cross-section radius at axial coordinate `x_m`.
+    ///
+    /// Chambers are exact cylinders; the duct follows the spline profile and
+    /// each duct end blends to its chamber through the same cubic smoothstep
+    /// [`RoundPortGeometry`] uses. Coordinates outside the modeled domain are
+    /// rejected rather than silently clamped.
+    pub fn local_radius_m(&self, x_m: f64) -> Result<f64, PortFlowError> {
+        self.validate()?;
+        if !x_m.is_finite() {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "spline round-port axial coordinate must be finite, got {x_m}"
+            )));
+        }
+        let x_min = -self.chamber_length_m;
+        let x_max = self.duct_length_m + self.chamber_length_m;
+        if x_m < x_min || x_m > x_max {
+            return Err(PortFlowError::InvalidConfig(format!(
+                "spline round-port axial coordinate {x_m} lies outside [{x_min}, {x_max}]"
+            )));
+        }
+
+        let rc = self.chamber_radius_m;
+        let flare = self.flare_length_m;
+        if flare == 0.0 {
+            return Ok(if (0.0..=self.duct_length_m).contains(&x_m) {
+                self.profile.local_radius_m(x_m)
+            } else {
+                rc
+            });
+        }
+
+        let smoothstep = |t: f64| t * t * (3.0 - 2.0 * t);
+        // Bit-identical to the RoundPortGeometry smoothstep when the profile
+        // ends equal the bore (the straight case evaluates the spline to
+        // exactly R0 at the knots).
+        let r_in = self.profile.local_radius_m(0.0);
+        let r_out = self.profile.local_radius_m(self.duct_length_m);
+        if x_m < -flare {
+            Ok(rc)
+        } else if x_m < 0.0 {
+            let t = (x_m + flare) / flare;
+            Ok(rc + smoothstep(t) * (r_in - rc))
+        } else if x_m <= self.duct_length_m {
+            Ok(self.profile.local_radius_m(x_m))
+        } else if x_m < self.duct_length_m + flare {
+            let t = (x_m - self.duct_length_m) / flare;
+            Ok(r_out + smoothstep(t) * (rc - r_out))
+        } else {
+            Ok(rc)
+        }
+    }
+}
+
 fn push_linear_profile(profile: &mut Vec<(f64, f64)>, a: (f64, f64), b: (f64, f64), h: f64) {
     let length = (b.0 - a.0).hypot(b.1 - a.1);
     if length <= f64::EPSILON {
@@ -246,6 +447,58 @@ fn meridian_profile(geo: &RoundPortGeometry, surface_size: f64) -> Vec<(f64, f64
         push_linear_profile(&mut profile, (ld, rc), (ld + lc, rc), h);
     } else {
         push_smooth_flare(&mut profile, geo, ld, ld + flare, h);
+        push_linear_profile(&mut profile, (ld + flare, rc), (ld + lc, rc), h);
+    }
+    profile
+}
+
+/// Sample an arbitrary radius function at uniform axial stations.
+///
+/// Same layering rule as [`push_smooth_flare`] (arc-length subdivisions with
+/// a floor of `min_points` intervals); the spline meridian uses it for both
+/// the smoothstep flares and the profile duct so a straight spline reproduces
+/// the flared-branch layering.
+fn push_sampled_radius(
+    profile: &mut Vec<(f64, f64)>,
+    radius_at: &dyn Fn(f64) -> f64,
+    x0: f64,
+    x1: f64,
+    h: f64,
+    min_points: usize,
+) {
+    let r0 = radius_at(x0);
+    let r1 = radius_at(x1);
+    let n = subdivisions((x1 - x0).hypot(r1 - r0), h).max(min_points);
+    for i in 1..=n {
+        let t = i as f64 / n as f64;
+        let x = x0 + t * (x1 - x0);
+        profile.push((x, radius_at(x)));
+    }
+}
+
+fn spline_meridian_profile(geo: &SplineRoundPortGeometry, surface_size: f64) -> Vec<(f64, f64)> {
+    let lc = geo.chamber_length_m;
+    let ld = geo.duct_length_m;
+    let rc = geo.chamber_radius_m;
+    let flare = geo.flare_length_m;
+    let h = surface_size;
+    let radius_at = |x: f64| {
+        geo.local_radius_m(x)
+            .expect("sampled meridian point lies in the geometry domain")
+    };
+    let mut profile = vec![(-lc, rc)];
+    if flare == 0.0 {
+        // Validated sharp-free: the chambers already match the bore.
+        push_linear_profile(&mut profile, (-lc, rc), (0.0, rc), h);
+    } else {
+        push_linear_profile(&mut profile, (-lc, rc), (-flare, rc), h);
+        push_sampled_radius(&mut profile, &radius_at, -flare, 0.0, h, 2);
+    }
+    push_sampled_radius(&mut profile, &radius_at, 0.0, ld, h, 1);
+    if flare == 0.0 {
+        push_linear_profile(&mut profile, (ld, rc), (ld + lc, rc), h);
+    } else {
+        push_sampled_radius(&mut profile, &radius_at, ld, ld + flare, h, 2);
         push_linear_profile(&mut profile, (ld + flare, rc), (ld + lc, rc), h);
     }
     profile
@@ -571,8 +824,13 @@ pub(crate) fn boundary_outward_normal(
     ))
 }
 
-fn validate_boundary_geometry(mesh: &Mesh, geo: &RoundPortGeometry) -> Result<(), PortFlowError> {
-    let tolerance = geo.mesh_size_m * 1.0e-8;
+fn validate_boundary_geometry(
+    mesh: &Mesh,
+    chamber_length_m: f64,
+    duct_length_m: f64,
+    mesh_size_m: f64,
+) -> Result<(), PortFlowError> {
+    let tolerance = mesh_size_m * 1.0e-8;
     for (index, boundary) in mesh.boundaries.iter().enumerate() {
         let (normal, _) = boundary_outward_normal(mesh, index)?;
         let points: Vec<Point> = boundary
@@ -582,10 +840,10 @@ fn validate_boundary_geometry(mesh: &Mesh, geo: &RoundPortGeometry) -> Result<()
             .collect();
         let on_box_cap = points
             .iter()
-            .all(|point| (point.x + geo.chamber_length_m).abs() <= tolerance);
+            .all(|point| (point.x + chamber_length_m).abs() <= tolerance);
         let on_exterior_cap = points
             .iter()
-            .all(|point| (point.x - (geo.duct_length_m + geo.chamber_length_m)).abs() <= tolerance);
+            .all(|point| (point.x - (duct_length_m + chamber_length_m)).abs() <= tolerance);
         match boundary.marker {
             MARKER_BOX_CAP if on_box_cap && normal[0] < 0.0 => {}
             MARKER_EXTERIOR_CAP if on_exterior_cap && normal[0] > 0.0 => {}
@@ -599,7 +857,7 @@ fn validate_boundary_geometry(mesh: &Mesh, geo: &RoundPortGeometry) -> Result<()
                 let on_left_shoulder = points.iter().all(|point| point.x.abs() <= tolerance);
                 let on_right_shoulder = points
                     .iter()
-                    .all(|point| (point.x - geo.duct_length_m).abs() <= tolerance);
+                    .all(|point| (point.x - duct_length_m).abs() <= tolerance);
                 let radial_dot = normal[1] * centroid[1] + normal[2] * centroid[2];
                 let orientation_valid = if on_left_shoulder {
                     normal[0] > 0.0
@@ -760,35 +1018,56 @@ pub fn build_round_port_mesh(geo: &RoundPortGeometry) -> Result<Mesh, PortFlowEr
         }
     }
 
+    finish_swept_port_mesh(
+        &mut mesh,
+        geo.chamber_length_m,
+        geo.duct_length_m,
+        geo.mesh_size_m,
+    )?;
+    Ok(mesh)
+}
+
+/// Classify cap/wall boundaries and audit a swept chamber–duct–chamber mesh.
+///
+/// Shared tail of the round- and spline-port builders: cap planes are exact
+/// to `mesh_size_m * 1e-8`, the boundary must be watertight with outward
+/// normals, every tetrahedron must keep a positive determinant, and all three
+/// markers must survive.
+fn finish_swept_port_mesh(
+    mesh: &mut Mesh,
+    chamber_length_m: f64,
+    duct_length_m: f64,
+    mesh_size_m: f64,
+) -> Result<(), PortFlowError> {
     mesh.detect_boundaries();
-    let tolerance = geo.mesh_size_m * 1.0e-8;
+    let tolerance = mesh_size_m * 1.0e-8;
     mesh.set_boundary_condition(BoundaryType::Neumann, MARKER_BOX_CAP, |points| {
         points
             .iter()
-            .all(|point| (point.x + geo.chamber_length_m).abs() <= tolerance)
+            .all(|point| (point.x + chamber_length_m).abs() <= tolerance)
     });
     mesh.set_boundary_condition(BoundaryType::Neumann, MARKER_EXTERIOR_CAP, |points| {
         points
             .iter()
-            .all(|point| (point.x - (geo.duct_length_m + geo.chamber_length_m)).abs() <= tolerance)
+            .all(|point| (point.x - (duct_length_m + chamber_length_m)).abs() <= tolerance)
     });
     mesh.set_boundary_condition(BoundaryType::Dirichlet, MARKER_WALL, |points| {
         !points
             .iter()
-            .all(|point| (point.x + geo.chamber_length_m).abs() <= tolerance)
-            && !points.iter().all(|point| {
-                (point.x - (geo.duct_length_m + geo.chamber_length_m)).abs() <= tolerance
-            })
+            .all(|point| (point.x + chamber_length_m).abs() <= tolerance)
+            && !points
+                .iter()
+                .all(|point| (point.x - (duct_length_m + chamber_length_m)).abs() <= tolerance)
     });
-    validate_boundary_watertight(&mesh)?;
-    validate_boundary_geometry(&mesh, geo)?;
+    validate_boundary_watertight(mesh)?;
+    validate_boundary_geometry(mesh, chamber_length_m, duct_length_m, mesh_size_m)?;
     if mesh.elements.is_empty()
         || mesh.elements.iter().any(|element| {
             if element.element_type != ElementType::Tetrahedron || element.nodes.len() != 4 {
                 return true;
             }
             let determinant = tet_determinant(
-                &mesh,
+                mesh,
                 [
                     element.nodes[0],
                     element.nodes[1],
@@ -814,6 +1093,43 @@ pub fn build_round_port_mesh(geo: &RoundPortGeometry) -> Result<Mesh, PortFlowEr
             )));
         }
     }
+    Ok(())
+}
+
+/// Build a conforming structured tetrahedral mesh of the spline port.
+///
+/// Sweeps radially scaled disks along the spline meridian (chambers, smooth
+/// flares, profile duct), the same construction as the flared round-port
+/// branch, so a straight spline reproduces that mesh up to spline-evaluation
+/// roundoff. A straight spline with matching chambers additionally reproduces
+/// the straight-cylinder layering.
+pub fn build_spline_round_port_mesh(geo: &SplineRoundPortGeometry) -> Result<Mesh, PortFlowError> {
+    geo.validate()?;
+    let angular_steps = geo.angular_sectors.unwrap_or(
+        subdivisions(TAU * geo.chamber_radius_m, geo.mesh_size_m).max(MIN_ANGULAR_STEPS),
+    );
+    let mut mesh = Mesh::new(3);
+    let profile = spline_meridian_profile(geo, geo.mesh_size_m);
+    let radial_steps = subdivisions(geo.chamber_radius_m, geo.mesh_size_m);
+    let triangles = disk_triangles(radial_steps, angular_steps);
+    let fractions: Vec<f64> = (1..=radial_steps)
+        .map(|i| i as f64 / radial_steps as f64)
+        .collect();
+    let mut previous: Option<Vec<usize>> = None;
+    for &(x, radius) in &profile {
+        let radii: Vec<f64> = fractions.iter().map(|fraction| fraction * radius).collect();
+        let current = add_volume_layer(&mut mesh, x, &radii, angular_steps);
+        if let Some(lower) = previous.as_ref() {
+            sweep_volume_layers(&mut mesh, lower, &current, &triangles)?;
+        }
+        previous = Some(current);
+    }
+    finish_swept_port_mesh(
+        &mut mesh,
+        geo.chamber_length_m,
+        geo.duct_length_m,
+        geo.mesh_size_m,
+    )?;
     Ok(mesh)
 }
 
@@ -897,7 +1213,12 @@ pub fn refine_round_port_mesh_projected(
         }
     }
     validate_boundary_watertight(&candidate)?;
-    validate_boundary_geometry(&candidate, geo)?;
+    validate_boundary_geometry(
+        &candidate,
+        geo.chamber_length_m,
+        geo.duct_length_m,
+        geo.mesh_size_m,
+    )?;
     *mesh = candidate;
     Ok(())
 }

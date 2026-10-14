@@ -31,10 +31,16 @@ use sonium_qa::rad::{
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let factor: usize = std::env::args().nth(1).map_or(Ok(1), |v| v.parse())?;
     let case = full_case(factor)?;
+    let native_mode = std::env::var("P2_NECKING_MODE").as_deref() == Ok("native");
+    let formulation =
+        std::env::var("SONIUM_NECKING_REFERENCE_SOLID").unwrap_or_else(|_| "heph24".to_owned());
+    if native_mode && formulation != "heph24" {
+        return Err("reference solid formulation cannot select a native integration mode".into());
+    }
+    let starter = reference_starter(&write_extended_starter(&case), &formulation)?;
     let work =
         std::env::temp_dir().join(format!("p2_necking_full_{factor}_{}", std::process::id()));
     std::fs::create_dir_all(&work)?;
-    let starter = write_extended_starter(&case);
     let engine = write_extended_engine(&case);
     std::fs::write(work.join(format!("{NAME}_0000.rad")), &starter)?;
     std::fs::write(work.join(format!("{NAME}_0001.rad")), &engine)?;
@@ -42,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         work.join("probes.json"),
         probes_json(&case.base, "diagnostic only"),
     )?;
-    if std::env::var("P2_NECKING_MODE").as_deref() == Ok("native") {
+    if native_mode {
         let scale: f64 = std::env::args().nth(2).map_or(Ok(1.0), |v| v.parse())?;
         let profile_time = std::env::var("P2_NECKING_PROFILE_TIME_S")
             .ok()
@@ -102,6 +108,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let measured = serde_json::json!({"status":"complete external plastic tension diagnostic;native parity,necking and mesh convergence unproven",
         "refinement_factor":factor,"engine":output.engine,"work_directory":work,
+        "reference_solid_formulation":formulation,
         "physical_stop_time_s":case.base.stop_time_s,"profile_sample_time_s":profile_time,
         "history":{"times_s":output.history.times,"channels":output.history.channels},
         "node_ids":case.base.th_nodes,"final_positions_m":positions,"final_element_plastic_strain":plastic,
@@ -115,4 +122,84 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     println!("Complete full3D plastic tensile reference exported;original native gate unproven");
     Ok(())
+}
+
+/// Change only the reference brick integration formulation.
+///
+/// H8C17 uses fixed eight-point integration, constant-pressure default 1,
+/// and non-corotational frame default 1. HEPH24 retains the original writer
+/// output. Neither selection admits native parity or mesh convergence.
+fn reference_starter(
+    starter: &str,
+    formulation: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    match formulation {
+        "heph24" => Ok(starter.to_owned()),
+        "h8c17" => {
+            let mut lines = starter.lines().map(str::to_owned).collect::<Vec<_>>();
+            let property_rows = lines
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| line.as_str() == "/PROP/SOLID/1/1")
+                .map(|(index, _)| index + 2)
+                .collect::<Vec<_>>();
+            let [row] = property_rows.as_slice() else {
+                return Err("exactly one original solid property required".into());
+            };
+            if lines
+                .get(*row)
+                .ok_or("original solid property row missing")?
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                != ["24", "2"]
+            {
+                return Err("original HEPH formulation changed".into());
+            }
+            // Preserve Ismstr2 and every physical, loading, and output field.
+            lines[*row] = format!("{:>10}{:>10}", 17, 2);
+            Ok(lines.join("\n") + "\n")
+        }
+        _ => Err("SONIUM_NECKING_REFERENCE_SOLID must be heph24 or h8c17".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn integration_control_preserves_original_physical_deck() {
+        for factor in [1, 2] {
+            let case = full_case(factor).unwrap();
+            let original = write_extended_starter(&case);
+            assert_eq!(reference_starter(&original, "heph24").unwrap(), original);
+            let alternate = reference_starter(&original, "h8c17").unwrap();
+            let before = original.lines().collect::<Vec<_>>();
+            let after = alternate.lines().collect::<Vec<_>>();
+            assert_eq!(before.len(), after.len());
+            let changed = before
+                .iter()
+                .zip(&after)
+                .filter(|(a, b)| a != b)
+                .collect::<Vec<_>>();
+            assert_eq!(changed.len(), 1);
+            assert_eq!(
+                changed[0].0.split_whitespace().collect::<Vec<_>>(),
+                ["24", "2"]
+            );
+            assert_eq!(
+                changed[0].1.split_whitespace().collect::<Vec<_>>(),
+                ["17", "2"]
+            );
+            assert!(reference_starter(&alternate, "h8c17").is_err());
+        }
+    }
+
+    #[test]
+    fn integration_control_rejects_unknown_or_ambiguous_properties() {
+        let starter = write_extended_starter(&full_case(1).unwrap());
+        assert!(reference_starter(&starter, "automatic").is_err());
+        assert!(reference_starter("/PROP/SOLID/1/1\nTitle\n", "h8c17").is_err());
+        assert!(reference_starter(&format!("{starter}{starter}"), "h8c17").is_err());
+    }
 }

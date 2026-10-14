@@ -4,7 +4,10 @@
 //! module supplies the missing production seam: callers provide a fresh
 //! body-fitted mesh and coupled configuration for each refinement level, and
 //! the runner executes the nonlinear Taylor–Hood solve, extracts one common
-//! settled tail, and validates the resulting promotion artifact.
+//! settled tail, and validates the resulting promotion artifact. Both the
+//! 2D slot/meridian path and the 3D round-port path are accepted; the
+//! evidence math is dimension-agnostic and each level only requires
+//! matching Taylor–Hood P2–P1 spaces for its own mesh dimension.
 
 use serde::{Deserialize, Serialize};
 use sonium_fem::mesh::Mesh;
@@ -186,9 +189,9 @@ impl PortFlowRuntimePlan {
 
 /// Fresh FEM inputs and coupled configuration for one runtime level.
 pub struct PortFlowRuntimeCase {
-    /// Fresh body-fitted or resolved 3-D fluid mesh.
+    /// Fresh body-fitted 2D or resolved 3D fluid mesh.
     pub mesh: Mesh,
-    /// P2 velocity space with three components.
+    /// P2 velocity space with [`Mesh::dimension`] components.
     pub velocity_space: VectorH1Space,
     /// P1 pressure space paired with [`Self::velocity_space`].
     pub pressure_space: H1Space,
@@ -323,13 +326,13 @@ fn validate_case(
     case: &PortFlowRuntimeCase,
     refinement: PortFlowRuntimeRefinement,
 ) -> Result<(), PortFlowError> {
-    if case.mesh.dimension != 3
+    if !(case.mesh.dimension == 2 || case.mesh.dimension == 3)
         || case.velocity_space.polynomial_degree() != 2
         || case.pressure_space.polynomial_degree() != 1
         || case.velocity_space.num_components() != case.mesh.dimension
     {
         return Err(PortFlowError::InvalidConfig(
-            "runtime cases must use three-dimensional Taylor–Hood P2-P1 spaces".into(),
+            "runtime cases must use two- or three-dimensional Taylor–Hood P2-P1 spaces".into(),
         ));
     }
     let dt_mismatch =
@@ -356,30 +359,57 @@ fn validate_case(
 pub fn run_port_flow_promotion<F>(
     plan: &PortFlowRuntimePlan,
     gate: PortFlowPromotionGate,
-    mut build_case: F,
+    build_case: F,
 ) -> Result<PortFlowRuntimePromotion, PortFlowError>
 where
     F: FnMut(PortFlowRuntimeRefinement) -> Result<PortFlowRuntimeCase, PortFlowError>,
 {
+    run_port_flow_promotion_with_observer(plan, gate, build_case, |_, _| Ok(()))
+}
+
+/// Execute and promote a ladder while observing each accepted trace.
+///
+/// The observer sees every executed refinement together with its accepted
+/// coupled trace (one call per spatial level plus one per coarse temporal
+/// level; the shared fine state is observed once, as the fine spatial
+/// level). This lets callers reduce per-level quantities the phasor
+/// evidence does not carry — THD, noise proxies, Mach numbers — from the
+/// same traces the promotion gate validates, without re-solving. An
+/// observer failure fails the ladder closed.
+pub fn run_port_flow_promotion_with_observer<F, G>(
+    plan: &PortFlowRuntimePlan,
+    gate: PortFlowPromotionGate,
+    mut build_case: F,
+    mut observe: G,
+) -> Result<PortFlowRuntimePromotion, PortFlowError>
+where
+    F: FnMut(PortFlowRuntimeRefinement) -> Result<PortFlowRuntimeCase, PortFlowError>,
+    G: FnMut(PortFlowRuntimeRefinement, &CoupledPortResult) -> Result<(), PortFlowError>,
+{
     let mut spatial_levels_remaining = plan.spatial_mesh_sizes_m.len();
     let mut spatial_meshes = HashSet::new();
-    run_port_flow_promotion_from_results(plan, gate, |refinement| {
-        let case = build_case(refinement)?;
-        validate_case(&case, refinement)?;
-        // The spatial ladder is executed at the common fine timestep. The
-        // temporal ladder intentionally reuses the fine spatial mesh, so only
-        // check identities for this first phase.
-        if spatial_levels_remaining > 0 {
-            validate_spatial_mesh_identity(&mut spatial_meshes, &case.mesh)?;
-            spatial_levels_remaining -= 1;
-        }
-        run_coupled_port(
-            &case.mesh,
-            &case.velocity_space,
-            &case.pressure_space,
-            &case.config,
-        )
-    })
+    run_port_flow_promotion_from_results(
+        plan,
+        gate,
+        |refinement| {
+            let case = build_case(refinement)?;
+            validate_case(&case, refinement)?;
+            // The spatial ladder is executed at the common fine timestep. The
+            // temporal ladder intentionally reuses the fine spatial mesh, so only
+            // check identities for this first phase.
+            if spatial_levels_remaining > 0 {
+                validate_spatial_mesh_identity(&mut spatial_meshes, &case.mesh)?;
+                spatial_levels_remaining -= 1;
+            }
+            run_coupled_port(
+                &case.mesh,
+                &case.velocity_space,
+                &case.pressure_space,
+                &case.config,
+            )
+        },
+        &mut observe,
+    )
 }
 
 /// Promote a runtime ladder from already accepted coupled traces.
@@ -388,13 +418,15 @@ where
 /// production callers use [`run_port_flow_promotion`], while contract tests
 /// can supply deterministic accepted traces without pretending to have run a
 /// physical nonlinear campaign.
-fn run_port_flow_promotion_from_results<F>(
+fn run_port_flow_promotion_from_results<F, G>(
     plan: &PortFlowRuntimePlan,
     gate: PortFlowPromotionGate,
     mut solve_result: F,
+    mut observe: G,
 ) -> Result<PortFlowRuntimePromotion, PortFlowError>
 where
     F: FnMut(PortFlowRuntimeRefinement) -> Result<CoupledPortResult, PortFlowError>,
+    G: FnMut(PortFlowRuntimeRefinement, &CoupledPortResult) -> Result<(), PortFlowError>,
 {
     plan.validate()?;
     let spatial_dt_s = *plan.temporal_dt_s.last().unwrap();
@@ -403,6 +435,11 @@ where
         let refinement = plan.refinement(mesh_size_m, spatial_dt_s);
         refinement.validate()?;
         let result = solve_result(refinement)?;
+        observe(refinement, &result).map_err(|error| {
+            PortFlowError::InvalidConfig(format!(
+                "runtime promotion observer rejected its {mesh_size_m} m level: {error}"
+            ))
+        })?;
         spatial_levels.push(PortFlowConvergenceLevel::from_coupled_result(
             &result,
             refinement.mesh_size_m,
@@ -425,6 +462,11 @@ where
         let refinement = plan.refinement(fine_spatial.mesh_size_m, dt_s);
         refinement.validate()?;
         let result = solve_result(refinement)?;
+        observe(refinement, &result).map_err(|error| {
+            PortFlowError::InvalidConfig(format!(
+                "runtime promotion observer rejected its {dt_s} s level: {error}"
+            ))
+        })?;
         temporal_levels.push(PortFlowConvergenceLevel::from_coupled_result(
             &result,
             refinement.mesh_size_m,
@@ -579,6 +621,7 @@ mod tests {
             provenance: "runtime-synthetic-contract.v1".into(),
         };
         let mut calls = Vec::new();
+        let mut observed = Vec::new();
         let promotion = run_port_flow_promotion_from_results(
             &plan,
             PortFlowPromotionGate::default(),
@@ -586,8 +629,15 @@ mod tests {
                 calls.push((refinement.mesh_size_m, refinement.dt_s));
                 Ok(synthetic_result(refinement))
             },
+            |refinement, result| {
+                observed.push((refinement.mesh_size_m, result.steps_completed));
+                Ok(())
+            },
         )
         .expect("synthetic accepted traces should promote");
+        // One observer call per executed solve: three spatial plus the coarse
+        // temporal level (the shared fine state is observed once).
+        assert_eq!(observed.len(), calls.len());
         assert_eq!(calls.len(), 4);
         assert_eq!(promotion.evidence.spatial_levels.len(), 3);
         assert_eq!(promotion.evidence.temporal_levels.len(), 2);
@@ -657,5 +707,81 @@ mod tests {
         let mut mismatched = decoded;
         mismatched.plan.spatial_mesh_sizes_m[2] = 0.001;
         assert!(replay_port_flow_promotion(&mismatched, PortFlowPromotionGate::default()).is_err());
+    }
+
+    #[test]
+    fn observer_failure_fails_the_ladder_closed() {
+        let plan = PortFlowRuntimePlan {
+            spatial_mesh_sizes_m: vec![0.004, 0.003, 0.002],
+            temporal_dt_s: vec![1.0 / (80.0 * 8.0), 1.0 / (80.0 * 16.0)],
+            frequency_hz: 80.0,
+            tail_cycles: 2,
+            discarded_cycles: 1,
+            box_volume_m3: 2.0e-5,
+            density_kg_per_m3: 1.2,
+            sound_speed_m_per_s: 343.0,
+            provenance: "runtime-synthetic-contract.v1".into(),
+        };
+        let error = run_port_flow_promotion_from_results(
+            &plan,
+            PortFlowPromotionGate::default(),
+            |refinement| Ok(synthetic_result(refinement)),
+            |_, _| {
+                Err(PortFlowError::InvalidConfig(
+                    "synthetic observer rejection".to_string(),
+                ))
+            },
+        )
+        .expect_err("observer rejection must fail the ladder");
+        assert!(
+            error.to_string().contains("observer rejected"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn case_validation_accepts_2d_and_3d_taylor_hood() {
+        use sonium_fem::basis::PolynomialDegree;
+        use sonium_fem::physics::fluid::stokes::navier_stokes::NavierStokesConfig;
+        use sonium_fem::physics::fluid::stokes::time_stepping::BdfConfig;
+
+        use crate::port_flow::baseline::PortOptimReferenceCase;
+
+        let refinement = PortFlowRuntimeRefinement {
+            mesh_size_m: 0.01,
+            dt_s: 1.0 / (100.0 * 16.0),
+            frequency_hz: 100.0,
+            samples_per_cycle: 16,
+            tail_cycles: 2,
+            discarded_cycles: 1,
+        };
+        let config = || CoupledPortConfig {
+            driver: PortOptimReferenceCase::default().driver(),
+            ns_config: NavierStokesConfig::default(),
+            bdf: BdfConfig::bdf2(refinement.dt_s, 48),
+            voltage_fn: Box::new(|_| 0.0),
+            under_relaxation: 1.0,
+            exterior_pressure_pa: 0.0,
+        };
+        for dimension in [2, 3] {
+            let case = PortFlowRuntimeCase {
+                mesh: Mesh::new(dimension),
+                velocity_space: VectorH1Space::new(PolynomialDegree::P2, dimension),
+                pressure_space: H1Space::new(PolynomialDegree::P1),
+                config: config(),
+            };
+            assert!(
+                validate_case(&case, refinement).is_ok(),
+                "{dimension}D Taylor–Hood should validate"
+            );
+        }
+        // Mismatched velocity components fail closed.
+        let bad = PortFlowRuntimeCase {
+            mesh: Mesh::new(2),
+            velocity_space: VectorH1Space::new(PolynomialDegree::P2, 3),
+            pressure_space: H1Space::new(PolynomialDegree::P1),
+            config: config(),
+        };
+        assert!(validate_case(&bad, refinement).is_err());
     }
 }

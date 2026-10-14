@@ -1920,6 +1920,12 @@ test = false
 required-features = ["qa-binaries"]
 
 [[bin]]
+name = "qa-speaker-port-optim"
+path = "bin/speaker_port_optim.rs"
+test = true
+required-features = ["qa-binaries"]
+
+[[bin]]
 name = "qa-speaker-rank-preservation"
 path = "bin/speaker_rank_preservation.rs"
 test = false

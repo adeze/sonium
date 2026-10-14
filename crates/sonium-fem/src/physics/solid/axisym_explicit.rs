@@ -418,7 +418,7 @@ pub struct QuadRingOut {
 ///
 /// Advances the centroid C1 material by the uniform-strain increment
 /// from the nodal velocities over `dt`, commits it, and returns `W B^T
-/// (sigma + q I)` plus viscous hourglass forces, with `W = 2 pi r_bar
+/// (sigma - q I)` plus viscous hourglass forces, with `W = 2 pi r_bar
 /// A`. Rate-dependent materials evaluate at the estimated step rate.
 /// Hourglass energy accumulates into the state with explicit Euler
 /// (`P dt`).
@@ -498,9 +498,9 @@ where
     };
     material.commit(&mut state.point, &update);
     let hoop = axisym_of_c1_stress(&update.stress);
-    let srr = hoop[0] + bulk_q;
-    let szz = hoop[1] + bulk_q;
-    let sth = hoop[2] + bulk_q;
+    let srr = hoop[0] - bulk_q;
+    let szz = hoop[1] - bulk_q;
+    let sth = hoop[2] - bulk_q;
     let srz = hoop[3];
     let mut forces = [0.0; 8];
     for (node, grad) in geom.grad.iter().enumerate() {
@@ -596,6 +596,54 @@ mod tests {
             poisson_ratio: 0.3,
             thermal_expansion: 12.0e-6,
             reference_temperature: 293.0,
+        }
+    }
+
+    #[test]
+    fn artificial_bulk_pressure_dissipates_compressive_mechanical_power() {
+        let geom = unit_patch();
+        for (quadratic, linear) in [(1.1, 0.0), (0.0, 0.05)] {
+            for rate in [-0.01, 0.01] {
+                let velocity = std::array::from_fn(|i| geom.coords[i / 2][i % 2] * rate);
+                let mut base_params = steel_params();
+                base_params.bulk_c0 = 0.0;
+                base_params.bulk_c1 = 0.0;
+                let mut viscous = base_params.clone();
+                viscous.bulk_c0 = quadratic;
+                viscous.bulk_c1 = linear;
+                let baseline = quad_ring_forces(
+                    &geom,
+                    &mut QuadRingState::new(PlasticState::new_3d()),
+                    &elastic_j2(),
+                    &velocity,
+                    1e-6,
+                    &base_params,
+                )
+                .unwrap();
+                let output = quad_ring_forces(
+                    &geom,
+                    &mut QuadRingState::new(PlasticState::new_3d()),
+                    &elastic_j2(),
+                    &velocity,
+                    1e-6,
+                    &viscous,
+                )
+                .unwrap();
+                let power = -output
+                    .forces
+                    .iter()
+                    .zip(&baseline.forces)
+                    .zip(velocity)
+                    .map(|((f, base), v)| (f - base) * v)
+                    .sum::<f64>();
+                let expected = output.bulk_q * 3.0 * rate * geom.volume;
+                assert!((power - expected).abs() < 1e-10 * expected.abs().max(1.0));
+                if rate < 0.0 {
+                    assert!(power < 0.0);
+                } else {
+                    assert_eq!(power, 0.0);
+                }
+            }
         }
     }
 

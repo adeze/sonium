@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "provenance": "PortOptimStep0StraightTube[v1,SlotTier2,RoundLinearTier1]",
+  "case": {
+    "schema_version": 1,
+    "density_kg_per_m3": 1.2,
+    "sound_speed_m_per_s": 343.0,
+    "dynamic_viscosity_pa_s": 0.0000185,
+    "thermal_diffusivity_m2_per_s": 0.000022,
+    "box_volume_m3": 0.005,
+    "driver_mms_kg": 0.02,
+    "driver_rms_kg_per_s": 1.0,
+    "driver_kms_n_per_m": 4000.0,
+    "voice_coil_resistance_ohm": 6.0,
+    "voice_coil_inductance_h": 0.0005,
+    "voice_coil_bl_n_per_a": 10.0,
+    "diaphragm_area_m2": 0.01,
+    "xmax_m": 0.005,
+    "port_radius_r0_m": 0.025,
+    "port_length_l_m": 0.1,
+    "end_correction_radius_factor": 1.46,
+    "tier1_chamber_length_m": 0.05,
+    "tier1_chamber_radius_m": 0.08,
+    "tier1_mesh_size_m": 0.01,
+    "tier1_frequency_factors": [
+      0.75,
+      1.0,
+      1.25
+    ],
+    "tier2_duct_length_m": 0.1,
+    "tier2_duct_height_m": 0.02,
+    "tier2_chamber_length_m": 0.05,
+    "tier2_chamber_height_m": 0.08,
+    "tier2_mesh_size_m": 0.01,
+    "tier2_samples_per_cycle": 252,
+    "tier2_total_cycles": 40,
+    "tier2_tail_cycles": 8,
+    "tier2_drives_v_peak": [
+      0.01,
+      0.1,
+      1.0
+    ]
+  },
+  "f_target_hz": 92.59293890508975,
+  "tier1": [
+    {
+      "frequency_hz": 69.44470417881732,
+      "port_impedance_pa_s_per_m3": [
+        314.8871572474214,
+        -35555.95407359388
+      ],
+      "box_to_port_flow_ratio": [
+        2.2192735388116356,
+        0.02396882766555406
+      ],
+      "port_volume_velocity_rms_m3_per_s": [
+        2.4905554447532965e-7,
+        0.000028122479108223722
+      ],
+      "relative_residual": 9.142231679147656e-11,
+      "flux_relative_difference": 0.002473387496458217,
+      "scalar_dofs": 53542
+    },
+    {
+      "frequency_hz": 92.59293890508975,
+      "port_impedance_pa_s_per_m3": [
+        358.0834028230761,
+        -47047.27725463826
+      ],
+      "box_to_port_flow_ratio": [
+        30.863691907016,
+        7.436076040576556
+      ],
+      "port_volume_velocity_rms_m3_per_s": [
+        1.6176704215675778e-7,
+        0.000021253983912714122
+      ],
+      "relative_residual": 9.18097516366009e-11,
+      "flux_relative_difference": 0.002463067436661209,
+      "scalar_dofs": 53542
+    },
+    {
+      "frequency_hz": 115.74117363136219,
+      "port_impedance_pa_s_per_m3": [
+        393.0310628720093,
+        -58275.45140367222
+      ],
+      "box_to_port_flow_ratio": [
+        -1.995561788902467,
+        0.0403276419501683
+      ],
+      "port_volume_velocity_rms_m3_per_s": [
+        1.1572730222887101e-7,
+        0.000017159103730467066
+      ],
+      "relative_residual": 9.222741424700811e-11,
+      "flux_relative_difference": 0.002449844956090494,
+      "scalar_dofs": 53542
+    }
+  ],
+  "tier2": [
+    {
+      "voltage_peak_v": 0.01,
+      "steps_completed": 10080,
+      "port_flow_fundamental_amplitude_m3s": 0.000010339222012975767,
+      "port_flow_rms_m3s": 7.310907540865809e-6,
+      "box_pressure_amplitude_pa": 0.09321133369073485,
+      "peak_excursion_m": 7.038586680186028e-7,
+      "thd_fraction": 8.589194605917363e-6,
+      "compression_db": 0.0,
+      "duct_bulk_mach": 1.5071752205504031e-6,
+      "turbulence_power_trend": 5.101089255065712e-24,
+      "energy_physical_relative_closure": 0.008393290184500564,
+      "energy_algebraic_relative_closure": 9.54988503804882e-16,
+      "energy_interface_relative_residual": 3.7453896481011582e-19,
+      "energy_scale_j": 2.5638576835237135e-7
+    },
+    {
+      "voltage_peak_v": 0.1,
+      "steps_completed": 10080,
+      "port_flow_fundamental_amplitude_m3s": 0.00010339220845981526,
+      "port_flow_rms_m3s": 0.00007310906717606833,
+      "box_pressure_amplitude_pa": 0.9321132329645081,
+      "peak_excursion_m": 7.038586912460185e-6,
+      "thd_fraction": 8.618144285920481e-6,
+      "compression_db": 9.803816698941704e-7,
+      "duct_bulk_mach": 0.000015071750504346248,
+      "turbulence_power_trend": 5.101084648963306e-16,
+      "energy_physical_relative_closure": 0.00839329429554685,
+      "energy_algebraic_relative_closure": 2.542850600239634e-15,
+      "energy_interface_relative_residual": 8.947976567704666e-21,
+      "energy_scale_j": 0.000025638575523404935
+    },
+    {
+      "voltage_peak_v": 1.0,
+      "steps_completed": 10080,
+      "port_flow_fundamental_amplitude_m3s": 0.0010339104989850042,
+      "port_flow_rms_m3s": 0.0007310824994511476,
+      "box_pressure_amplitude_pa": 9.32102746136315,
+      "peak_excursion_m": 0.00007038523828440395,
+      "thd_fraction": 8.910587599658708e-6,
+      "compression_db": 0.00009831065685413906,
+      "duct_bulk_mach": 0.00015071581617857204,
+      "turbulence_power_trend": 5.100627385295289e-8,
+      "energy_physical_relative_closure": 0.00839345575433422,
+      "energy_algebraic_relative_closure": 1.2950742798610494e-16,
+      "energy_interface_relative_residual": 2.5810632171975632e-20,
+      "energy_scale_j": 0.0025638445646477552
+    }
+  ],
+  "lumped_limit": {
+    "relative_error": 0.09887689464542518,
+    "coupled_flow_m3s": 0.000010339222012975767,
+    "reference_flow_m3s": 9.408899271025191e-6
+  },
+  "max_compression_db": 0.00009831065685413906
+}

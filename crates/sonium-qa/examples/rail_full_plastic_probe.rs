@@ -41,6 +41,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if std::env::var("P2_RAIL_MODE").as_deref() == Ok("contact-initial") {
         return inspect_initial_contact(&case, &surfaces, &extra, &starter, &engine);
     }
+    if std::env::var("P2_RAIL_MODE").as_deref() == Ok("contact-bench") {
+        return benchmark_contact(&case, &surfaces, &extra, &starter, &engine);
+    }
     std::fs::write(work.join(format!("{}_0000.rad", case.base.name)), &starter)?;
     std::fs::write(work.join(format!("{}_0001.rad", case.base.name)), &engine)?;
     if std::env::var("P2_RAIL_MODE").as_deref() == Ok("native") {
@@ -154,5 +157,128 @@ fn inspect_initial_contact(
     if !pairs.is_empty() {
         return Err("undeformed full rail must have zero native self-contact pairs;diagnostic evidence retained".into());
     }
+    Ok(())
+}
+
+fn benchmark_contact(
+    case: &sonium_qa::rad::RadExtendedCase,
+    surfaces: &[sonium_qa::rad::contact_surface::RadSurfSegments],
+    extra: &sonium_qa::rad::RadExtra,
+    starter: &str,
+    engine: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use sonium_qa::rad::contact_surface::native_solid_self_contact;
+    use std::time::{Duration, Instant};
+
+    let geometry = native_solid_self_contact(case, surfaces, extra, 1.0)?;
+    let initial = geometry
+        .coordinates
+        .iter()
+        .flatten()
+        .copied()
+        .collect::<Vec<_>>();
+    let mut geometries = vec![("undeformed", initial.clone())];
+    let starter_hash = format!("{:x}", Sha256::digest(starter.as_bytes()));
+    let engine_hash = format!("{:x}", Sha256::digest(engine.as_bytes()));
+    let reference_path = std::env::var("SONIUM_RAIL_CONTACT_BENCH_REFERENCE").ok();
+    if let Some(path) = &reference_path {
+        let reference: serde_json::Value = serde_json::from_slice(&std::fs::read(path)?)?;
+        if reference["starter_sha256"] != starter_hash
+            || reference["engine_deck_sha256"] != engine_hash
+            || reference["physical_stop_time_s"] != case.base.stop_time_s
+        {
+            return Err("contact benchmark requires matching complete reference decks".into());
+        }
+        let mut deformed = initial.clone();
+        for (node, &id) in geometry.node_ids.iter().enumerate() {
+            for (axis, tag) in ["DX", "DY", "DZ"].into_iter().enumerate() {
+                let values = reference["history"]["channels"][format!("{tag}/{id}")]
+                    .as_array()
+                    .ok_or("reference displacement channel missing")?;
+                deformed[3 * node + axis] += values
+                    .last()
+                    .and_then(serde_json::Value::as_f64)
+                    .ok_or("reference displacement missing")?;
+            }
+        }
+        if deformed.iter().any(|v| !v.is_finite()) {
+            return Err("reference contact geometry is nonfinite".into());
+        }
+        geometries.push(("last-full-reference-observation", deformed));
+    }
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(8).build()?;
+    let mut measurements = Vec::new();
+    for (label, coordinates) in geometries {
+        let velocity = vec![0.0; coordinates.len()];
+        let masses = vec![1.0; geometry.node_ids.len()];
+        let mut baselines = Vec::new();
+        for (parallel, cache) in [(false, false), (false, true), (true, false), (true, true)] {
+            let mut contact = native_solid_self_contact(case, surfaces, extra, 1.0)?.operator;
+            contact.set_parallel_projections(parallel);
+            contact.set_projection_cache_enabled(cache);
+            let mut bound_time = Duration::ZERO;
+            let mut force_time = Duration::ZERO;
+            let mut maximum_pairs = 0;
+            for step in 0..128 {
+                let mut moved = coordinates.clone();
+                // Small rigid translations invalidate the cache at every step;
+                // identical bound/force coordinates allow only within-step reuse.
+                for p in moved.as_chunks_mut::<3>().0 {
+                    p[0] += step as f64 * 1e-9;
+                }
+                let start = Instant::now();
+                let bound =
+                    pool.install(|| contact.normal_stiffness_mass_bound(&moved, &masses))?;
+                bound_time += start.elapsed();
+                let mut force = vec![0.0; coordinates.len()];
+                let start = Instant::now();
+                let pairs =
+                    pool.install(|| contact.apply_with_pairs(&moved, &velocity, &mut force));
+                force_time += start.elapsed();
+                maximum_pairs = maximum_pairs.max(pairs.len());
+                if !parallel && !cache {
+                    baselines.push((bound, force, pairs));
+                } else {
+                    let (old_bound, old_force, old_pairs) = &baselines[step];
+                    if bound.to_bits() != old_bound.to_bits()
+                        || force
+                            .iter()
+                            .zip(old_force)
+                            .any(|(a, b)| a.to_bits() != b.to_bits())
+                        || pairs.len() != old_pairs.len()
+                        || pairs.iter().zip(old_pairs).any(|(a, b)| {
+                            a.slave != b.slave
+                                || a.gap.to_bits() != b.gap.to_bits()
+                                || a.normal
+                                    .iter()
+                                    .chain(&a.force)
+                                    .zip(b.normal.iter().chain(&b.force))
+                                    .any(|(a, b)| a.to_bits() != b.to_bits())
+                        })
+                    {
+                        return Err(
+                            "optimized contact differs from original serial geometry/force/bound"
+                                .into(),
+                        );
+                    }
+                }
+            }
+            let measured = serde_json::json!({"geometry":label,"parallel_queries":parallel,
+                "exact_coordinate_cache":cache,"steps":128,"workers":8,
+                "bound_seconds":bound_time.as_secs_f64(),"force_seconds":force_time.as_secs_f64(),
+                "combined_seconds":(bound_time+force_time).as_secs_f64(),
+                "maximum_contact_pairs":maximum_pairs,"serial_bitwise_agreement":true});
+            println!("Contact benchmark {measured}");
+            measurements.push(measured);
+        }
+    }
+    std::fs::write(
+        std::env::var("P2_RAIL_OUTPUT")?,
+        serde_json::to_vec_pretty(&serde_json::json!({
+        "status":"contact geometry/force/timestep kernel benchmark; full native QA unproven",
+        "measurements":measurements,"nodes":geometry.node_ids.len(),"bricks":geometry.bricks.len(),
+        "starter_sha256":starter_hash,"engine_deck_sha256":engine_hash,"reference_input":reference_path,
+        "scope":"Actual full rail surface and topology filters. Every force,pair and frozen normal mass-bound bit compared on undeformed and optional completed-reference deformed geometry. 128 changing-coordinate calls per mode; unit geometry penalty and unit masses are diagnostic only. No physical trajectory, TYPE7 parity or QA admission."}))?,
+    )?;
     Ok(())
 }

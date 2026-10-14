@@ -1445,9 +1445,17 @@ where
         let mut linear_iterations: usize = 0;
 
         let x: Vec<f64> = if config.use_direct_solver {
-            match sonium_solvers::direct::SparseLuFactorization::factorize(&csr)
-                .and_then(|lu| lu.solve(&b))
-            {
+            // Opt-in execution policy for long steady QA runs. On the original
+            // 11876-DOF fan matrix, strict-pivot supernodal LU is substantially
+            // faster with the same independently checked linear residual. Its
+            // own measured wave-size gate decides whether parallelism pays off.
+            let factorization =
+                if std::env::var("SONIUM_STEADY_SUPERNODAL_LU").as_deref() == Ok("1") {
+                    sonium_solvers::direct::SparseLuFactorization::factorize_supernodal(&csr)
+                } else {
+                    sonium_solvers::direct::SparseLuFactorization::factorize(&csr)
+                };
+            match factorization.and_then(|lu| lu.solve(&b)) {
                 Ok(solution) => solution,
                 Err(_) => {
                     return NavierStokesResult {

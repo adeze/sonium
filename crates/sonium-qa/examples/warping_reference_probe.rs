@@ -43,6 +43,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "external warping reference axial={axial}, section={section}: starting original full 0.5 s history"
         );
         let result = run_case(&work, &engine, &case)?;
+        let probe_sample_time = result
+            .history
+            .times
+            .last()
+            .copied()
+            .ok_or("external probe timestamp unavailable")?;
         let mut probes = Vec::new();
         for probe in &case.probes {
             let (plus, minus) = probe
@@ -67,6 +73,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         levels.push(
             serde_json::json!({"axial_cells":axial,"section_factor":section,
             "paired_displacements_m":probes,"engine":result.engine,"work_directory":work,
+            "probe_sample_time_s":probe_sample_time,
+            "physical_stop_time_s":case.stop_time_s,
             "starter_sha256":format!("{:x}",Sha256::digest(starter.as_bytes())),
             "engine_deck_sha256":format!("{:x}",Sha256::digest(deck.as_bytes()))}),
         );

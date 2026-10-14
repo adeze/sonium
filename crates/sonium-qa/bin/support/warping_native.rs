@@ -40,8 +40,149 @@ fn curve(points: &[(f64, f64)], time: f64) -> f64 {
 
 struct NativeRun {
     probes: Vec<f64>,
+    times: Vec<f64>,
+    probe_history: Vec<Vec<f64>>,
     axial_warping: f64,
     max_residual: f64,
+    section_rotations: [f64; 2],
+}
+
+fn integrate_section_triangle(points: [[f64; 3]; 3], values: [[f64; 3]; 6]) -> [f64; 3] {
+    let area = 0.5
+        * ((points[1][1] - points[0][1]) * (points[2][2] - points[0][2])
+            - (points[2][1] - points[0][1]) * (points[1][2] - points[0][2]))
+            .abs();
+    let mut polar = 0.0;
+    let mut moment = 0.0;
+    // The four-point Hammer rule exactly integrates the cubic product of
+    // a linear coordinate and a quadratic triangle displacement.
+    for (barycentric, weight) in [
+        ([1.0 / 3.0; 3], -27.0 / 48.0),
+        ([0.6, 0.2, 0.2], 25.0 / 48.0),
+        ([0.2, 0.6, 0.2], 25.0 / 48.0),
+        ([0.2, 0.2, 0.6], 25.0 / 48.0),
+    ] {
+        let [a, b, c] = barycentric;
+        let basis = [
+            a * (2.0 * a - 1.0),
+            b * (2.0 * b - 1.0),
+            c * (2.0 * c - 1.0),
+            4.0 * a * b,
+            4.0 * b * c,
+            4.0 * c * a,
+        ];
+        let y: f64 = points.iter().zip(barycentric).map(|(p, l)| p[1] * l).sum();
+        let z: f64 = points.iter().zip(barycentric).map(|(p, l)| p[2] * l).sum();
+        let uy: f64 = values.iter().zip(basis).map(|(u, n)| u[1] * n).sum();
+        let uz: f64 = values.iter().zip(basis).map(|(u, n)| u[2] * n).sum();
+        polar += area * weight * (y * y + z * z);
+        moment += area * weight * (y * uz - z * uy);
+    }
+    [area, polar, moment]
+}
+
+fn section_rotations(
+    mesh: &Mesh,
+    coordinates: &[[f64; 3]],
+    displacement: &[f64],
+) -> Result<[f64; 2], Box<dyn std::error::Error>> {
+    // Quantized lookup locates existing P2 edge DOFs, with an independent
+    // coordinate check below; it never interpolates from neighboring nodes.
+    let key = |p: [f64; 3]| p.map(|v| (v * 1e12).round() as i64);
+    if coordinates.len() != displacement.len() || coordinates.len() % 3 != 0 {
+        return Err("invalid section displacement cardinality".into());
+    }
+    let mut lookup = std::collections::HashMap::new();
+    for (index, point) in coordinates.iter().enumerate().step_by(3) {
+        if lookup.insert(key(*point), index).is_some() {
+            return Err("duplicate section displacement coordinate".into());
+        }
+    }
+    let mut rotations = [0.0; 2];
+    for (slot, plane) in [1.0, 2.0].into_iter().enumerate() {
+        let mut faces = std::collections::BTreeSet::new();
+        for element in &mesh.elements {
+            for face in [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]] {
+                let mut nodes = face.map(|i| element.nodes[i]);
+                if nodes
+                    .iter()
+                    .all(|&i| (mesh.nodes[i].x - plane).abs() < 1e-12)
+                {
+                    nodes.sort_unstable();
+                    faces.insert(nodes);
+                }
+            }
+        }
+        let mut integrals = [0.0; 3];
+        for face in faces {
+            let points = face.map(|i| {
+                let p = mesh.nodes[i];
+                [p.x, p.y, p.z]
+            });
+            let mut nodes = [[0.0; 3]; 6];
+            nodes[..3].copy_from_slice(&points);
+            for (i, (a, b)) in [(0, 1), (1, 2), (2, 0)].into_iter().enumerate() {
+                nodes[i + 3] = std::array::from_fn(|j| (points[a][j] + points[b][j]) * 0.5);
+            }
+            let mut values = [[0.0; 3]; 6];
+            for (point, value) in nodes.into_iter().zip(&mut values) {
+                let &index = lookup.get(&key(point)).ok_or("section P2 node absent")?;
+                if coordinates[index]
+                    .iter()
+                    .zip(point)
+                    .any(|(a, b)| (a - b).abs() > 1e-12)
+                {
+                    return Err("section P2 coordinate mismatch".into());
+                }
+                value.copy_from_slice(&displacement[index..index + 3]);
+            }
+            for (total, part) in integrals
+                .iter_mut()
+                .zip(integrate_section_triangle(points, values))
+            {
+                *total += part;
+            }
+        }
+        // Original two flanges and web occupy exactly .004 square metres.
+        if integrals.iter().any(|v| !v.is_finite())
+            || (integrals[0] - 0.004).abs() > 1e-12
+            || integrals[1] <= 0.0
+        {
+            return Err("incomplete or invalid original I-section integral".into());
+        }
+        rotations[slot] = integrals[2] / integrals[1];
+    }
+    Ok(rotations)
+}
+
+impl NativeRun {
+    fn probes_at(&self, time: f64) -> Result<Vec<f64>, Box<dyn std::error::Error>> {
+        if !time.is_finite()
+            || self.times.len() != self.probe_history.len()
+            || self.times.is_empty()
+            || self.times.iter().any(|t| !t.is_finite())
+            || self.times.windows(2).any(|t| t[0] >= t[1])
+            || time < self.times[0]
+            || time > *self.times.last().unwrap()
+            || self
+                .probe_history
+                .iter()
+                .any(|p| p.len() != self.probes.len() || p.iter().any(|v| !v.is_finite()))
+        {
+            return Err("invalid or uncovered native probe observation time".into());
+        }
+        let upper = self.times.partition_point(|&t| t < time);
+        if self.times[upper] == time {
+            return Ok(self.probe_history[upper].clone());
+        }
+        let lower = upper - 1;
+        let weight = (time - self.times[lower]) / (self.times[upper] - self.times[lower]);
+        Ok(self.probe_history[lower]
+            .iter()
+            .zip(&self.probe_history[upper])
+            .map(|(a, b)| a + weight * (b - a))
+            .collect())
+    }
 }
 
 fn probe_dof(channel: &str) -> Result<(usize, usize), Box<dyn std::error::Error>> {
@@ -191,6 +332,10 @@ fn solve(
         dt,
     )?;
     integrator.initialize(&zero, &zero, &zero)?;
+    let mut times = Vec::with_capacity(steps + 1);
+    let mut probe_history = Vec::with_capacity(steps + 1);
+    times.push(0.0);
+    probe_history.push(vec![0.0; probes.len()]);
     let mut max_true_residual = 0.0_f64;
     for step in 1..=steps {
         let time = step as f64 * dt;
@@ -215,6 +360,13 @@ fn solve(
             return Err("native equation residual is non-finite".into());
         }
         max_true_residual = max_true_residual.max(residual);
+        times.push(time);
+        probe_history.push(
+            probes
+                .iter()
+                .map(|&(plus, minus)| state.displacement[plus] - state.displacement[minus])
+                .collect(),
+        );
     }
     let state = integrator.state();
     let actual = probes
@@ -236,8 +388,11 @@ fn solve(
     }
     Ok(NativeRun {
         probes: actual,
+        times,
+        probe_history,
         axial_warping,
         max_residual: max_true_residual,
+        section_rotations: section_rotations(&mesh, &coordinates, &state.displacement)?,
     })
 }
 
@@ -265,11 +420,18 @@ pub(super) fn parity_result(
     case_id: &str,
     engine: &str,
     external: &[f64],
+    reference_time_s: f64,
     reference_passed: bool,
 ) -> Result<QaResult, Box<dyn std::error::Error>> {
     validate_case(case)?;
     if external.len() != 2 {
         return Err("original paired external probes unavailable".into());
+    }
+    if !reference_time_s.is_finite()
+        || reference_time_s > case.stop_time_s
+        || reference_time_s < case.stop_time_s - case.th_period_s
+    {
+        return Err("external warping observation does not cover the final output period".into());
     }
     // The actual factor-1/2 study changed both probes by about 10%, above 2%.
     // Cholesky retains the same complete transient and independent residual checks.
@@ -282,6 +444,7 @@ pub(super) fn parity_result(
         case_id,
         engine,
         external,
+        reference_time_s,
         reference_passed,
         [&coarse, &medium, &fine, &time_coarse],
     ))
@@ -344,6 +507,12 @@ pub fn probe_transient(
     Ok(serde_json::json!({
         "scope":"Original complete 0.5 s restrained I-section warping transient; diagnostic only, not external parity or QA success",
         "refinement_factor":factor,"requested_timestep_s":timestep,
+        "physical_stop_time_s":case.stop_time_s,
+        "probe_times_s":run.times,
+        "probe_displacement_pairs_m":run.probe_history,
+        "section_x_m":[1.0,2.0],
+        "section_rotation_projection_rad":run.section_rotations,
+        "section_rotation_time_s":case.stop_time_s,
         "midspan_displacement_pair_m":run.probes[0],
         "tip_displacement_pair_m":run.probes[1],
         "axial_warping_displacement_m":run.axial_warping,
@@ -374,16 +543,24 @@ fn build_result(
     case_id: &str,
     engine: &str,
     external: &[f64],
+    reference_time_s: f64,
     reference_passed: bool,
     runs: [&NativeRun; 4],
 ) -> QaResult {
     let [coarse, medium, fine, time_coarse] = runs;
+    let matched = match fine.probes_at(reference_time_s) {
+        Ok(values) => values,
+        Err(error) => return QaResult::failed(case_id, error.to_string()),
+    };
     let mut result = QaResult::passed(case_id)
         .requested_backend("cpu+opencourant").actual_backend("cpu+opencourant")
         .metric("external_reference_executed", 1.0)
         .metric("external_reference_health_passed", if reference_passed { 1.0 } else { 0.0 })
         .minimum("external_reference_health_passed", 1.0)
         .metric("native_parity_executed", 1.0).minimum("native_parity_executed", 1.0)
+        .metric("external_probe_time_s", reference_time_s)
+        .metric("native_matched_probe_time_s", reference_time_s)
+        .metric("native_physical_stop_time_s", case.stop_time_s)
         .metric("native_axial_warping_displacement_m", fine.axial_warping)
         .metric("analytical_axial_warping_displacement_m", analytical_axial_warping(case))
         .metric("native_axial_warping_relative_error",
@@ -402,7 +579,7 @@ fn build_result(
         for (name, value, budget) in [
             (
                 "native_external_relative_error",
-                (fine.probes[index] - external[index]).abs() / external[index].abs(),
+                (matched[index] - external[index]).abs() / external[index].abs(),
                 0.03,
             ),
             (
@@ -426,6 +603,10 @@ fn build_result(
             .metric(
                 format!("probe_{index}_native_displacement_m"),
                 fine.probes[index],
+            )
+            .metric(
+                format!("probe_{index}_native_matched_displacement_m"),
+                matched[index],
             )
             .metric(
                 format!("probe_{index}_external_displacement_m"),
@@ -454,6 +635,50 @@ fn build_result(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quadratic_triangle_section_integral_matches_exact_polynomial() {
+        let points = [[2.0, 0.0, 0.0], [2.0, 1.0, 0.0], [2.0, 0.0, 1.0]];
+        let nodes = [
+            points[0],
+            points[1],
+            points[2],
+            [2.0, 0.5, 0.0],
+            [2.0, 0.5, 0.5],
+            [2.0, 0.0, 0.5],
+        ];
+        let values = nodes.map(|p| [0.0, 0.0, p[1] * p[1]]);
+        let [area, polar, moment] = integrate_section_triangle(points, values);
+        // On the unit right triangle: integral(y^3)=1/20 and
+        // integral(y^2+z^2)=1/6. Vertex-only interpolation would give 1/12.
+        assert!((area - 0.5).abs() < 1e-14);
+        assert!((polar - 1.0 / 6.0).abs() < 1e-14);
+        assert!((moment - 1.0 / 20.0).abs() < 1e-14);
+    }
+
+    #[test]
+    fn complete_section_recovers_rigid_rotation_without_translation_bias() {
+        for factor in [1, 2] {
+            let mesh = native_mesh(factor);
+            let space = VectorH1Space::new(PolynomialDegree::P2, 3);
+            let coordinates = space.dof_coordinates(&mesh).unwrap();
+            let angle = 0.137;
+            let mut displacement = coordinates
+                .iter()
+                .enumerate()
+                .map(|(i, p)| match i % 3 {
+                    0 => 0.4 * p[1] * p[2],
+                    1 => 0.3 - angle * p[2],
+                    _ => -0.2 + angle * p[1],
+                })
+                .collect::<Vec<_>>();
+            let actual = section_rotations(&mesh, &coordinates, &displacement).unwrap();
+            assert!(actual.into_iter().all(|v| (v - angle).abs() < 1e-12));
+            displacement.fill(f64::NAN);
+            assert!(section_rotations(&mesh, &coordinates, &displacement).is_err());
+            assert!(section_rotations(&mesh, &coordinates, &displacement[..1]).is_err());
+        }
+    }
 
     #[test]
     fn i_section_mesh_preserves_volume_and_shared_faces() {
@@ -517,39 +742,134 @@ mod tests {
     }
 
     #[test]
+    fn parity_uses_actual_reference_time_and_rejects_uncovered_samples() {
+        let case = super::super::beam_warping_case();
+        let good = case.probes.iter().map(|p| p.expected).collect::<Vec<_>>();
+        let observed = good.iter().map(|p| 1.1 * p).collect::<Vec<_>>();
+        let make = |scale: f64| NativeRun {
+            probes: good.iter().map(|p| p * scale).collect(),
+            times: vec![0.0, 0.49, 0.5],
+            probe_history: vec![
+                vec![0.0; good.len()],
+                good.iter().map(|p| 1.2 * p * scale).collect(),
+                good.iter().map(|p| p * scale).collect(),
+            ],
+            axial_warping: analytical_axial_warping(&case),
+            max_residual: 1e-10,
+            section_rotations: [0.0; 2],
+        };
+        let runs = [make(0.995), make(0.999), make(1.0), make(1.0001)];
+        // At .495 s the measured history is 10% above the final displacement.
+        // Comparing final values would falsely pass the first assertion's input.
+        assert!(
+            build_result(
+                &case,
+                "test",
+                "reference",
+                &good,
+                0.495,
+                true,
+                runs.each_ref()
+            )
+            .release_eligible()
+            .is_err()
+        );
+        assert!(
+            build_result(
+                &case,
+                "test",
+                "reference",
+                &observed,
+                0.495,
+                true,
+                runs.each_ref()
+            )
+            .release_eligible()
+            .is_ok()
+        );
+        for time in [f64::NAN, -0.001, 0.501] {
+            assert!(runs[2].probes_at(time).is_err());
+        }
+        let mut invalid = make(1.0);
+        invalid.times[1] = 0.0;
+        assert!(invalid.probes_at(0.495).is_err());
+        invalid = make(1.0);
+        invalid.probe_history[1][0] = f64::NAN;
+        assert!(invalid.probes_at(0.495).is_err());
+    }
+
+    #[test]
     fn matching_twist_cannot_hide_bad_second_probe_or_dynamic_equation() {
         let case = super::super::beam_warping_case();
         let good = case.probes.iter().map(|p| p.expected).collect::<Vec<_>>();
         let make = |scale: f64| NativeRun {
             probes: good.iter().map(|p| p * scale).collect(),
+            times: vec![0.0, case.stop_time_s],
+            probe_history: vec![
+                vec![0.0; good.len()],
+                good.iter().map(|p| p * scale).collect(),
+            ],
             axial_warping: analytical_axial_warping(&case),
             max_residual: 1e-10,
+            section_rotations: [0.0; 2],
         };
         let mut runs = [make(0.995), make(0.999), make(1.0), make(1.0001)];
         assert!(
-            build_result(&case, "test", "reference", &good, true, runs.each_ref())
-                .release_eligible()
-                .is_ok()
+            build_result(
+                &case,
+                "test",
+                "reference",
+                &good,
+                case.stop_time_s,
+                true,
+                runs.each_ref()
+            )
+            .release_eligible()
+            .is_ok()
         );
         runs[2].axial_warping = 0.0;
         assert!(
-            build_result(&case, "test", "reference", &good, true, runs.each_ref())
-                .release_eligible()
-                .is_err()
+            build_result(
+                &case,
+                "test",
+                "reference",
+                &good,
+                case.stop_time_s,
+                true,
+                runs.each_ref()
+            )
+            .release_eligible()
+            .is_err()
         );
         runs[2].axial_warping = analytical_axial_warping(&case);
         runs[2].max_residual = 1e-5;
         assert!(
-            build_result(&case, "test", "reference", &good, true, runs.each_ref())
-                .release_eligible()
-                .is_err()
+            build_result(
+                &case,
+                "test",
+                "reference",
+                &good,
+                case.stop_time_s,
+                true,
+                runs.each_ref()
+            )
+            .release_eligible()
+            .is_err()
         );
         runs[2].max_residual = 1e-10;
         runs[2].probes[1] *= 1.1;
         assert!(
-            build_result(&case, "test", "reference", &good, true, runs.each_ref())
-                .release_eligible()
-                .is_err()
+            build_result(
+                &case,
+                "test",
+                "reference",
+                &good,
+                case.stop_time_s,
+                true,
+                runs.each_ref()
+            )
+            .release_eligible()
+            .is_err()
         );
     }
 }

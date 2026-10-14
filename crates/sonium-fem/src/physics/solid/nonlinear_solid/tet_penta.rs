@@ -5,7 +5,7 @@
 //! point, while [`Penta6Geom`] wedges use full 6-point quadrature (3
 //! triangle points by 2 through-thickness Gauss points), the degenerate
 //! brick of "Element Degeneration" (p. 92). Both evaluate explicit
-//! internal forces `f = sum_q w_q B_q^T (sigma_q + q I)` with the
+//! internal forces `f = sum_q w_q B_q^T (sigma_q - q I)` with the
 //! stress from any frozen C1 [`StressUpdateModel`] and the shock
 //! viscosity `q` of "Shock Waves" (pp. 91-92, Eq 340). Full quadrature
 //! leaves no hourglass modes, so no stabilization enters; reduced
@@ -277,7 +277,7 @@ where
     };
     material.commit(&mut state.point, &update);
     let stresses: [f64; 6] =
-        std::array::from_fn(|row| update.stress[row] + if row < 3 { bulk_q } else { 0.0 });
+        std::array::from_fn(|row| update.stress[row] - if row < 3 { bulk_q } else { 0.0 });
     let mut forces = [0.0; 12];
     for (brow, s) in geom.b_matrix.chunks(12).zip(stresses.iter()) {
         for (f, b) in forces.iter_mut().zip(brow.iter()) {
@@ -484,7 +484,7 @@ pub struct PentaForceOut {
 /// Explicit internal forces of one PENTA6 element.
 ///
 /// Advances each of the six C1 material points by its strain increment
-/// and returns the quadrature sum of `w B^T (sigma + q I)`.
+/// and returns the quadrature sum of `w B^T (sigma - q I)`.
 /// Rate-dependent materials evaluate at `|d_eps| / dt` per point.
 ///
 /// # Errors
@@ -539,7 +539,7 @@ where
         material.commit(&mut state.points[slot], &update);
         let weight = point.weight * det;
         let stresses: [f64; 6] =
-            std::array::from_fn(|row| update.stress[row] + if row < 3 { q } else { 0.0 });
+            std::array::from_fn(|row| update.stress[row] - if row < 3 { q } else { 0.0 });
         for (brow, s) in b_matrix.chunks(18).zip(stresses.iter()) {
             for (f, b) in forces.iter_mut().zip(brow.iter()) {
                 *f += b * s * weight;
@@ -657,6 +657,101 @@ mod tests {
 
     fn elastic_j2() -> J2Material {
         J2Material::new(200.0e9, 0.3, 1.0e12, HardeningLaw::Perfect)
+    }
+
+    #[test]
+    fn artificial_bulk_pressure_dissipates_tet_and_penta_compressive_power() {
+        let tet_coordinates = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
+        let wedge_coordinates = [
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [0.0, 1.0, 1.0],
+        ];
+        let tet = Tet4Geom::new(tet_coordinates).unwrap();
+        let wedge = Penta6Geom::new(wedge_coordinates).unwrap();
+        for (quadratic, linear) in [(1.1, 0.0), (0.0, 0.05)] {
+            for rate in [-0.01, 0.01] {
+                let mut base_params = TetPentaParams::new(7800.0, 4500.0);
+                base_params.bulk_c0 = 0.0;
+                base_params.bulk_c1 = 0.0;
+                let mut viscous = base_params.clone();
+                viscous.bulk_c0 = quadratic;
+                viscous.bulk_c1 = linear;
+                let tet_velocity = std::array::from_fn(|i| tet_coordinates[i / 3][i % 3] * rate);
+                let a = tet4_forces(
+                    &tet,
+                    &mut Tet4State::new(PlasticState::new_3d()),
+                    &elastic_j2(),
+                    &tet_velocity,
+                    1e-6,
+                    &base_params,
+                )
+                .unwrap();
+                let b = tet4_forces(
+                    &tet,
+                    &mut Tet4State::new(PlasticState::new_3d()),
+                    &elastic_j2(),
+                    &tet_velocity,
+                    1e-6,
+                    &viscous,
+                )
+                .unwrap();
+                let tet_power = -b
+                    .forces
+                    .iter()
+                    .zip(a.forces)
+                    .zip(tet_velocity)
+                    .map(|((f, a), v)| (f - a) * v)
+                    .sum::<f64>();
+                let wedge_velocity =
+                    std::array::from_fn(|i| wedge_coordinates[i / 3][i % 3] * rate);
+                let a = penta6_forces(
+                    &wedge,
+                    &mut Penta6State::new(std::array::from_fn(|_| PlasticState::new_3d())),
+                    &elastic_j2(),
+                    &wedge_velocity,
+                    1e-6,
+                    &base_params,
+                )
+                .unwrap();
+                let b_wedge = penta6_forces(
+                    &wedge,
+                    &mut Penta6State::new(std::array::from_fn(|_| PlasticState::new_3d())),
+                    &elastic_j2(),
+                    &wedge_velocity,
+                    1e-6,
+                    &viscous,
+                )
+                .unwrap();
+                let wedge_power = -b_wedge
+                    .forces
+                    .iter()
+                    .zip(a.forces)
+                    .zip(wedge_velocity)
+                    .map(|((f, a), v)| (f - a) * v)
+                    .sum::<f64>();
+                for (power, q, volume) in [
+                    (tet_power, b.bulk_q, tet.volume),
+                    (wedge_power, b_wedge.bulk_q, wedge.volume),
+                ] {
+                    let expected = q * 3.0 * rate * volume;
+                    assert!((power - expected).abs() < 1e-10 * expected.abs().max(1.0));
+                    if rate < 0.0 {
+                        assert!(power < 0.0);
+                    } else {
+                        assert_eq!(power, 0.0);
+                    }
+                }
+            }
+        }
     }
 
     #[test]

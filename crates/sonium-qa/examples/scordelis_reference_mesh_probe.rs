@@ -57,8 +57,8 @@ fn reference_case(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cells: usize = std::env::args().nth(1).map_or(Ok(64), |v| v.parse())?;
-    if !(32..=128).contains(&cells) || !cells.is_multiple_of(2) {
-        return Err("even external roof refinement in[32,128] required".into());
+    if !(32..=256).contains(&cells) || !cells.is_multiple_of(2) {
+        return Err("even external roof refinement in[32,256] required".into());
     }
     let law = std::env::args().nth(2).unwrap_or_else(|| "law1".into());
     let shell: i32 = std::env::args().nth(3).map_or(Ok(24), |v| v.parse())?;
