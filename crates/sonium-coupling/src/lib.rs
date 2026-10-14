@@ -17,6 +17,12 @@
 //! - [`acoustic_rom`]: product-independent interior modal basis (rigid-wall
 //!   modes + Craig–Bampton attachment modes, static correction, reduced
 //!   solve/adjoint) consumed by coupled sweep drivers.
+//!
+//! Research note (SIM-PERF-20261013.md section 2, gap 5): FEM–BEM coupling
+//! is not wired as a preconditioner inside any demo sweep; the demos
+//! precondition the interior (FEM) and exterior (BEM) operators
+//! separately. Using the coupled operator as a demo preconditioner
+//! remains future work.
 
 pub mod acoustic_rom;
 pub mod monolithic;

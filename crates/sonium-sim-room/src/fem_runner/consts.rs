@@ -113,6 +113,13 @@ pub const ELEMENTS_PER_WAVELENGTH: f64 = 6.0;
 
 /// GMRES restart window. This keeps orthogonalization cost bounded while still
 /// giving the shifted-Laplacian preconditioner enough Krylov space.
+///
+/// Restart-50 is safe here only because GCRO-DR deflation (k=30, on by
+/// default) plus the shifted-Laplacian preconditioner are active: measured
+/// Oct 2026, unpreconditioned GMRES(50) stalled past 25,000 iterations on
+/// the 117k-DOF probe where restart-200 converged in 336. Do not set
+/// `recycle_subspace_size = 0` without raising this (SIM-PERF-20261013.md
+/// section 2, gap 4).
 pub(super) const GMRES_RESTART: usize = 50;
 
 /// Cap GMRES restart cycles. With restart=50 this allows up to 10000 Krylov

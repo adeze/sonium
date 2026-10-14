@@ -79,6 +79,17 @@ const GPU_DERIVATIVE_ASSEMBLY_TOLERANCE: f64 = 5.0e-3;
 const CUDA_ADJOINT_PARITY_TOLERANCE: f64 = 5.0e-3;
 #[cfg(feature = "cuda")]
 const CUDA_ADJOINT_INNER_PRODUCT_TOLERANCE: f64 = 1.0e-10;
+/// DOF count at/above which the GPU BEM paths build a block-Jacobi
+/// preconditioner (fixed 128-wide blocks) instead of point Jacobi.
+///
+/// Below this size the host-side explicit block inverses cost more than
+/// they save next to diagonal scaling, so the same slot type runs with
+/// `block_size = 1`, which reproduces point Jacobi exactly. Raises
+/// lower the per-frequency setup cost but weaken the device
+/// preconditioner; the 1000-DOF cut follows PERF-REPORT-20261013.md
+/// step 4.3.
+#[cfg(any(feature = "cuda", feature = "metal"))]
+const GPU_BLOCK_JACOBI_MIN_DOFS: usize = 1000;
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -1120,6 +1131,10 @@ pub struct SolverConfig {
     /// assembly work and is reported in `GpuValidationReport`.
     pub gpu_reference_correction: bool,
     /// Burton-Miller beta scale factor.
+    ///
+    /// The Burton-Miller formulation stabilises exterior resonances, so
+    /// no CHIEF interior points are used (SIM-PERF-20261013.md section 2,
+    /// gap 5).
     pub beta_scale: f64,
     /// DOF threshold: use direct LU at or below this, FGMRES+ILU above.
     ///
@@ -1133,6 +1148,13 @@ pub struct SolverConfig {
     /// Maximum FGMRES iterations.
     pub max_iterations: usize,
     /// FGMRES restart parameter.
+    ///
+    /// Small restarts stall without deflation (measured Oct 2026:
+    /// unpreconditioned restart-50 failed where restart-200 converged);
+    /// the default 40 is safe because GCRO-DR recycling
+    /// (`recycle_subspace_size = 20`) is on by default. Keep recycling
+    /// enabled when lowering this (SIM-PERF-20261013.md section 2,
+    /// gap 4).
     pub restart: usize,
     /// Diagonal shift for ILU preconditioner.
     pub ilu_shift: f64,
@@ -3035,8 +3057,13 @@ pub fn run_simulation_cuda_adjoint_with_report(
         ))
     })?;
     let geometry_key = assembly_workspace.geometry_key();
+    let gpu_block_size = if n_dofs >= GPU_BLOCK_JACOBI_MIN_DOFS {
+        sonium_compute::DEFAULT_BLOCK_SIZE
+    } else {
+        1
+    };
     let mut matrix: Option<sonium_compute::PersistentDeviceCsr<_, Complex64>> = None;
-    let mut preconditioner: Option<sonium_compute::PointJacobiBackend<_, Complex64>> = None;
+    let mut preconditioner: Option<sonium_compute::BlockJacobiBackend<_, Complex64>> = None;
     let mut rhs_device = backend.raw_alloc::<Complex64>(n_dofs).map_err(|error| {
         SimulationError::new(format!("CUDA adjoint RHS allocation failed: {error}"))
     })?;
@@ -3117,9 +3144,6 @@ pub fn run_simulation_cuda_adjoint_with_report(
         let adjoint_values: Vec<Complex64> = (0..n_dofs)
             .flat_map(|row| (0..n_dofs).map(move |column| system_matrix[[column, row]].conj()))
             .collect();
-        let diagonal: Vec<Complex64> = (0..n_dofs)
-            .map(|row| adjoint_values[row * n_dofs + row])
-            .collect();
         if let Some(matrix) = matrix.as_mut() {
             matrix
                 .try_copy_values_from_host(&backend, &adjoint_values)
@@ -3154,21 +3178,26 @@ pub fn run_simulation_cuda_adjoint_with_report(
         }
         if let Some(preconditioner) = preconditioner.as_mut() {
             preconditioner
-                .try_update_diagonal(&backend, &diagonal)
+                .try_update_dense_host(&backend, &adjoint_values)
                 .map_err(|error| {
                     SimulationError::new(format!(
-                        "CUDA adjoint Jacobi update failed at {frequency:.1} Hz: {error}"
+                        "CUDA adjoint block-Jacobi update failed at {frequency:.1} Hz: {error}"
                     ))
                 })?;
             preconditioner_updates += 1;
         } else {
             preconditioner = Some(
-                sonium_compute::PointJacobiBackend::try_from_diagonal(&backend, &diagonal)
-                    .map_err(|error| {
-                        SimulationError::new(format!(
-                            "CUDA adjoint Jacobi allocation failed: {error}"
-                        ))
-                    })?,
+                sonium_compute::BlockJacobiBackend::try_from_dense_host(
+                    &backend,
+                    &adjoint_values,
+                    n_dofs,
+                    gpu_block_size,
+                )
+                .map_err(|error| {
+                    SimulationError::new(format!(
+                        "CUDA adjoint block-Jacobi allocation failed: {error}"
+                    ))
+                })?,
             );
         }
 
@@ -3535,8 +3564,15 @@ where
     }
 
     let (row_ptr, col_idx) = dense_csr_structure(n_dofs)?;
+    // Block-Jacobi over fixed diagonal blocks at production sizes;
+    // block_size = 1 below the cut reproduces point Jacobi exactly.
+    let gpu_block_size = if n_dofs >= GPU_BLOCK_JACOBI_MIN_DOFS {
+        sonium_compute::DEFAULT_BLOCK_SIZE
+    } else {
+        1
+    };
     let mut matrix32: Option<sonium_compute::PersistentDeviceCsr<B, num_complex::Complex32>> = None;
-    let mut preconditioner: Option<sonium_compute::PointJacobiBackend<B, num_complex::Complex32>> =
+    let mut preconditioner: Option<sonium_compute::BlockJacobiBackend<B, num_complex::Complex32>> =
         None;
     let mut previous_x32 = if has_typed_driver {
         None
@@ -3578,7 +3614,7 @@ where
     // probe path. Prescribed-driver workloads retain the mixed Complex32
     // inner solve above.
     let mut typed_matrix64: Option<sonium_compute::PersistentDeviceCsr<B, Complex64>> = None;
-    let mut typed_preconditioner64: Option<sonium_compute::PointJacobiBackend<B, Complex64>> = None;
+    let mut typed_preconditioner64: Option<sonium_compute::BlockJacobiBackend<B, Complex64>> = None;
     let mut typed_rhs64: Option<B::Buffer<Complex64>> = None;
     let mut typed_x64: Option<B::Buffer<Complex64>> = None;
     let mut previous_x64 = if !has_typed_driver && backend_kind == SimulationBackend::Cuda {
@@ -3607,6 +3643,8 @@ where
     // and reduction path is Complex64. The large BEM inner solve remains the
     // mixed Complex32/f64-gated path above.
     let mut coupled_matrix64: Option<sonium_compute::PersistentDeviceCsr<B, Complex64>> = None;
+    // The coupled N-port network is driver-count sized (single digits), so
+    // point Jacobi stays: block inverses would buy nothing here.
     let mut coupled_preconditioner: Option<sonium_compute::PointJacobiBackend<B, Complex64>> = None;
     let mut coupled_rhs64: Option<B::Buffer<Complex64>> = None;
     let mut coupled_x64: Option<B::Buffer<Complex64>> = None;
@@ -3776,29 +3814,26 @@ where
             );
         }
 
-        let diagonal: Vec<num_complex::Complex32> = (0..n_dofs)
-            .map(|row| {
-                let value = values64[row * n_dofs + row];
-                num_complex::Complex32::new(value.re as f32, value.im as f32)
-            })
-            .collect();
         if let Some(preconditioner) = preconditioner.as_mut() {
             preconditioner
-                .try_update_diagonal(&backend, &diagonal)
+                .try_update_dense_host_cast(&backend, values64)
                 .map_err(|error| {
                     SimulationError::new(format!(
-                        "GPU Jacobi update failed at {frequency:.1} Hz: {error}"
+                        "GPU block-Jacobi update failed at {frequency:.1} Hz: {error}"
                     ))
                 })?;
             preconditioner_updates += 1;
         } else {
             preconditioner = Some(
-                sonium_compute::PointJacobiBackend::<B, num_complex::Complex32>::try_from_diagonal(
-                    &backend, &diagonal,
+                sonium_compute::BlockJacobiBackend::<B, num_complex::Complex32>::try_from_dense_host_cast(
+                    &backend,
+                    values64,
+                    n_dofs,
+                    gpu_block_size,
                 )
                 .map_err(|error| {
                     SimulationError::new(format!(
-                        "GPU Jacobi allocation failed at {frequency:.1} Hz: {error}"
+                        "GPU block-Jacobi allocation failed at {frequency:.1} Hz: {error}"
                     ))
                 })?,
             );
@@ -3830,26 +3865,25 @@ where
                         })?,
                 );
             }
-            let diagonal64: Vec<Complex64> = (0..n_dofs)
-                .map(|row| values64[row * n_dofs + row])
-                .collect();
             if let Some(preconditioner) = typed_preconditioner64.as_mut() {
                 preconditioner
-                    .try_update_diagonal(&backend, &diagonal64)
+                    .try_update_dense_host(&backend, values64)
                     .map_err(|error| {
                         SimulationError::new(format!(
-                            "GPU typed Complex64 Jacobi update failed at {frequency:.1} Hz: {error}"
+                            "GPU typed Complex64 block-Jacobi update failed at {frequency:.1} Hz: {error}"
                         ))
                     })?;
             } else {
                 typed_preconditioner64 = Some(
-                    sonium_compute::PointJacobiBackend::try_from_diagonal(
+                    sonium_compute::BlockJacobiBackend::try_from_dense_host(
                         &backend,
-                        &diagonal64,
+                        values64,
+                        n_dofs,
+                        gpu_block_size,
                     )
                     .map_err(|error| {
                         SimulationError::new(format!(
-                            "GPU typed Complex64 Jacobi allocation failed at {frequency:.1} Hz: {error}"
+                            "GPU typed Complex64 block-Jacobi allocation failed at {frequency:.1} Hz: {error}"
                         ))
                     })?,
                 );
@@ -4416,12 +4450,11 @@ where
                         SimulationError::new(format!("CUDA reference operator upload failed: {e}"))
                     })?;
                 matrix_value_updates += 1;
-                let diagonal: Vec<_> = (0..n_dofs).map(|i| cpu_system.matrix[[i, i]]).collect();
                 let preconditioner = typed_preconditioner64.as_mut().ok_or_else(|| {
                     SimulationError::new("CUDA correction preconditioner missing")
                 })?;
                 preconditioner
-                    .try_update_diagonal(&backend, &diagonal)
+                    .try_update_dense_host(&backend, cpu_system.matrix.as_slice())
                     .map_err(|e| {
                         SimulationError::new(format!(
                             "CUDA reference preconditioner update failed: {e}"
@@ -4723,10 +4756,13 @@ fn dense_csr_structure(n: usize) -> Result<(Vec<i32>, Vec<i32>), SimulationError
 /// sparse/reduction primitives natively for Complex64 even on devices where
 /// the Complex32 compatibility path is host-staged.
 #[cfg(any(feature = "cuda", feature = "metal"))]
-fn solve_gpu_coupled_rhs<B: sonium_compute::Backend>(
+fn solve_gpu_coupled_rhs<
+    B: sonium_compute::Backend,
+    P: sonium_compute::DevicePreconditioner<B, Complex64>,
+>(
     backend: &B,
     matrix: &sonium_compute::PersistentDeviceCsr<B, Complex64>,
-    preconditioner: &sonium_compute::PointJacobiBackend<B, Complex64>,
+    preconditioner: &P,
     rhs: &[Complex64],
     rhs64: &mut B::Buffer<Complex64>,
     x64: &mut B::Buffer<Complex64>,
@@ -8690,6 +8726,17 @@ pub(crate) mod tests {
             SolverConfig::default().direct_threshold,
             DEFAULT_DIRECT_THRESHOLD
         );
+    }
+
+    #[test]
+    fn test_default_solver_recycling_covers_small_restart() {
+        // SIM-PERF-20261013.md section 2, gap 4: small restarts stall
+        // without deflation, so the default restart-40 requires GCRO-DR
+        // recycling on with room inside the window.
+        let config = SolverConfig::default();
+        assert!(validate_solver_config(&config).is_ok());
+        assert!(config.recycle_subspace_size > 0);
+        assert!(config.recycle_subspace_size < config.restart);
     }
 
     #[test]

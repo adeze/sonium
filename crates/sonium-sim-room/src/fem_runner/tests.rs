@@ -1494,6 +1494,30 @@ fn test_preconditioner_kind_parsing() {
             .is_err()
     );
 }
+
+#[test]
+fn test_default_solver_recycling_covers_small_restart() {
+    // SIM-PERF-20261013.md section 2, gap 4: restart-50 stalled
+    // unpreconditioned where restart-200 converged, so the small demo
+    // restart is only safe with GCRO-DR deflation on. This guards the
+    // defaults against a future change that disables recycling while
+    // keeping the small restart.
+    use super::consts::{DEFAULT_RECYCLE_SUBSPACE_SIZE, GMRES_RESTART};
+    use super::fem_mesh_config::effective_recycle_subspace_size;
+
+    let config = FemMeshConfig::default();
+    assert_eq!(config.gmres_restart, GMRES_RESTART);
+    assert_eq!(config.recycle_subspace_size, DEFAULT_RECYCLE_SUBSPACE_SIZE);
+    assert_eq!(config.recycler, RecyclerKind::GcroDr);
+    assert!(
+        config.recycle_subspace_size > 0,
+        "GCRO-DR recycling must stay on by default",
+    );
+    assert!(
+        effective_recycle_subspace_size(&config) < config.gmres_restart,
+        "recycled subspace must fit inside the restart window",
+    );
+}
 #[test]
 fn test_shifted_laplacian_shift_value_and_parsing() {
     let k = 3.0;

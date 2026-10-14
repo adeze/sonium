@@ -306,7 +306,11 @@ impl PhysicsParams {
     /// Burton-Miller coupling constant: β = i/k (for external problems)
     ///
     /// This is the traditional formulation. For better conditioning at low
-    /// frequencies, use `burton_miller_beta_bounded` instead.
+    /// frequencies, use `burton_miller_beta_bounded` instead. The
+    /// Burton-Miller combination removes the fictitious-eigenfrequency
+    /// non-uniqueness analytically, so no CHIEF interior collocation
+    /// points are needed anywhere in this crate (zero CHIEF hits is
+    /// expected, SIM-PERF-20261013.md section 2, gap 5).
     pub fn burton_miller_beta(&self) -> Complex64 {
         if self.tau > 0.0 {
             Complex64::new(0.0, self.harmonic_factor / self.wave_number)

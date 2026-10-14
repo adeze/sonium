@@ -15,9 +15,11 @@ use crate::{
 use num_traits::Float;
 use std::sync::Mutex;
 
+mod block_jacobi;
 mod chebyshev;
 pub mod saddle_point;
 
+pub use block_jacobi::{BlockJacobiBackend, DEFAULT_BLOCK_SIZE};
 pub use chebyshev::{ChebyshevBackend, ChebyshevBackendF32};
 pub use saddle_point::{
     PressureSchurBackendKind, SaddlePointJacobiSchurBackend, SaddlePointJacobiSchurBackendConfig,

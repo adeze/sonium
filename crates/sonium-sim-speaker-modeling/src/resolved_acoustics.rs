@@ -125,6 +125,11 @@ pub struct ResolvedAcousticConfig {
     pub preconditioner_reuse_band: f64,
     /// Use sparse direct factorization at or below this node count.
     pub direct_solve_max_nodes: usize,
+    /// FGMRES restart window (default 50). Safe at this size because the
+    /// ILUT/AMG preconditioner holds iteration counts low (<=28 measured);
+    /// unpreconditioned restart-50 was observed to stall where restart-200
+    /// converged (SIM-PERF-20261013.md section 2, gap 4), so do not weaken
+    /// the preconditioner without raising this.
     pub fgmres_restart: usize,
     pub fgmres_tolerance: f64,
     pub fgmres_max_iterations: usize,
@@ -2431,6 +2436,16 @@ mod tests {
         AxisymmetricPmlHelmholtzForm, add_axisymmetric_robin,
     };
     use sonium_fem::spaces::H1Space;
+
+    #[test]
+    fn test_default_fgmres_restart_stays_valid() {
+        // SIM-PERF-20261013.md section 2, gap 4: the default restart-50
+        // is safe only with the strong ILUT/AMG preconditioner held
+        // fixed; this guards the default against a zero restart.
+        let config = ResolvedAcousticConfig::default();
+        assert!(config.fgmres_restart > 0);
+        assert!(config.validate().is_ok());
+    }
 
     fn coarse_model() -> ResolvedAcousticModel {
         ResolvedAcousticModel::build(ResolvedAcousticConfig {

@@ -87,7 +87,8 @@ pub use schwarz::{
     coordinate_layers,
 };
 pub use sonium_compute::preconditioner::{
-    ChebyshevBackend, ChebyshevBackendF32, PointJacobiBackend, PolynomialJacobiBackend,
+    BlockJacobiBackend, ChebyshevBackend, ChebyshevBackendF32, DEFAULT_BLOCK_SIZE,
+    PointJacobiBackend, PolynomialJacobiBackend,
 };
 
 // Re-export IdentityPreconditioner from traits

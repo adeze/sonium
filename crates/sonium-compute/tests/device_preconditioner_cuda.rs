@@ -13,8 +13,8 @@ use sonium_compute::preconditioner::{
     PressureSchurBackendKind, SaddlePointJacobiSchurBackend, SaddlePointJacobiSchurBackendConfig,
 };
 use sonium_compute::{
-    Backend, BackendCsr, BackendError, ChebyshevBackend, CpuBackend, CudaBackend,
-    DeviceAdjointCapability, DevicePreconditioner, HostCsrRef, PointJacobiBackend,
+    Backend, BackendCsr, BackendError, BlockJacobiBackend, ChebyshevBackend, CpuBackend,
+    CudaBackend, DeviceAdjointCapability, DevicePreconditioner, HostCsrRef, PointJacobiBackend,
     PolynomialJacobiBackend,
 };
 
@@ -58,6 +58,19 @@ fn native_cuda_preconditioners_match_cpu_without_action_staging() {
         ChebyshevBackend::from_csr_host(&cpu, &a_cpu, &row_ptr, &col_idx, &values, 3, 30.0);
     let chebyshev_cuda =
         ChebyshevBackend::from_csr_host(&cuda, &a_cuda, &row_ptr, &col_idx, &values, 3, 30.0);
+    // Same tridiagonal fixture in dense row-major form for the fixed-block
+    // preconditioner: blocks [0,1], [2,3], [4], all nonsingular.
+    let dense = vec![
+        10.0, -1.0, 0.0, 0.0, 0.0, //
+        -1.0, 20.0, -1.0, 0.0, 0.0, //
+        0.0, -1.0, 30.0, -1.0, 0.0, //
+        0.0, 0.0, -1.0, 40.0, -1.0, //
+        0.0, 0.0, 0.0, -1.0, 50.0, //
+    ];
+    let block_cpu = BlockJacobiBackend::from_dense_host(&cpu, &dense, 5, 2);
+    let block_cuda = BlockJacobiBackend::from_dense_host(&cuda, &dense, 5, 2);
+    assert_eq!(block_cuda.num_blocks(), 3);
+    assert_eq!(block_cuda.fallback_blocks(), 0);
 
     let rhs_host = [1.0_f64, -2.0, 3.0, -4.0, 5.0];
     let block_rhs_host = [1.0_f64, -2.0, 3.0, -4.0, 5.0, -5.0, 4.0, -3.0, 2.0, -1.0];
@@ -124,6 +137,7 @@ fn native_cuda_preconditioners_match_cpu_without_action_staging() {
     exercise!(&point_cpu, &point_cuda);
     exercise!(&polynomial_cpu, &polynomial_cuda);
     exercise!(&chebyshev_cpu, &chebyshev_cuda);
+    exercise!(&block_cpu, &block_cuda);
 
     assert_eq!(
         point_cuda.transpose_capability(),
@@ -180,6 +194,12 @@ fn native_cuda_preconditioners_match_cpu_without_action_staging() {
     unsupported_adjoint!(&polynomial_cuda, try_apply_hermitian);
     unsupported_adjoint!(&chebyshev_cuda, try_apply_transpose);
     unsupported_adjoint!(&chebyshev_cuda, try_apply_hermitian);
+    assert_eq!(
+        block_cuda.transpose_capability(),
+        DeviceAdjointCapability::Unsupported
+    );
+    unsupported_adjoint!(&block_cuda, try_apply_transpose);
+    unsupported_adjoint!(&block_cuda, try_apply_hermitian);
     assert_eq!(polynomial_cuda.diagnostics().hermitian_failures, 1);
 
     let mut fault_output = cuda.raw_alloc::<f64>(5).unwrap();
