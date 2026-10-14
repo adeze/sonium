@@ -58,7 +58,7 @@ impl SlotPortGeometry {
 
 /// Uniformly spaced node lines over `[a, b]` with cell size at most `cell`;
 /// endpoints land exactly on `a` and `b` so boundary-conforming lines stay exact.
-fn spaced_lines(a: f64, b: f64, cell: f64) -> Vec<f64> {
+pub(crate) fn spaced_lines(a: f64, b: f64, cell: f64) -> Vec<f64> {
     let n = ((b - a) / cell).ceil().max(1.0) as usize;
     (0..=n)
         .map(|i| {

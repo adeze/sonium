@@ -14,7 +14,10 @@ use sonium_fem::spaces::{BasisTabulation, FunctionSpace, H1Space};
 use sonium_solvers::{CsrMatrix, FgmresConfig, IluPreconditioner, fgmres_preconditioned};
 
 use super::geometry3d::boundary_outward_normal;
-use super::{MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL, PortFlowError, RoundPortGeometry};
+use super::{
+    MARKER_BOX_CAP, MARKER_EXTERIOR_CAP, MARKER_WALL, PortFlowError, RoundPortGeometry,
+    SplineRoundPortGeometry,
+};
 
 const REFERENCE_RESIDUAL_TOLERANCE: f64 = 1.0e-8;
 const DIRECT_SOLVE_MAX_DOFS: usize = 20_000;
@@ -23,9 +26,113 @@ const AUTHORITATIVE_QUADRATURE_ORDER: usize = 5;
 #[cfg(test)]
 const STAGE_B_P2_QUADRATURE_ORDER: usize = 5;
 
-fn mesh_radius_m(geometry: &RoundPortGeometry, x: f64) -> Result<f64, PortFlowError> {
-    let x_min = -geometry.chamber_length_m;
-    let x_max = geometry.duct_length_m + geometry.chamber_length_m;
+/// Axial radius profile backing the viscothermal linear reference.
+///
+/// Generalises the reference solve beyond [`RoundPortGeometry`]'s single
+/// smoothstep flare: any chamber–duct–chamber profile — notably the spline
+/// [`SplineRoundPortGeometry`] — supplies the local cross-section radius the
+/// LRF constitutive law and the mesh-matching audit consume. All existing
+/// audits (true residual ≤ 1e-8, strong/weak flux agreement, mesh-profile
+/// chord tolerance) apply unchanged to every implementor.
+pub trait ReferenceRadiusProfile: Clone + Send + Sync {
+    /// Short geometry name used in error messages.
+    fn geometry_name(&self) -> &'static str;
+    /// Duct (profile) length in m.
+    fn duct_length_m(&self) -> f64;
+    /// Axial length of each end chamber in m.
+    fn chamber_length_m(&self) -> f64;
+    /// Nominal duct/bore radius in m (impedance-floor scale).
+    fn duct_radius_m(&self) -> f64;
+    /// Chamber radius in m.
+    fn chamber_radius_m(&self) -> f64;
+    /// Target mesh size in m (mesh-matching tolerance scale).
+    fn mesh_size_m(&self) -> f64;
+    /// Circular cross-section radius at axial coordinate `x_m`.
+    fn local_radius_m(&self, x_m: f64) -> Result<f64, PortFlowError>;
+    /// Whether the duct joins the chambers with sharp planar shoulders, in
+    /// which case the chamber annulus is accepted on the join planes.
+    fn sharp_shoulder_joins(&self) -> bool;
+    /// Modelled axial domain `[x_min, x_max]` in m.
+    fn axial_extent_m(&self) -> (f64, f64) {
+        (
+            -self.chamber_length_m(),
+            self.duct_length_m() + self.chamber_length_m(),
+        )
+    }
+}
+
+impl ReferenceRadiusProfile for RoundPortGeometry {
+    fn geometry_name(&self) -> &'static str {
+        "RoundPortGeometry"
+    }
+
+    fn duct_length_m(&self) -> f64 {
+        self.duct_length_m
+    }
+
+    fn chamber_length_m(&self) -> f64 {
+        self.chamber_length_m
+    }
+
+    fn duct_radius_m(&self) -> f64 {
+        self.duct_radius_m
+    }
+
+    fn chamber_radius_m(&self) -> f64 {
+        self.chamber_radius_m
+    }
+
+    fn mesh_size_m(&self) -> f64 {
+        self.mesh_size_m
+    }
+
+    fn local_radius_m(&self, x_m: f64) -> Result<f64, PortFlowError> {
+        RoundPortGeometry::local_radius_m(self, x_m)
+    }
+
+    fn sharp_shoulder_joins(&self) -> bool {
+        self.flare_radius_m == 0.0
+    }
+}
+
+impl ReferenceRadiusProfile for SplineRoundPortGeometry {
+    fn geometry_name(&self) -> &'static str {
+        "SplineRoundPortGeometry"
+    }
+
+    fn duct_length_m(&self) -> f64 {
+        self.duct_length_m
+    }
+
+    fn chamber_length_m(&self) -> f64 {
+        self.chamber_length_m
+    }
+
+    fn duct_radius_m(&self) -> f64 {
+        self.bore_radius_m
+    }
+
+    fn chamber_radius_m(&self) -> f64 {
+        self.chamber_radius_m
+    }
+
+    fn mesh_size_m(&self) -> f64 {
+        self.mesh_size_m
+    }
+
+    fn local_radius_m(&self, x_m: f64) -> Result<f64, PortFlowError> {
+        SplineRoundPortGeometry::local_radius_m(self, x_m)
+    }
+
+    fn sharp_shoulder_joins(&self) -> bool {
+        // The spline builder rejects sharp chamber-to-duct shoulders, so no
+        // join plane ever carries a chamber annulus.
+        false
+    }
+}
+
+fn mesh_radius_m<P: ReferenceRadiusProfile>(geometry: &P, x: f64) -> Result<f64, PortFlowError> {
+    let (x_min, x_max) = geometry.axial_extent_m();
     // Higher-order tetrahedron cubatures may contain points just outside the
     // reference simplex. Extend only the end chamber plateaux for those
     // assembly points; the public geometry query itself remains strictly
@@ -34,16 +141,22 @@ fn mesh_radius_m(geometry: &RoundPortGeometry, x: f64) -> Result<f64, PortFlowEr
     geometry.local_radius_m(canonical)
 }
 
-/// Physical configuration of the exact round-port linear reference.
+/// Physical configuration of the exact linear reference over a radius profile.
 #[derive(Debug, Clone)]
-pub struct RoundPortLinearReferenceConfig {
-    /// Exact chamber/flare/duct geometry and mesh scale used to build `mesh`.
-    pub geometry: RoundPortGeometry,
+pub struct LinearReferenceConfig<P> {
+    /// Exact chamber/duct geometry and mesh scale used to build `mesh`.
+    pub geometry: P,
     /// Equilibrium thermophysical properties used by the LRF constitutive law.
     pub fluid: FluidProperties,
     /// Lumped sealed-box volume used for the compliance transfer, in m³.
     pub box_volume_m3: f64,
 }
+
+/// Physical configuration of the exact round-port linear reference.
+pub type RoundPortLinearReferenceConfig = LinearReferenceConfig<RoundPortGeometry>;
+
+/// Physical configuration of the exact spline-port linear reference (Tier 1 oracle).
+pub type SplinePortLinearReferenceConfig = LinearReferenceConfig<SplineRoundPortGeometry>;
 
 /// Complex port impedance and box-to-port transfer at one frequency.
 ///
@@ -92,13 +205,13 @@ pub struct ComplexPortTransfer {
 }
 
 #[derive(Debug, Clone)]
-struct SpatialViscothermalForm {
-    geometry: RoundPortGeometry,
+struct SpatialViscothermalForm<P> {
+    geometry: P,
     fluid: FluidProperties,
     omega: f64,
 }
 
-impl BilinearForm<Complex64> for SpatialViscothermalForm {
+impl<P: ReferenceRadiusProfile> BilinearForm<Complex64> for SpatialViscothermalForm<P> {
     fn integrate_point(
         &self,
         test: &BasisTabulation,
@@ -135,8 +248,8 @@ fn complex_is_finite(value: Complex64) -> bool {
     value.re.is_finite() && value.im.is_finite()
 }
 
-fn validate_config(
-    config: &RoundPortLinearReferenceConfig,
+fn validate_config<P: ReferenceRadiusProfile>(
+    config: &LinearReferenceConfig<P>,
     frequency_hz: f64,
 ) -> Result<(), PortFlowError> {
     config.geometry.local_radius_m(0.0)?;
@@ -166,7 +279,10 @@ fn validate_config(
     Ok(())
 }
 
-fn validate_matching_mesh(mesh: &Mesh, geometry: &RoundPortGeometry) -> Result<(), PortFlowError> {
+fn validate_matching_mesh<P: ReferenceRadiusProfile>(
+    mesh: &Mesh,
+    geometry: &P,
+) -> Result<(), PortFlowError> {
     if mesh.dimension != 3 {
         return Err(reference_error(format!(
             "expected a 3D mesh, got {}D",
@@ -182,9 +298,8 @@ fn validate_matching_mesh(mesh: &Mesh, geometry: &RoundPortGeometry) -> Result<(
             "reference requires non-empty first-order tetrahedra",
         ));
     }
-    let x_min = -geometry.chamber_length_m;
-    let x_max = geometry.duct_length_m + geometry.chamber_length_m;
-    let tolerance = geometry.mesh_size_m * 1.0e-6 + 1.0e-12;
+    let (x_min, x_max) = geometry.axial_extent_m();
+    let tolerance = geometry.mesh_size_m() * 1.0e-6 + 1.0e-12;
     // A conforming h-refinement bisects the existing straight-sided boundary
     // triangles; its new wall nodes lie on the polyhedral chord, not exactly
     // on the analytical smoothstep profile. Permit only the generator's
@@ -211,9 +326,10 @@ fn validate_matching_mesh(mesh: &Mesh, geometry: &RoundPortGeometry) -> Result<(
         .map(|point| point.x)
         .fold(f64::NEG_INFINITY, f64::max);
     if (mesh_min - x_min).abs() > tolerance || (mesh_max - x_max).abs() > tolerance {
-        return Err(reference_error(
-            "mesh axial extent does not match RoundPortGeometry",
-        ));
+        return Err(reference_error(format!(
+            "mesh axial extent does not match {}",
+            geometry.geometry_name()
+        )));
     }
 
     let mut marker_counts = BTreeMap::from([
@@ -269,10 +385,10 @@ fn validate_matching_mesh(mesh: &Mesh, geometry: &RoundPortGeometry) -> Result<(
         // profile deliberately assigns the join coordinate to the duct, but
         // the exact mesh also contains the chamber annulus on that zero-measure
         // plane. Accept the chamber radius only at the two shoulder layers.
-        let at_sharp_shoulder = geometry.flare_radius_m == 0.0
-            && (x.abs() <= tolerance || (x - geometry.duct_length_m).abs() <= tolerance);
+        let at_sharp_shoulder = geometry.sharp_shoulder_joins()
+            && (x.abs() <= tolerance || (x - geometry.duct_length_m()).abs() <= tolerance);
         let expected = if at_sharp_shoulder {
-            geometry.chamber_radius_m
+            geometry.chamber_radius_m()
         } else {
             geometry.local_radius_m(x)?
         };
@@ -280,7 +396,8 @@ fn validate_matching_mesh(mesh: &Mesh, geometry: &RoundPortGeometry) -> Result<(
         let allowed = radial_tolerance(expected);
         if !radius.is_finite() || radius > expected + allowed {
             return Err(reference_error(format!(
-                "mesh radius exceeds RoundPortGeometry profile: x={x:e}, radius={radius:e}, expected={expected:e}, excess={:e}",
+                "mesh radius exceeds {} profile: x={x:e}, radius={radius:e}, expected={expected:e}, excess={:e}",
+                geometry.geometry_name(),
                 radius - expected
             )));
         }
@@ -291,26 +408,27 @@ fn validate_matching_mesh(mesh: &Mesh, geometry: &RoundPortGeometry) -> Result<(
     }
     for (x_bits, actual) in layer_max_radius {
         let x = f64::from_bits(x_bits);
-        let at_sharp_shoulder = geometry.flare_radius_m == 0.0
-            && (x.abs() <= tolerance || (x - geometry.duct_length_m).abs() <= tolerance);
+        let at_sharp_shoulder = geometry.sharp_shoulder_joins()
+            && (x.abs() <= tolerance || (x - geometry.duct_length_m()).abs() <= tolerance);
         let expected = if at_sharp_shoulder {
-            geometry.chamber_radius_m
+            geometry.chamber_radius_m()
         } else {
             geometry.local_radius_m(x)?
         };
         if (actual - expected).abs() > radial_tolerance(expected) {
-            return Err(reference_error(
-                "mesh radial extent does not match RoundPortGeometry",
-            ));
+            return Err(reference_error(format!(
+                "mesh radial extent does not match {}",
+                geometry.geometry_name()
+            )));
         }
     }
     Ok(())
 }
 
-fn checked_port_impedance(
+fn checked_port_impedance<P: ReferenceRadiusProfile>(
     pressure_difference: Complex64,
     flow: Complex64,
-    geometry: &RoundPortGeometry,
+    geometry: &P,
     fluid: &FluidProperties,
 ) -> Result<Complex64, PortFlowError> {
     if !complex_is_finite(pressure_difference) || !complex_is_finite(flow) {
@@ -318,7 +436,7 @@ fn checked_port_impedance(
             "pressure difference or port flow is non-finite",
         ));
     }
-    let flow_scale = pressure_difference.norm() * geometry.duct_radius_m.powi(2)
+    let flow_scale = pressure_difference.norm() * geometry.duct_radius_m().powi(2)
         / (fluid.density * fluid.speed_of_sound);
     if flow.norm() <= f64::EPSILON * flow_scale.max(1.0) {
         return Err(reference_error(
@@ -559,11 +677,11 @@ fn cap_average(
     Ok(weighted / area_sum)
 }
 
-fn exterior_volume_velocity(
+fn exterior_volume_velocity<P: ReferenceRadiusProfile>(
     space: &H1Space,
     mesh: &Mesh,
     pressure: &[Complex64],
-    geometry: &RoundPortGeometry,
+    geometry: &P,
     fluid: &FluidProperties,
     omega: f64,
 ) -> Result<Complex64, PortFlowError> {
@@ -602,9 +720,9 @@ fn exterior_volume_velocity(
     Ok(flow)
 }
 
-fn solve_with_degree_and_quadrature_order(
+fn solve_with_degree_and_quadrature_order<P: ReferenceRadiusProfile>(
     mesh: &Mesh,
-    config: &RoundPortLinearReferenceConfig,
+    config: &LinearReferenceConfig<P>,
     frequency_hz: f64,
     degree: PolynomialDegree,
     quadrature_order: usize,
@@ -614,7 +732,7 @@ fn solve_with_degree_and_quadrature_order(
     let omega = TAU * frequency_hz;
     let space = H1Space::new(degree);
     let form = SpatialViscothermalForm {
-        geometry: config.geometry,
+        geometry: config.geometry.clone(),
         fluid: config.fluid.clone(),
         omega,
     };
@@ -704,9 +822,9 @@ fn solve_with_degree_and_quadrature_order(
 }
 
 #[cfg(test)]
-fn solve_p1_with_quadrature_order(
+fn solve_p1_with_quadrature_order<P: ReferenceRadiusProfile>(
     mesh: &Mesh,
-    config: &RoundPortLinearReferenceConfig,
+    config: &LinearReferenceConfig<P>,
     frequency_hz: f64,
     quadrature_order: usize,
 ) -> Result<ComplexPortTransfer, PortFlowError> {
@@ -737,6 +855,38 @@ fn solve_p1_with_quadrature_order(
 pub fn solve_round_port_linear_reference(
     mesh: &Mesh,
     config: &RoundPortLinearReferenceConfig,
+    frequency_hz: f64,
+) -> Result<ComplexPortTransfer, PortFlowError> {
+    solve_with_degree_and_quadrature_order(
+        mesh,
+        config,
+        frequency_hz,
+        PolynomialDegree::P2,
+        AUTHORITATIVE_QUADRATURE_ORDER,
+    )
+}
+
+/// Solve the complex LRF pressure field on the supplied spline-port mesh.
+///
+/// Same Tier 1 oracle as [`solve_round_port_linear_reference`] with the duct
+/// wall taken from the [`SplinePortProfile`](super::profile::SplinePortProfile)
+/// carried by `config.geometry` instead of the single smoothstep flare. The
+/// supplied mesh must be the complete, marker-preserving 3D tetrahedral mesh
+/// for `config.geometry` (see
+/// [`build_spline_round_port_mesh`](super::geometry3d::build_spline_round_port_mesh));
+/// the mesh-profile audit, the true-residual ≤ 1e-8 gate, and the strong/weak
+/// flux diagnostics apply unchanged. Returned RMS phasors use `exp(-i omega t)`
+/// with port flow positive from the box cap toward the exterior cap.
+///
+/// # Errors
+///
+/// Returns [`PortFlowError::LinearReference`] for invalid physical inputs,
+/// mismatched geometry or boundary topology, assembly/solver failure, a true
+/// relative residual above `1e-8`, non-finite fields, or flow too small to
+/// form the port impedance.
+pub fn solve_spline_port_linear_reference(
+    mesh: &Mesh,
+    config: &SplinePortLinearReferenceConfig,
     frequency_hz: f64,
 ) -> Result<ComplexPortTransfer, PortFlowError> {
     solve_with_degree_and_quadrature_order(
@@ -1646,5 +1796,378 @@ mod tests {
             h_delta < 0.01,
             "full-complex P2 topology-nested, geometry-projected H delta {h_delta:e} exceeds 1%"
         );
+    }
+
+    // ---- PORT-OPTIM Step 4: Tier 1 spline linear reference ----
+
+    use super::super::duct1d::{Duct1dConfig, solve_duct_1d, tuning_frequency_hz};
+    use super::super::profile::{ProfileOptions, SplinePortProfile};
+    use crate::AcousticMedium;
+
+    fn spline_reference_geometry(
+        duct_length_m: f64,
+        bore_radius_m: f64,
+        chamber_length_m: f64,
+        chamber_radius_m: f64,
+        flare_length_m: f64,
+        mesh_size_m: f64,
+        profile: SplinePortProfile,
+    ) -> SplineRoundPortGeometry {
+        SplineRoundPortGeometry {
+            duct_length_m,
+            bore_radius_m,
+            chamber_length_m,
+            chamber_radius_m,
+            flare_length_m,
+            mesh_size_m,
+            angular_sectors: None,
+            profile,
+        }
+    }
+
+    fn relative_complex_difference(actual: Complex64, expected: Complex64) -> f64 {
+        (actual - expected).norm() / expected.norm().max(f64::EPSILON)
+    }
+
+    #[test]
+    fn spline_straight_profile_reproduces_smoothstep_flare_reference() {
+        // Same bounded flared fixture as the refinement gate above; the spline
+        // path carries a straight profile with identical chambers and flare,
+        // so its radius function is the smoothstep reference up to
+        // spline-evaluation roundoff.
+        let geometry = RoundPortGeometry {
+            duct_length_m: 0.02,
+            duct_radius_m: 0.01,
+            chamber_length_m: 0.005,
+            chamber_radius_m: 0.015,
+            flare_radius_m: 0.002,
+            mesh_size_m: 0.02,
+        };
+        let fluid = FluidProperties::air_20c();
+        let round_config = RoundPortLinearReferenceConfig {
+            geometry,
+            fluid: fluid.clone(),
+            box_volume_m3: 0.005,
+        };
+        let profile = SplinePortProfile::straight(
+            5,
+            geometry.duct_length_m,
+            geometry.duct_radius_m,
+            0.6 * geometry.duct_radius_m,
+            ProfileOptions::default(),
+        )
+        .expect("straight test profile must construct");
+        let spline_geometry = spline_reference_geometry(
+            geometry.duct_length_m,
+            geometry.duct_radius_m,
+            geometry.chamber_length_m,
+            geometry.chamber_radius_m,
+            geometry.flare_radius_m,
+            geometry.mesh_size_m,
+            profile,
+        );
+        let spline_config = SplinePortLinearReferenceConfig {
+            geometry: spline_geometry.clone(),
+            fluid,
+            box_volume_m3: 0.005,
+        };
+        let round_mesh = super::super::build_round_port_mesh(&geometry).unwrap();
+        let spline_mesh = super::super::build_spline_round_port_mesh(&spline_geometry).unwrap();
+        assert_eq!(spline_mesh.num_nodes(), round_mesh.num_nodes());
+        assert_eq!(spline_mesh.elements.len(), round_mesh.elements.len());
+        assert_eq!(spline_mesh.boundaries.len(), round_mesh.boundaries.len());
+        let max_coordinate_difference = spline_mesh
+            .nodes
+            .iter()
+            .zip(round_mesh.nodes.iter())
+            .map(|(a, b)| {
+                (a.x - b.x)
+                    .abs()
+                    .max((a.y - b.y).abs())
+                    .max((a.z - b.z).abs())
+            })
+            .fold(0.0f64, f64::max);
+        assert!(
+            max_coordinate_difference < 1.0e-12,
+            "spline/round mesh coordinate difference={max_coordinate_difference:e}"
+        );
+
+        let frequency_hz = 90.0;
+        let round =
+            solve_round_port_linear_reference(&round_mesh, &round_config, frequency_hz).unwrap();
+        let spline =
+            solve_spline_port_linear_reference(&spline_mesh, &spline_config, frequency_hz).unwrap();
+        let impedance_difference = relative_complex_difference(
+            spline.port_impedance_pa_s_per_m3,
+            round.port_impedance_pa_s_per_m3,
+        );
+        let transfer_difference = relative_complex_difference(
+            spline.box_to_port_flow_ratio,
+            round.box_to_port_flow_ratio,
+        );
+        let flow_difference = relative_complex_difference(
+            spline.port_volume_velocity_rms_m3_per_s,
+            round.port_volume_velocity_rms_m3_per_s,
+        );
+        println!(
+            "spline==smoothstep: Z_round={:?} Z_spline={:?} z_delta={impedance_difference:e} h_delta={transfer_difference:e} q_delta={flow_difference:e} residual={:e} strong_weak={:e}",
+            round.port_impedance_pa_s_per_m3,
+            spline.port_impedance_pa_s_per_m3,
+            spline.relative_residual,
+            spline.strong_weak_exterior_flux_relative_difference,
+        );
+        assert!(
+            impedance_difference < 1.0e-9,
+            "spline/round impedance difference={impedance_difference:e}"
+        );
+        assert!(
+            transfer_difference < 1.0e-9,
+            "spline/round transfer difference={transfer_difference:e}"
+        );
+        assert!(
+            flow_difference < 1.0e-9,
+            "spline/round flow difference={flow_difference:e}"
+        );
+        assert!(spline.relative_residual <= REFERENCE_RESIDUAL_TOLERANCE);
+        assert!(
+            spline
+                .strong_weak_exterior_flux_relative_difference
+                .is_finite()
+        );
+    }
+
+    #[test]
+    fn spline_straight_tube_matches_round_tube_and_zwikker_kosten() {
+        // Straight-cylinder limit (chambers match the bore, zero flare) on the
+        // validated Stage-B analytical fixture.
+        let geometry = RoundPortGeometry {
+            duct_length_m: 0.02,
+            duct_radius_m: 0.01,
+            chamber_length_m: 0.005,
+            chamber_radius_m: 0.01,
+            flare_radius_m: 0.0,
+            mesh_size_m: 0.006,
+        };
+        let frequency_hz = 30.0;
+        let round_config = RoundPortLinearReferenceConfig {
+            geometry,
+            fluid: FluidProperties::air_20c(),
+            box_volume_m3: 0.04,
+        };
+        let profile = SplinePortProfile::straight(
+            5,
+            geometry.duct_length_m,
+            geometry.duct_radius_m,
+            0.6 * geometry.duct_radius_m,
+            ProfileOptions::default(),
+        )
+        .expect("straight test profile must construct");
+        let spline_geometry = spline_reference_geometry(
+            geometry.duct_length_m,
+            geometry.duct_radius_m,
+            geometry.chamber_length_m,
+            geometry.chamber_radius_m,
+            0.0,
+            geometry.mesh_size_m,
+            profile,
+        );
+        let spline_config = SplinePortLinearReferenceConfig {
+            geometry: spline_geometry.clone(),
+            fluid: FluidProperties::air_20c(),
+            box_volume_m3: 0.04,
+        };
+        let round_mesh = super::super::build_round_port_mesh(&geometry).unwrap();
+        let spline_mesh = super::super::build_spline_round_port_mesh(&spline_geometry).unwrap();
+        assert_eq!(spline_mesh.num_nodes(), round_mesh.num_nodes());
+        assert_eq!(spline_mesh.elements.len(), round_mesh.elements.len());
+
+        let round =
+            solve_round_port_linear_reference(&round_mesh, &round_config, frequency_hz).unwrap();
+        let spline =
+            solve_spline_port_linear_reference(&spline_mesh, &spline_config, frequency_hz).unwrap();
+        let analytical = analytical_tube_impedance(&round_config, frequency_hz);
+        let path_difference = relative_complex_difference(
+            spline.port_impedance_pa_s_per_m3,
+            round.port_impedance_pa_s_per_m3,
+        );
+        let analytical_error =
+            relative_complex_difference(spline.port_impedance_pa_s_per_m3, analytical);
+        println!(
+            "spline straight tube: Z_spline={:?} Z_round={:?} Z_exact={analytical:?} path_delta={path_difference:e} analytical_error={analytical_error:e} residual={:e}",
+            spline.port_impedance_pa_s_per_m3,
+            round.port_impedance_pa_s_per_m3,
+            spline.relative_residual,
+        );
+        assert!(
+            path_difference < 1.0e-9,
+            "spline/round straight-tube difference={path_difference:e}"
+        );
+        assert!(
+            analytical_error < 0.02,
+            "spline straight-tube analytical error={analytical_error:e}"
+        );
+        assert!(spline.port_impedance_pa_s_per_m3.re >= 0.0);
+        assert!(spline.port_impedance_pa_s_per_m3.im < 0.0);
+        assert!(spline.relative_residual <= REFERENCE_RESIDUAL_TOLERANCE);
+    }
+
+    #[test]
+    fn spline_mesh_validation_rejects_wrong_profile() {
+        let straight = SplinePortProfile::straight(5, 0.02, 0.01, 0.006, ProfileOptions::default())
+            .expect("straight test profile must construct");
+        let dipped = SplinePortProfile::from_normalized(
+            5,
+            0.02,
+            0.01,
+            0.006,
+            &[0.3, 0.3],
+            ProfileOptions::default(),
+        )
+        .expect("dipped test profile must construct");
+        let straight_geometry =
+            spline_reference_geometry(0.02, 0.01, 0.005, 0.01, 0.0, 0.008, straight);
+        let dipped_geometry =
+            spline_reference_geometry(0.02, 0.01, 0.005, 0.01, 0.0, 0.008, dipped);
+        let straight_mesh = super::super::build_spline_round_port_mesh(&straight_geometry).unwrap();
+        let dipped_mesh = super::super::build_spline_round_port_mesh(&dipped_geometry).unwrap();
+        validate_matching_mesh(&straight_mesh, &straight_geometry).unwrap();
+        validate_matching_mesh(&dipped_mesh, &dipped_geometry).unwrap();
+        // Cross-validation must fail in both directions: the straight mesh
+        // exceeds the dipped wall, and the dipped mesh undershoots the
+        // straight wall beyond the chord tolerance.
+        assert!(matches!(
+            validate_matching_mesh(&straight_mesh, &dipped_geometry),
+            Err(PortFlowError::LinearReference(_))
+        ));
+        assert!(matches!(
+            validate_matching_mesh(&dipped_mesh, &straight_geometry),
+            Err(PortFlowError::LinearReference(_))
+        ));
+    }
+
+    #[test]
+    fn tier0_tier1_tuning_agrees_within_1hz_on_test_profiles() {
+        const DUCT_LENGTH_M: f64 = 0.04;
+        const BORE_RADIUS_M: f64 = 0.025;
+        const THROAT_RADIUS_M: f64 = 0.015;
+        const BOX_VOLUME_M3: f64 = 0.02;
+        // Straight-cylinder Tier 1 with matched total acoustic length: the
+        // chambers stand in for the Tier 0 end regions, so each chamber
+        // carries half of the Tier 0 interior + radiation end correction
+        // (area-ratio adjusted). Both tiers then reduce to the same lumped
+        // circuit up to distributed, viscothermal, and discretization effects.
+        // The wide bore keeps the viscothermal slowing (δ/r ~ 1%) and the
+        // explicit 48 sectors keep the polygon-area deficit (~0.1%) small, so
+        // the residual Tier 0 (lossless compact) vs Tier 1 (resolved
+        // viscothermal) tuning offset stays well inside the 1 Hz gate.
+        let medium = AcousticMedium {
+            density_kg_per_m3: 1.2,
+            sound_speed_m_per_s: 343.0,
+            dynamic_viscosity_pa_s: 1.85e-5,
+            thermal_diffusivity_m2_per_s: 2.2e-5,
+        };
+        let fluid = FluidProperties {
+            density: 1.2,
+            speed_of_sound: 343.0,
+            dynamic_viscosity: 1.85e-5,
+            ..FluidProperties::air_20c()
+        };
+        let duct_config = Duct1dConfig {
+            n_segments: super::super::duct1d::DUCT1D_DEFAULT_SEGMENTS,
+            thermoviscous: false,
+            box_volume_m3: BOX_VOLUME_M3,
+        };
+        let straight = SplinePortProfile::straight(
+            5,
+            DUCT_LENGTH_M,
+            BORE_RADIUS_M,
+            THROAT_RADIUS_M,
+            ProfileOptions::default(),
+        )
+        .expect("straight test profile must construct");
+        let dipped = SplinePortProfile::from_normalized(
+            5,
+            DUCT_LENGTH_M,
+            BORE_RADIUS_M,
+            THROAT_RADIUS_M,
+            &[0.3, 0.3],
+            ProfileOptions::default(),
+        )
+        .expect("dipped test profile must construct");
+        for (name, profile) in [("straight", straight), ("dipped", dipped)] {
+            let tuning_tier0 = tuning_frequency_hz(&profile, medium, &duct_config).unwrap();
+            let tier0_point = solve_duct_1d(&profile, medium, tuning_tier0, &duct_config).unwrap();
+            let chamber_area = std::f64::consts::PI * BORE_RADIUS_M * BORE_RADIUS_M;
+            let interior_area = profile.area_m2(0.0);
+            let exterior_area = std::f64::consts::PI
+                * tier0_point.effective_exterior_radius_m
+                * tier0_point.effective_exterior_radius_m;
+            let chamber_length_m = 0.5
+                * (tier0_point.interior_end_correction_m * chamber_area / interior_area
+                    + tier0_point.exterior_end_correction_m * chamber_area / exterior_area);
+            let mut spline_geometry = spline_reference_geometry(
+                DUCT_LENGTH_M,
+                BORE_RADIUS_M,
+                chamber_length_m,
+                BORE_RADIUS_M,
+                0.0,
+                0.01,
+                profile,
+            );
+            spline_geometry.angular_sectors = Some(48);
+            let spline_config = SplinePortLinearReferenceConfig {
+                geometry: spline_geometry.clone(),
+                fluid: fluid.clone(),
+                box_volume_m3: BOX_VOLUME_M3,
+            };
+            let mesh = super::super::build_spline_round_port_mesh(&spline_geometry).unwrap();
+            // Tier 1 tuning is the box-to-port transfer peak. Scan ±1.5 Hz at
+            // 0.5 Hz around the Tier 0 prediction (the lightly damped peak is
+            // ~1 Hz wide), then refine parabolically.
+            let mut magnitudes = Vec::new();
+            for step in -3..=3 {
+                let frequency = tuning_tier0 + 0.5 * step as f64;
+                let transfer =
+                    solve_spline_port_linear_reference(&mesh, &spline_config, frequency).unwrap();
+                assert!(transfer.relative_residual <= REFERENCE_RESIDUAL_TOLERANCE);
+                assert!(
+                    transfer
+                        .strong_weak_exterior_flux_relative_difference
+                        .is_finite()
+                );
+                magnitudes.push((frequency, transfer.box_to_port_flow_ratio.norm()));
+            }
+            let peak = magnitudes
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.1.total_cmp(&b.1))
+                .map(|(index, _)| index)
+                .expect("non-empty scan has a peak");
+            assert!(
+                (1..magnitudes.len() - 1).contains(&peak),
+                "{name}: |H| peak at scan edge, cannot refine"
+            );
+            let (y0, y1, y2) = (
+                magnitudes[peak - 1].1,
+                magnitudes[peak].1,
+                magnitudes[peak + 1].1,
+            );
+            let denominator = y0 - 2.0 * y1 + y2;
+            let tuning_tier1 = if denominator.abs() > f64::EPSILON {
+                // 0.5 Hz scan step: parabolic offset is (h/2)·(y0−y2)/denom.
+                magnitudes[peak].0 + 0.25 * (y0 - y2) / denominator
+            } else {
+                magnitudes[peak].0
+            };
+            let difference_hz = (tuning_tier1 - tuning_tier0).abs();
+            println!(
+                "tier0/tier1 tuning {name}: f0_tier0={tuning_tier0:.6} f0_tier1={tuning_tier1:.6} delta={difference_hz:.6} chamber_length={chamber_length_m:.6e} cutoff_margin={:.3}",
+                tier0_point.plane_wave_margin,
+            );
+            assert!(
+                difference_hz <= 1.0,
+                "{name}: Tier 0/Tier 1 tuning difference {difference_hz:.4} Hz exceeds 1 Hz"
+            );
+        }
     }
 }

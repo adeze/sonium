@@ -12894,6 +12894,24 @@ required_hardware = "cpu"
 artifacts = "QA_RESULT JSONL 2D port-flow metrics plus SUBCASE_SUMMARY 2D/3D accounting"
 
 [[case]]
+id = "speaker.port-optim-bounded.v1"
+owner = "sim-speaker-modeling"
+crate = "sonium-qa"
+bin = "qa-speaker-port-optim"
+entry_point = "bounded port-shape optimisation: Tier-0/1 funnel plus capped Tier-2 verification"
+method = "Tier-0 duct screen + AL-BOBYQA refine, Tier-1 spline-linear re-rank, capped Tier-2 two-profile three-drive leg with equal-airflow rescale"
+scalar = "f64"
+dimension = "N=5 spline port (2 free radii), 121-point Tier-0 grid, quota of 6, 7 capped Tier-2 runs"
+reference = "frozen Step-0 reference case; straight-tube baseline at equal voltage and equal airflow"
+reference_checksum = "analytic/deterministic-fixture:speaker-port-optim-bounded-v1"
+norm = "feasibility counts, SC1/SC2 verdicts, airflow/compression/tuning margins, comparison deltas"
+tolerance = "Tier-0 feasible >= 6 incl straight; Tier-1 straight feasible; Tier-2 all healthy; SC1 pass; SC2 pareto-consistent; Q ratio >= 0.95; compression <= 1 dB; tuning <= 2 Hz"
+tier = "physics-gate"
+timeout_seconds = 1200
+required_hardware = "cpu"
+artifacts = "QA_RESULT JSONL bounded port-optim gate metrics plus deterministic evidence summary"
+
+[[case]]
 id = "fem.eddy-current-1d-skin-effect.v1"
 owner = "sonium-fem"
 crate = "sonium-qa"

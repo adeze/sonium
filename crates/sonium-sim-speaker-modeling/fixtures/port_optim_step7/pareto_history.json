@@ -1,0 +1,3446 @@
+{
+  "schema_version": 1,
+  "provenance": "PortOptimStep6Funnel[AugmentedLagrangianBOBYQA,cBO,NSGA-II]",
+  "weights": {
+    "w_thd": 1.0,
+    "w_noise": 1.0,
+    "w_curvature": 0.1
+  },
+  "feasibility": {
+    "f_target_hz": 40.42354079879238,
+    "tuning_tol_hz": 2.0,
+    "airflow_min_ratio": 0.95,
+    "compression_max_db": 1.0
+  },
+  "budgets": {
+    "tier0": 0,
+    "tier1": 0,
+    "tier2": 60
+  },
+  "records": [
+    {
+      "seq": 1,
+      "tier": "Tier2",
+      "u": [
+        0.0,
+        0.0
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.0,
+          0.0
+        ],
+        "tier": "Tier2",
+        "f0_hz": 40.42354079879238,
+        "q_rms_m3s": 0.0007449425472167875,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005588431553696368,
+        "noise_proxy": 16009760.075179204,
+        "compression_db": 0.00006625150354797414,
+        "peak_mach": 0.009780913435304626,
+        "curvature_m3": 0.0,
+        "max_slope": 0.0,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.050000000000000044,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 1.0,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.999933748496452,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 1.0,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 1.0,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.0,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15548.183701
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15548.183701
+    },
+    {
+      "seq": 2,
+      "tier": "Tier2",
+      "u": [
+        0.7311134158637045,
+        0.773460184353238
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.7311134158637045,
+          0.773460184353238
+        ],
+        "tier": "Tier2",
+        "f0_hz": 33.80834443269545,
+        "q_rms_m3s": 0.0007938656771955511,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005340279872705206,
+        "noise_proxy": 9944064069.531755,
+        "compression_db": -0.5523450489632225,
+        "peak_mach": 0.02191231573613329,
+        "curvature_m3": 13.036877838206433,
+        "max_slope": 0.18563044424477715,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.11567369545684758,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.3075981830484658,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.5523450489632225,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6287391115104457,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9986963122161794,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.3075981830484658,
+        "objective_j": 622.0808409450276,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15561.8248
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15561.8248
+    },
+    {
+      "seq": 3,
+      "tier": "Tier2",
+      "u": [
+        0.025844634233354924,
+        0.5841592619362002
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.025844634233354924,
+          0.5841592619362002
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.7726710925887,
+        "q_rms_m3s": 0.0007615824003322749,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005674453827129764,
+        "noise_proxy": 1346916790.8026288,
+        "compression_db": -0.1890994109625521,
+        "peak_mach": 0.017042239339184542,
+        "curvature_m3": 7.787479758656423,
+        "max_slope": 0.14019822286468797,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.07233709589773918,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.3254348531018394,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1890994109625521,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7196035542706241,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9992212520241344,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.3254348531018394,
+        "objective_j": 85.14644992623987,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15546.499243
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15546.499243
+    },
+    {
+      "seq": 4,
+      "tier": "Tier2",
+      "u": [
+        0.26217063257252504,
+        0.7719869057468207
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.26217063257252504,
+          0.7719869057468207
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.84092594020953,
+        "q_rms_m3s": 0.0007759480991650354,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005629275334122062,
+        "noise_proxy": 8144942535.901288,
+        "compression_db": -0.35047256749967176,
+        "peak_mach": 0.021380756903918538,
+        "curvature_m3": 8.940024249958778,
+        "max_slope": 0.185276857379237,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09162140028662491,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.2913074292914253,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.3504725674996718,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.629446285241526,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9991059975750041,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.2913074292914253,
+        "objective_j": 509.75596750657905,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15554.351182
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15554.351182
+    },
+    {
+      "seq": 5,
+      "tier": "Tier2",
+      "u": [
+        0.2186969106715091,
+        0.7937134566691362
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.2186969106715091,
+          0.7937134566691362
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.87198205594274,
+        "q_rms_m3s": 0.0007754350089257407,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005633400246285871,
+        "noise_proxy": 9919745240.71676,
+        "compression_db": -0.3447012681910711,
+        "peak_mach": 0.02191493283202226,
+        "curvature_m3": 10.034291857474033,
+        "max_slope": 0.19049122960059267,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09093263543997776,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.2757793714248216,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.344701268191071,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6190175407988147,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9989965708142526,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.2757793714248216,
+        "objective_j": 620.614261992879,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15559.835088
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15559.835088
+    },
+    {
+      "seq": 6,
+      "tier": "Tier2",
+      "u": [
+        0.7493384290992731,
+        0.96893774800239
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.7493384290992731,
+          0.96893774800239
+        ],
+        "tier": "Tier2",
+        "f0_hz": 32.47854053939896,
+        "q_rms_m3s": 0.0008052252637201044,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0004963467541576709,
+        "noise_proxy": 76378943987.98825,
+        "compression_db": -0.6785194341280609,
+        "peak_mach": 0.028257585150791683,
+        "curvature_m3": 15.648892798007994,
+        "max_slope": 0.23254505952057364,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.13092263856929875,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.9725001296967086,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.678519434128061,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5349098809588527,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9984351107201992,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.9725001296967086,
+        "objective_j": 4771.662129563041,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15531.284768000001
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15531.284768000001
+    },
+    {
+      "seq": 7,
+      "tier": "Tier2",
+      "u": [
+        0.9963173563242849,
+        0.13937643060518234
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.9963173563242849,
+          0.13937643060518234
+        ],
+        "tier": "Tier2",
+        "f0_hz": 34.833165060391984,
+        "q_rms_m3s": 0.0007828772661996994,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005605330047530368,
+        "noise_proxy": 80977954420.19295,
+        "compression_db": -0.4285358230721805,
+        "peak_mach": 0.028455882094609933,
+        "curvature_m3": 19.41230570805078,
+        "max_slope": 0.2391161655178283,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.10092301295535,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.7951878692001983,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.4285358230721805,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5217676689643433,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9980587694291949,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.7951878692001983,
+        "objective_j": 5059.039943051414,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15565.958967
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15565.958967
+    },
+    {
+      "seq": 8,
+      "tier": "Tier2",
+      "u": [
+        0.1128649998098179,
+        0.9648356996454694
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.1128649998098179,
+          0.9648356996454694
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.10872766500104,
+        "q_rms_m3s": 0.0007796933524354891,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005583732038094949,
+        "noise_proxy": 56238020328.265236,
+        "compression_db": -0.3926409035549782,
+        "peak_mach": 0.02720804312886192,
+        "curvature_m3": 18.567405430692943,
+        "max_slope": 0.23156056791491267,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09664897360009261,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.65740656689567,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.3926409035549783,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5368788641701747,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9981432594569307,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.65740656689567,
+        "objective_j": 3513.7328313221174,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15575.295697
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15575.295697
+    },
+    {
+      "seq": 9,
+      "tier": "Tier2",
+      "u": [
+        0.049400054431981255,
+        0.4257020662609954
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.049400054431981255,
+          0.4257020662609954
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.487744867844235,
+        "q_rms_m3s": 0.0007570531496036144,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005675438099114994,
+        "noise_proxy": 360365105.8786071,
+        "compression_db": -0.1380735612980012,
+        "peak_mach": 0.014446773102392368,
+        "curvature_m3": 3.620418271285987,
+        "max_slope": 0.10216849590263889,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06625709584191952,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.03210203452592708,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1380735612980013,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7956630081947222,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9996379581728714,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 23.524693717417996,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15939.247906
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15939.247906
+    },
+    {
+      "seq": 10,
+      "tier": "Tier2",
+      "u": [
+        0.4605796569147784,
+        0.9242626568747618
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.4605796569147784,
+          0.9242626568747618
+        ],
+        "tier": "Tier2",
+        "f0_hz": 34.07058291133882,
+        "q_rms_m3s": 0.0007901625019680511,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005380539534186003,
+        "noise_proxy": 41303550075.27319,
+        "compression_db": -0.5106928920583919,
+        "peak_mach": 0.026168734723024847,
+        "curvature_m3": 12.011639873002647,
+        "max_slope": 0.22182303764994288,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.11070260709394564,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.1764789437267815,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.5106928920583917,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5563539247001142,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9987988360126997,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.1764789437267815,
+        "objective_j": 2580.861049416351,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 18426.759296
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 18426.759296
+    },
+    {
+      "seq": 11,
+      "tier": "Tier2",
+      "u": [
+        0.22704064496686716,
+        0.5593322954132136
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.22704064496686716,
+          0.5593322954132136
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.16964674094676,
+        "q_rms_m3s": 0.0007665706490829259,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005673074174645142,
+        "noise_proxy": 1154213448.4338753,
+        "compression_db": -0.245133814492644,
+        "peak_mach": 0.01673729766615004,
+        "curvature_m3": 4.501152180236537,
+        "max_slope": 0.13423975089917123,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.07903324819738677,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.6269470289228103,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.245133814492644,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7315204982016575,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9995498847819764,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.6269470289228103,
+        "objective_j": 73.10955368103063,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15621.277306
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15621.277306
+    },
+    {
+      "seq": 12,
+      "tier": "Tier2",
+      "u": [
+        0.15538913749295835,
+        0.8354995534105663
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.15538913749295835,
+          0.8354995534105663
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.84030780821611,
+        "q_rms_m3s": 0.0007751776951367101,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005634197310583887,
+        "noise_proxy": 14710650933.703484,
+        "compression_db": -0.34180770908759506,
+        "peak_mach": 0.023021722861549826,
+        "curvature_m3": 12.466944944643847,
+        "max_slope": 0.20051989281853594,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09058722116609585,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.2916164952881353,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.341807709087595,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5989602143629281,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9987533055055356,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.2916164952881353,
+        "objective_j": 919.8634914244367,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15579.578691
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15579.578691
+    },
+    {
+      "seq": 13,
+      "tier": "Tier2",
+      "u": [
+        0.20457515666833803,
+        0.5031292829838747
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.20457515666833803,
+          0.5031292829838747
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.54099465616076,
+        "q_rms_m3s": 0.0007639377376009982,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005675187780516537,
+        "noise_proxy": 711344860.7245963,
+        "compression_db": -0.21556977195979196,
+        "peak_mach": 0.01574526439154233,
+        "curvature_m3": 3.6408433780199028,
+        "max_slope": 0.12075102791612997,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.07549886626180702,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.44127307131580906,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.215569771959792,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7584979441677401,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999635915662198,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.44127307131580906,
+        "objective_j": 45.44751075865923,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 16221.833934999999
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 16221.833934999999
+    },
+    {
+      "seq": 14,
+      "tier": "Tier2",
+      "u": [
+        0.6377494225465563,
+        0.47884941328024055
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.6377494225465563,
+          0.47884941328024055
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.744774131249805,
+        "q_rms_m3s": 0.0007779464430384883,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005611213918429001,
+        "noise_proxy": 2512039927.4116774,
+        "compression_db": -0.37296239221163086,
+        "peak_mach": 0.01845318192794098,
+        "curvature_m3": 6.692073085983698,
+        "max_slope": 0.15305986141117348,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09430394792861296,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.3393833337712877,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.372962392211631,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6938802771776531,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9993307926914017,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.3393833337712877,
+        "objective_j": 157.91092521097437,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 16606.288956
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 16606.288956
+    },
+    {
+      "seq": 15,
+      "tier": "Tier2",
+      "u": [
+        0.8760771097951603,
+        0.8706603936836115
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.8760771097951603,
+          0.8706603936836115
+        ],
+        "tier": "Tier2",
+        "f0_hz": 32.47657374103379,
+        "q_rms_m3s": 0.0008059097229650486,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0004968151439876762,
+        "noise_proxy": 29978390117.637405,
+        "compression_db": -0.6860082501785087,
+        "peak_mach": 0.025136942424927602,
+        "curvature_m3": 18.37154418276367,
+        "max_slope": 0.21025850635083837,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.13184144666732123,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.973483528879296,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.6860082501785087,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5794829872983233,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9981628455817236,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.973483528879296,
+        "objective_j": 1873.3963343155283,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15561.67794
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15561.67794
+    },
+    {
+      "seq": 16,
+      "tier": "Tier2",
+      "u": [
+        0.06323147768433302,
+        0.9868905676820412
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.06323147768433302,
+          0.9868905676820412
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.11755346265537,
+        "q_rms_m3s": 0.0007791437959882648,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005590466142846883,
+        "noise_proxy": 70486510508.9381,
+        "compression_db": -0.3864499123838839,
+        "peak_mach": 0.027989771196721216,
+        "curvature_m3": 21.389216839177838,
+        "max_slope": 0.23685373624368988,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.0959112570482894,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.652993668068504,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.3864499123838838,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5262925275126202,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9978610783160822,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.652993668068504,
+        "objective_j": 4403.7218041373535,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15506.914513
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15506.914513
+    },
+    {
+      "seq": 17,
+      "tier": "Tier2",
+      "u": [
+        0.2167975630521657,
+        0.9770533969711879
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.2167975630521657,
+          0.9770533969711879
+        ],
+        "tier": "Tier2",
+        "f0_hz": 34.650166895332426,
+        "q_rms_m3s": 0.0007838014160249586,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005516753113772999,
+        "noise_proxy": 66692941754.26721,
+        "compression_db": -0.4389580894153151,
+        "peak_mach": 0.0277669812504904,
+        "curvature_m3": 16.21750182998086,
+        "max_slope": 0.2344928152730851,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.102163578189155,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.8866869517299776,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.4389580894153151,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5310143694538298,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.998378249817002,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.8866869517299776,
+        "objective_j": 4166.755057715014,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15490.362755
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15490.362755
+    },
+    {
+      "seq": 18,
+      "tier": "Tier2",
+      "u": [
+        0.9174438077716749,
+        0.6772034804774969
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.9174438077716749,
+          0.6772034804774969
+        ],
+        "tier": "Tier2",
+        "f0_hz": 33.18229965849238,
+        "q_rms_m3s": 0.00079915197523872,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000519598346979564,
+        "noise_proxy": 42294608538.32188,
+        "compression_db": -0.6114494496102653,
+        "peak_mach": 0.02626242796252292,
+        "curvature_m3": 13.66416334277072,
+        "max_slope": 0.22018651386520197,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.12276994477556258,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.620620570149999,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.6114494496102654,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5596269722695961,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.998633583665723,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.620620570149999,
+        "objective_j": 2642.7314338595706,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15557.991495999999
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15557.991495999999
+    },
+    {
+      "seq": 19,
+      "tier": "Tier2",
+      "u": [
+        0.015025023459253273,
+        0.06922162948610433
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.015025023459253273,
+          0.06922162948610433
+        ],
+        "tier": "Tier2",
+        "f0_hz": 40.11561545228928,
+        "q_rms_m3s": 0.0007464942319740612,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000563903931057216,
+        "noise_proxy": 25506924.96129721,
+        "compression_db": -0.017831134614386217,
+        "peak_mach": 0.010365166026437238,
+        "curvature_m3": 0.08192530500106608,
+        "max_slope": 0.016613191076665024,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.05208295896518611,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.8460373267484513,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0178311346143862,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.9667736178466699,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999918074694999,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.602267570045768,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15566.821155
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15566.821155
+    },
+    {
+      "seq": 20,
+      "tier": "Tier2",
+      "u": [
+        0.6181545948739922,
+        0.6137692077785799
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.6181545948739922,
+          0.6137692077785799
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.23243942507296,
+        "q_rms_m3s": 0.0007820784341529911,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005572860666409283,
+        "noise_proxy": 2217775848.418524,
+        "compression_db": -0.41952318578993997,
+        "peak_mach": 0.01815341394567469,
+        "curvature_m3": 9.13033595707751,
+        "max_slope": 0.14835710276975805,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09985067247796309,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.5955506868597098,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.41952318578994,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7032857944604839,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9990869664042923,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.5955506868597098,
+        "objective_j": 139.52379374905564,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15544.876287
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15544.876287
+    },
+    {
+      "seq": 21,
+      "tier": "Tier2",
+      "u": [
+        0.7852376929185485,
+        0.6658885521639482
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.7852376929185485,
+          0.6658885521639482
+        ],
+        "tier": "Tier2",
+        "f0_hz": 34.06076043595687,
+        "q_rms_m3s": 0.0007917169381896741,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005398588827671159,
+        "noise_proxy": 10850908572.860584,
+        "compression_db": -0.5281937445835491,
+        "peak_mach": 0.0221473292402141,
+        "curvature_m3": 11.489263387843307,
+        "max_slope": 0.1884570463004516,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.11278925958470554,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.181390181417754,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.528193744583549,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6230859073990969,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9988510736612156,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.181390181417754,
+        "objective_j": 678.7344881588114,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15770.558320999999
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15770.558320999999
+    },
+    {
+      "seq": 22,
+      "tier": "Tier2",
+      "u": [
+        0.08440642707623347,
+        0.08396453056860698
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.08440642707623347,
+          0.08396453056860698
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.810100370341274,
+        "q_rms_m3s": 0.0007485197557051517,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005653981115568415,
+        "noise_proxy": 28807560.482550632,
+        "compression_db": -0.04109216574182878,
+        "peak_mach": 0.0105268352337012,
+        "curvature_m3": 0.17084883482919244,
+        "max_slope": 0.02025754249829599,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.054801992451269266,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.6932797857744468,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0410921657418288,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.959484915003408,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999982915116517,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.8111061211583923,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15530.530413999999
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15530.530413999999
+    },
+    {
+      "seq": 23,
+      "tier": "Tier2",
+      "u": [
+        0.5187118712241687,
+        0.7529379522569977
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.5187118712241687,
+          0.7529379522569977
+        ],
+        "tier": "Tier2",
+        "f0_hz": 34.90869716914907,
+        "q_rms_m3s": 0.0007842398848512223,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005523918762836019,
+        "noise_proxy": 7448676704.424803,
+        "compression_db": -0.4439023324253808,
+        "peak_mach": 0.021109326988473016,
+        "curvature_m3": 8.646242396011669,
+        "max_slope": 0.1807051085416794,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.10275217234034395,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.7574218148216545,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.4439023324253808,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6385897829166411,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9991353757603988,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.7574218148216545,
+        "objective_j": 466.2470266387957,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15512.732167999999
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15512.732167999999
+    },
+    {
+      "seq": 24,
+      "tier": "Tier2",
+      "u": [
+        0.8677742977752176,
+        0.08760485150054076
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.8677742977752176,
+          0.08760485150054076
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.91455789629105,
+        "q_rms_m3s": 0.0007750136915521765,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005604009017998131,
+        "noise_proxy": 20088789861.37691,
+        "compression_db": -0.3399642740935283,
+        "peak_mach": 0.023936159860095188,
+        "curvature_m3": 15.725774109096216,
+        "max_slope": 0.20826583146605215,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.09036706514849935,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.254491451250665,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.3399642740935283,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5834683370678957,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9984274225890903,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.254491451250665,
+        "objective_j": 1255.7868869415288,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15476.484747
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15476.484747
+    },
+    {
+      "seq": 25,
+      "tier": "Tier2",
+      "u": [
+        0.351122113465272,
+        0.1873520677671492
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.351122113465272,
+          0.1873520677671492
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.33937856448309,
+        "q_rms_m3s": 0.0007585807209630606,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000566095189334606,
+        "noise_proxy": 208058908.7418687,
+        "compression_db": -0.15530660169624194,
+        "peak_mach": 0.013487986299500446,
+        "curvature_m3": 1.7764445167388783,
+        "max_slope": 0.08426930723166526,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06830768533389242,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.04208111715464469,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1553066016962419,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.8314613855366695,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998223555483261,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.04208111715464469,
+        "objective_j": 14.008748957798405,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15502.958106
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15502.958106
+    },
+    {
+      "seq": 26,
+      "tier": "Tier2",
+      "u": [
+        0.5224421678309237,
+        0.9766767710966844
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.5224421678309237,
+          0.9766767710966844
+        ],
+        "tier": "Tier2",
+        "f0_hz": 33.44756335194279,
+        "q_rms_m3s": 0.0007954265995888037,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005238549009742013,
+        "noise_proxy": 74940843970.95476,
+        "compression_db": -0.5698503768380654,
+        "peak_mach": 0.02820838955467301,
+        "curvature_m3": 13.443288206649994,
+        "max_slope": 0.23440242506320427,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.1177690548897119,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.4879887234247953,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.5698503768380654,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5311951498735914,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.998655671179335,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.4879887234247953,
+        "objective_j": 4681.884874379036,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15527.60061
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15527.60061
+    },
+    {
+      "seq": 27,
+      "tier": "Tier2",
+      "u": [
+        0.26381815863087343,
+        0.25015455866310754
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.26381815863087343,
+          0.25015455866310754
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.4636836219493,
+        "q_rms_m3s": 0.0007577136496541928,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005663164349761463,
+        "noise_proxy": 109030736.40799066,
+        "compression_db": -0.14552836689886378,
+        "peak_mach": 0.012441483055511418,
+        "curvature_m3": 1.5292472384870892,
+        "max_slope": 0.0633163580714096,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06714374146720448,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.02007141157845993,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1455283668988638,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.8733672838571808,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998470752761512,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 7.823654790803808,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15505.080503000001
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15505.080503000001
+    },
+    {
+      "seq": 28,
+      "tier": "Tier2",
+      "u": [
+        0.9849639962155288,
+        0.6660130000671789
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.9849639962155288,
+          0.6660130000671789
+        ],
+        "tier": "Tier2",
+        "f0_hz": 32.776074624394,
+        "q_rms_m3s": 0.0008025846691773962,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005088169829712618,
+        "noise_proxy": 87999453964.98007,
+        "compression_db": -0.649489432911023,
+        "peak_mach": 0.02877337168419142,
+        "curvature_m3": 14.896010778958486,
+        "max_slope": 0.23639135909172687,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.1273779430050921,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.823733087199191,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.649489432911023,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5272172818165463,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9985103989221041,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.823733087199191,
+        "objective_j": 5497.523544692264,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15522.288395
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15522.288395
+    },
+    {
+      "seq": 29,
+      "tier": "Tier2",
+      "u": [
+        0.6720669439754368,
+        0.7917881430181772
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.6720669439754368,
+          0.7917881430181772
+        ],
+        "tier": "Tier2",
+        "f0_hz": 33.98394583899349,
+        "q_rms_m3s": 0.0007922052067994828,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005368280217600051,
+        "noise_proxy": 11594666498.878325,
+        "compression_db": -0.5336862782590543,
+        "peak_mach": 0.0223330354068935,
+        "curvature_m3": 11.598801527612883,
+        "max_slope": 0.19002915432436254,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.11344470423830066,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.2197974798994444,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.5336862782590543,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.619941691351275,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9988401198472387,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.2197974798994444,
+        "objective_j": 725.1855974721552,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15548.685907
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15548.685907
+    },
+    {
+      "seq": 30,
+      "tier": "Tier2",
+      "u": [
+        0.2925622695350425,
+        0.634469757741962
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.2925622695350425,
+          0.634469757741962
+        ],
+        "tier": "Tier2",
+        "f0_hz": 36.51566056543369,
+        "q_rms_m3s": 0.000771408235391149,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005659180186779731,
+        "noise_proxy": 2282405375.029819,
+        "compression_db": -0.2994450488705642,
+        "peak_mach": 0.018237968784550793,
+        "curvature_m3": 5.684553393601729,
+        "max_slope": 0.15227274185807088,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.08552715343383355,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.9539401166793446,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2994450488705642,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6954545162838582,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9994315446606399,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.9539401166793446,
+        "objective_j": 143.57608829544574,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15553.300095999999
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15553.300095999999
+    },
+    {
+      "seq": 31,
+      "tier": "Tier2",
+      "u": [
+        0.03431628595899783,
+        0.08358905183078513
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.03431628595899783,
+          0.08358905183078513
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.99269611911963,
+        "q_rms_m3s": 0.000747300612755134,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000564567124749648,
+        "noise_proxy": 28285295.873512678,
+        "compression_db": -0.027104947394233886,
+        "peak_mach": 0.010500828232780576,
+        "curvature_m3": 0.10031342196408798,
+        "max_slope": 0.020061372439388398,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.05316543275338015,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.7845776601636238,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.027104947394234,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.9598772551212232,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999899686578035,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.776996800291713,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15497.052779000001
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15497.052779000001
+    },
+    {
+      "seq": 32,
+      "tier": "Tier2",
+      "u": [
+        0.19355615089078482,
+        0.6558702049654159
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.19355615089078482,
+          0.6558702049654159
+        ],
+        "tier": "Tier2",
+        "f0_hz": 36.77729154100878,
+        "q_rms_m3s": 0.0007690920539821848,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005669024084973465,
+        "noise_proxy": 2680174069.0051956,
+        "compression_db": -0.2734382316284585,
+        "peak_mach": 0.01860373775127198,
+        "curvature_m3": 6.713790831031259,
+        "max_slope": 0.15740884919169984,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.08241794532427149,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.8231246288918008,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2734382316284585,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6851823016166003,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9993286209168969,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.8231246288918008,
+        "objective_j": 168.42324763593564,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15492.691169
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15492.691169
+    },
+    {
+      "seq": 33,
+      "tier": "Tier2",
+      "u": [
+        0.5814597596746427,
+        0.18676345703669028
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.5814597596746427,
+          0.18676345703669028
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.23528445945486,
+        "q_rms_m3s": 0.0007663161085680193,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000563344313790209,
+        "noise_proxy": 1383016715.951013,
+        "compression_db": -0.2422764246094537,
+        "peak_mach": 0.017119067653683817,
+        "curvature_m3": 5.270638317927769,
+        "max_slope": 0.13955034232191424,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.0786915567262021,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.5941281696687604,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2422764246094538,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7208993153561716,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9994729361682072,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.5941281696687604,
+        "objective_j": 87.39395610121635,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15486.854075
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15486.854075
+    },
+    {
+      "seq": 34,
+      "tier": "Tier2",
+      "u": [
+        0.21623451352749257,
+        0.31861304555276804
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.21623451352749257,
+          0.31861304555276804
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.358770105735616,
+        "q_rms_m3s": 0.0007583831158177033,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005669771666228655,
+        "noise_proxy": 163290021.1631296,
+        "compression_db": -0.1530789182314019,
+        "peak_mach": 0.01308565960932281,
+        "curvature_m3": 1.5348965052072236,
+        "max_slope": 0.0764671309326643,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06804242307159347,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.03238534652838254,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1530789182314019,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.8470657381346713,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998465103494792,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.03238534652838254,
+        "objective_j": 11.213975074815632,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15474.484048
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15474.484048
+    },
+    {
+      "seq": 35,
+      "tier": "Tier2",
+      "u": [
+        0.35307522544242986,
+        0.5567893818055254
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.35307522544242986,
+          0.5567893818055254
+        ],
+        "tier": "Tier2",
+        "f0_hz": 36.68561475032592,
+        "q_rms_m3s": 0.000770454577801353,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005658456952656396,
+        "noise_proxy": 1176596708.3264792,
+        "compression_db": -0.2887354113031566,
+        "peak_mach": 0.016787033889541413,
+        "curvature_m3": 4.539397739102944,
+        "max_slope": 0.1336294516333261,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.08424697740769704,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.8689630242332314,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2887354113031566,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7327410967333479,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9995460602260897,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.8689630242332314,
+        "objective_j": 74.50503933711111,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15464.056937000001
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15464.056937000001
+    },
+    {
+      "seq": 36,
+      "tier": "Tier2",
+      "u": [
+        0.6344880504060764,
+        0.018054688920056794
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.6344880504060764,
+          0.018054688920056794
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.565115152077375,
+        "q_rms_m3s": 0.0007634605120579359,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005602851705277955,
+        "noise_proxy": 2102647621.9990997,
+        "compression_db": -0.21020899446991026,
+        "peak_mach": 0.018027304357028238,
+        "curvature_m3": 9.628669597560272,
+        "max_slope": 0.15227713209745827,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.07485824565979504,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.42921282335750277,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2102089944699101,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6954457358050834,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999037133040244,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.42921282335750277,
+        "objective_j": 132.33803783176506,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15480.736702
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15480.736702
+    },
+    {
+      "seq": 37,
+      "tier": "Tier2",
+      "u": [
+        0.08318268334889867,
+        0.3238633908773667
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.08318268334889867,
+          0.3238633908773667
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.83321519390949,
+        "q_rms_m3s": 0.0007549075743084463,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005673369890036009,
+        "noise_proxy": 163681343.33765385,
+        "compression_db": -0.11381550019691905,
+        "peak_mach": 0.013088791977163996,
+        "curvature_m3": 1.7061229928588015,
+        "max_slope": 0.07772721381056802,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06337690688884612,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.2048371975585539,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.113815500196919,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.844545572378864,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998293877007142,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 11.239063382879243,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15507.65954
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15507.65954
+    },
+    {
+      "seq": 38,
+      "tier": "Tier2",
+      "u": [
+        0.245841852559477,
+        0.03878542991447076
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.245841852559477,
+          0.03878542991447076
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.34523252982628,
+        "q_rms_m3s": 0.0007516218394477861,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005661933084829229,
+        "noise_proxy": 90013519.57387903,
+        "compression_db": -0.07651598271772359,
+        "peak_mach": 0.012142900616099588,
+        "curvature_m3": 1.1489622029192461,
+        "max_slope": 0.05900204461427451,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.058966184380196074,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.4608458655169514,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0765159827177235,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.881995910771451,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998851037797081,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 6.635579206910053,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15496.861894
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15496.861894
+    },
+    {
+      "seq": 39,
+      "tier": "Tier2",
+      "u": [
+        0.9153974690926072,
+        0.4418813584503454
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.9153974690926072,
+          0.4418813584503454
+        ],
+        "tier": "Tier2",
+        "f0_hz": 34.23725297682719,
+        "q_rms_m3s": 0.0007894204350087972,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000547555594779912,
+        "noise_proxy": 37467860953.923164,
+        "compression_db": -0.5023324019979394,
+        "peak_mach": 0.025848599415253082,
+        "curvature_m3": 12.071945739284109,
+        "max_slope": 0.2196953925822257,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.10970646724124644,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.093143910982594,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.5023324019979394,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.5606092148355486,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9987928054260716,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.093143910982594,
+        "objective_j": 2341.2936298985173,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15547.614547000001
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15547.614547000001
+    },
+    {
+      "seq": 40,
+      "tier": "Tier2",
+      "u": [
+        0.610032831588087,
+        0.047612640408558615
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.610032831588087,
+          0.047612640408558615
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.5947024258938,
+        "q_rms_m3s": 0.0007633790885317287,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005611547830794287,
+        "noise_proxy": 1705693408.1799383,
+        "compression_db": -0.2092941658980964,
+        "peak_mach": 0.01756157351551034,
+        "curvature_m3": 8.097292802577543,
+        "max_slope": 0.14640787958114082,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.07474894390691311,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.4144191864492903,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2092941658980965,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7071842408377184,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9991902707197422,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.4144191864492903,
+        "objective_j": 107.54506501822019,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15747.669703
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15747.669703
+    },
+    {
+      "seq": 41,
+      "tier": "Tier2",
+      "u": [
+        0.8009017070739575,
+        0.8137829020959757
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.8009017070739575,
+          0.8137829020959757
+        ],
+        "tier": "Tier2",
+        "f0_hz": 33.219773230676836,
+        "q_rms_m3s": 0.0007990731659903472,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005196309638645466,
+        "noise_proxy": 15313153620.22692,
+        "compression_db": -0.6105724869590707,
+        "peak_mach": 0.023130439047347386,
+        "curvature_m3": 15.54687393716677,
+        "max_slope": 0.1953078965030342,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.12266415239107964,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -2.6018837840577724,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.6105724869590707,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6093842069939316,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9984453126062833,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 2.6018837840577724,
+        "objective_j": 957.4186274485274,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15919.190179
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15919.190179
+    },
+    {
+      "seq": 42,
+      "tier": "Tier2",
+      "u": [
+        0.35307522544242986,
+        0.5565779536402464
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.35307522544242986,
+          0.5565779536402464
+        ],
+        "tier": "Tier2",
+        "f0_hz": 36.68670219011595,
+        "q_rms_m3s": 0.0007704467948021966,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000565847385869851,
+        "noise_proxy": 1174455777.6751716,
+        "compression_db": -0.28864801848299343,
+        "peak_mach": 0.016783200724075097,
+        "curvature_m3": 4.536627023460438,
+        "max_slope": 0.13357870887365914,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.08423652962325323,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.8684193043382145,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.2886480184829934,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7328425822526817,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999546337297654,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.8684193043382145,
+        "objective_j": 74.37131574273211,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15498.542511
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15498.542511
+    },
+    {
+      "seq": 43,
+      "tier": "Tier2",
+      "u": [
+        0.2822227153703165,
+        0.01294459340991793
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.2822227153703165,
+          0.01294459340991793
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.285185148681904,
+        "q_rms_m3s": 0.0007519968399117008,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005660119039164364,
+        "noise_proxy": 117240585.65695001,
+        "compression_db": -0.08078352843341313,
+        "peak_mach": 0.012551215218834835,
+        "curvature_m3": 1.8412485857795033,
+        "max_slope": 0.06773345168887598,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.059469579528339755,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.4308221749447618,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.080783528433413,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.864533096622248,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999815875141422,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 8.335915745601177,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15704.629249
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15704.629249
+    },
+    {
+      "seq": 44,
+      "tier": "Tier2",
+      "u": [
+        0.6626209949206451,
+        0.6044184111919044
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.6626209949206451,
+          0.6044184111919044
+        ],
+        "tier": "Tier2",
+        "f0_hz": 35.04240645346785,
+        "q_rms_m3s": 0.0007836123431802676,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005551919291265443,
+        "noise_proxy": 3303701169.847033,
+        "compression_db": -0.43682321855412987,
+        "peak_mach": 0.019072932160195132,
+        "curvature_m3": 9.056335136342641,
+        "max_slope": 0.15902903878095473,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.10190976956270803,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.6905671726622664,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.4368232185541299,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6819419224380905,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9990943664863657,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.6905671726622664,
+        "objective_j": 207.34900234372262,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 17236.605191
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 17236.605191
+    },
+    {
+      "seq": 45,
+      "tier": "Tier2",
+      "u": [
+        0.09948704949059071,
+        0.09331532715528247
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.09948704949059071,
+          0.09331532715528247
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.71912183499399,
+        "q_rms_m3s": 0.0007491242156398614,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005656954339678871,
+        "noise_proxy": 32047320.98872095,
+        "compression_db": -0.0480127998415555,
+        "peak_mach": 0.01066894547239645,
+        "curvature_m3": 0.21351036168019719,
+        "max_slope": 0.023876891877741696,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.05561341064313918,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.6477905181008055,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0480127998415556,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.9522462162445167,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999786489638319,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 3.0140001698337575,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15570.689879
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15570.689879
+    },
+    {
+      "seq": 46,
+      "tier": "Tier2",
+      "u": [
+        0.08440642707623347,
+        0.11133824605356457
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.08440642707623347,
+          0.11133824605356457
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.70561118902575,
+        "q_rms_m3s": 0.0007492044786218975,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005657343447701007,
+        "noise_proxy": 34717575.960174836,
+        "compression_db": -0.04893106489103875,
+        "peak_mach": 0.010776337014004664,
+        "curvature_m3": 0.20287606319116422,
+        "max_slope": 0.026721179052855502,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.055721154498468595,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.6410351951166859,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0489310648910388,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.946557641894289,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999797123936809,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 3.180858884426167,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15558.384364
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15558.384364
+    },
+    {
+      "seq": 47,
+      "tier": "Tier2",
+      "u": [
+        0.2186969106715091,
+        0.7618514240827352
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.2186969106715091,
+          0.7618514240827352
+        ],
+        "tier": "Tier2",
+        "f0_hz": 36.06724034518562,
+        "q_rms_m3s": 0.0007740957785849864,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005644309431222757,
+        "noise_proxy": 7276426172.866962,
+        "compression_db": -0.3296425384582246,
+        "peak_mach": 0.021083443048153697,
+        "curvature_m3": 9.132977777930417,
+        "max_slope": 0.1828443417798564,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.08913487218191474,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -1.1781502268033819,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.3296425384582247,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.6343113164402872,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999086702222207,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 1.1781502268033819,
+        "objective_j": 455.5094792190667,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15495.566467
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15495.566467
+    },
+    {
+      "seq": 48,
+      "tier": "Tier2",
+      "u": [
+        0.2884102193441145,
+        0.18659795431273174
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.2884102193441145,
+          0.18659795431273174
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.613014717221034,
+        "q_rms_m3s": 0.0007566723233561191,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005665012880078982,
+        "noise_proxy": 128732253.46694212,
+        "compression_db": -0.13377275099459973,
+        "peak_mach": 0.012702421614528024,
+        "curvature_m3": 1.2513217141443775,
+        "max_slope": 0.0692184526425875,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06574588024694772,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.09473695921432679,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1337727509945998,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.861563094714825,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998748678285856,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 9.054576937539373,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15451.960265
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15451.960265
+    },
+    {
+      "seq": 49,
+      "tier": "Tier2",
+      "u": [
+        0.24435342977603625,
+        0.5038833964382922
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.24435342977603625,
+          0.5038833964382922
+        ],
+        "tier": "Tier2",
+        "f0_hz": 37.38459732312808,
+        "q_rms_m3s": 0.0007651562954518684,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005672728415683806,
+        "noise_proxy": 724734328.8116455,
+        "compression_db": -0.22925470952359503,
+        "peak_mach": 0.015786671418947015,
+        "curvature_m3": 3.572790399282954,
+        "max_slope": 0.12093201514519011,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.07713464053114216,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": -0.5194717378321521,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.229254709523595,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.7581359697096197,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9996427209600717,
+            "enforced": true
+          }
+        ],
+        "feasible": false,
+        "max_violation": 0.5194717378321521,
+        "objective_j": 46.28340158596182,
+        "objective_partial": false,
+        "cached": false,
+        "wall_time_ms": 15421.031855000001
+      },
+      "reason": null,
+      "cached": false,
+      "wall_time_ms": 15421.031855000001
+    },
+    {
+      "seq": 50,
+      "tier": "Tier2",
+      "u": [
+        0.015025023459253273,
+        0.06922162948610433
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.015025023459253273,
+          0.06922162948610433
+        ],
+        "tier": "Tier2",
+        "f0_hz": 40.11561545228928,
+        "q_rms_m3s": 0.0007464942319740612,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000563903931057216,
+        "noise_proxy": 25506924.96129721,
+        "compression_db": -0.017831134614386217,
+        "peak_mach": 0.010365166026437238,
+        "curvature_m3": 0.08192530500106608,
+        "max_slope": 0.016613191076665024,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.05208295896518611,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.8460373267484513,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0178311346143862,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.9667736178466699,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999918074694999,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.602267570045768,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    },
+    {
+      "seq": 51,
+      "tier": "Tier2",
+      "u": [
+        0.26381815863087343,
+        0.25015455866310754
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.26381815863087343,
+          0.25015455866310754
+        ],
+        "tier": "Tier2",
+        "f0_hz": 38.4636836219493,
+        "q_rms_m3s": 0.0007577136496541928,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005663164349761463,
+        "noise_proxy": 109030736.40799066,
+        "compression_db": -0.14552836689886378,
+        "peak_mach": 0.012441483055511418,
+        "curvature_m3": 1.5292472384870892,
+        "max_slope": 0.0633163580714096,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.06714374146720448,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.02007141157845993,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.1455283668988638,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.8733672838571808,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998470752761512,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 7.823654790803808,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    },
+    {
+      "seq": 52,
+      "tier": "Tier2",
+      "u": [
+        0.245841852559477,
+        0.03878542991447076
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.245841852559477,
+          0.03878542991447076
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.34523252982628,
+        "q_rms_m3s": 0.0007516218394477861,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005661933084829229,
+        "noise_proxy": 90013519.57387903,
+        "compression_db": -0.07651598271772359,
+        "peak_mach": 0.012142900616099588,
+        "curvature_m3": 1.1489622029192461,
+        "max_slope": 0.05900204461427451,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.058966184380196074,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.4608458655169514,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0765159827177235,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.881995910771451,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9998851037797081,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 6.635579206910053,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    },
+    {
+      "seq": 53,
+      "tier": "Tier2",
+      "u": [
+        0.08440642707623347,
+        0.11133824605356457
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.08440642707623347,
+          0.11133824605356457
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.70561118902575,
+        "q_rms_m3s": 0.0007492044786218975,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005657343447701007,
+        "noise_proxy": 34717575.960174836,
+        "compression_db": -0.04893106489103875,
+        "peak_mach": 0.010776337014004664,
+        "curvature_m3": 0.20287606319116422,
+        "max_slope": 0.026721179052855502,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.055721154498468595,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.6410351951166859,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0489310648910388,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.946557641894289,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999797123936809,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 3.180858884426167,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    },
+    {
+      "seq": 54,
+      "tier": "Tier2",
+      "u": [
+        0.03431628595899783,
+        0.08358905183078513
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.03431628595899783,
+          0.08358905183078513
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.99269611911963,
+        "q_rms_m3s": 0.000747300612755134,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.000564567124749648,
+        "noise_proxy": 28285295.873512678,
+        "compression_db": -0.027104947394233886,
+        "peak_mach": 0.010500828232780576,
+        "curvature_m3": 0.10031342196408798,
+        "max_slope": 0.020061372439388398,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.05316543275338015,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.7845776601636238,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.027104947394234,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.9598772551212232,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999899686578035,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.776996800291713,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    },
+    {
+      "seq": 55,
+      "tier": "Tier2",
+      "u": [
+        0.08440642707623347,
+        0.08396453056860698
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.08440642707623347,
+          0.08396453056860698
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.810100370341274,
+        "q_rms_m3s": 0.0007485197557051517,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005653981115568415,
+        "noise_proxy": 28807560.482550632,
+        "compression_db": -0.04109216574182878,
+        "peak_mach": 0.0105268352337012,
+        "curvature_m3": 0.17084883482919244,
+        "max_slope": 0.02025754249829599,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.054801992451269266,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.6932797857744468,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0410921657418288,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.959484915003408,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999982915116517,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.8111061211583923,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    },
+    {
+      "seq": 56,
+      "tier": "Tier2",
+      "u": [
+        0.09948704949059071,
+        0.09331532715528247
+      ],
+      "outcome": "Evaluated",
+      "candidate": {
+        "u": [
+          0.09948704949059071,
+          0.09331532715528247
+        ],
+        "tier": "Tier2",
+        "f0_hz": 39.71912183499399,
+        "q_rms_m3s": 0.0007491242156398614,
+        "q_baseline_m3s": 0.0007449425472167875,
+        "thd": 0.0005656954339678871,
+        "noise_proxy": 32047320.98872095,
+        "compression_db": -0.0480127998415555,
+        "peak_mach": 0.01066894547239645,
+        "curvature_m3": 0.21351036168019719,
+        "max_slope": 0.023876891877741696,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.05561341064313918,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.6477905181008055,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 1.0480127998415556,
+            "enforced": true
+          },
+          {
+            "name": "slope",
+            "value": 0.9522462162445167,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999786489638319,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 3.0140001698337575,
+        "objective_partial": false,
+        "cached": true,
+        "wall_time_ms": 0.0
+      },
+      "reason": null,
+      "cached": true,
+      "wall_time_ms": 0.0
+    }
+  ],
+  "usage": {
+    "tier0_used": 0,
+    "tier1_used": 0,
+    "tier2_used": 49,
+    "cache_hits": 7,
+    "rejected_by_construction": 0,
+    "failed_evals": 0
+  }
+}

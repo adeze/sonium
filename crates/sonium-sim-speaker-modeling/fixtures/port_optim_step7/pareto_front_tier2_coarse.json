@@ -1,0 +1,88 @@
+{
+  "drive_voltage_peak_v": 1.0,
+  "fidelity": {
+    "compression_reference": {
+      "port_flow_fundamental_amplitude_m3s": 0.000010536619286218913,
+      "voltage_peak_v": 0.01
+    },
+    "samples_per_cycle": 48,
+    "snapshot_interval_steps": 0,
+    "tail_cycles": 4,
+    "total_cycles": 10
+  },
+  "front": [
+    {
+      "airflow_ratio": 1.002082958965186,
+      "distortion_noise": 2.602266750792718,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.015025023459253273,
+        0.06922162948610433
+      ]
+    },
+    {
+      "airflow_ratio": 1.00316543275338,
+      "distortion_noise": 2.7769957971574932,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.03431628595899783,
+        0.08358905183078513
+      ]
+    },
+    {
+      "airflow_ratio": 1.0048019924512692,
+      "distortion_noise": 2.811104412670044,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.08440642707623347,
+        0.08396453056860698
+      ]
+    },
+    {
+      "airflow_ratio": 1.0056134106431391,
+      "distortion_noise": 3.0139980347301405,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.09948704949059071,
+        0.09331532715528247
+      ]
+    },
+    {
+      "airflow_ratio": 1.0057211544984686,
+      "distortion_noise": 3.180856855665535,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.08440642707623347,
+        0.11133824605356457
+      ]
+    },
+    {
+      "airflow_ratio": 1.008966184380196,
+      "distortion_noise": 6.6355677172880245,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.245841852559477,
+        0.03878542991447076
+      ]
+    },
+    {
+      "airflow_ratio": 1.0171437414672044,
+      "distortion_noise": 7.823639498331422,
+      "feasible": true,
+      "max_violation": 0.0,
+      "u": [
+        0.26381815863087343,
+        0.25015455866310754
+      ]
+    }
+  ],
+  "infeasible_front": [],
+  "message": "evaluation budget reached",
+  "schema": "step7-pareto-front-v1"
+}

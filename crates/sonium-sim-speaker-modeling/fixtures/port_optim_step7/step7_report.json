@@ -1,0 +1,2007 @@
+{
+  "schema_version": 1,
+  "provenance": "PortOptimStep7Campaign[Tier0Duct,Tier1SplineLRF,Tier2MeridianSlot]",
+  "case": {
+    "schema_version": 1,
+    "density_kg_per_m3": 1.2,
+    "sound_speed_m_per_s": 343.0,
+    "dynamic_viscosity_pa_s": 0.0000185,
+    "thermal_diffusivity_m2_per_s": 0.000022,
+    "box_volume_m3": 0.005,
+    "driver_mms_kg": 0.02,
+    "driver_rms_kg_per_s": 1.0,
+    "driver_kms_n_per_m": 4000.0,
+    "voice_coil_resistance_ohm": 6.0,
+    "voice_coil_inductance_h": 0.0005,
+    "voice_coil_bl_n_per_a": 10.0,
+    "diaphragm_area_m2": 0.01,
+    "xmax_m": 0.005,
+    "port_radius_r0_m": 0.025,
+    "port_length_l_m": 0.1,
+    "end_correction_radius_factor": 1.46,
+    "tier1_chamber_length_m": 0.05,
+    "tier1_chamber_radius_m": 0.08,
+    "tier1_mesh_size_m": 0.01,
+    "tier1_frequency_factors": [
+      0.75,
+      1.0,
+      1.25
+    ],
+    "tier2_duct_length_m": 0.1,
+    "tier2_duct_height_m": 0.02,
+    "tier2_chamber_length_m": 0.05,
+    "tier2_chamber_height_m": 0.08,
+    "tier2_mesh_size_m": 0.01,
+    "tier2_samples_per_cycle": 252,
+    "tier2_total_cycles": 40,
+    "tier2_tail_cycles": 8,
+    "tier2_drives_v_peak": [
+      0.01,
+      0.1,
+      1.0
+    ]
+  },
+  "f_target_hz": 92.60634465596921,
+  "n_control_points": 5,
+  "finalists": [
+    {
+      "u": [
+        0.0,
+        0.0
+      ],
+      "tier0": {
+        "u": [
+          0.0,
+          0.0
+        ],
+        "tier": "Tier0",
+        "f0_hz": 92.60634465596921,
+        "q_rms_m3s": 0.00002034944941142087,
+        "q_baseline_m3s": 0.00002034944941142087,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.0,
+        "max_slope": 0.0,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.050000000000000044,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 1.0,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 1.0,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 1.0,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 0.0,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 0.173659
+      },
+      "tier1": {
+        "u": [
+          0.0,
+          0.0
+        ],
+        "tier": "Tier1",
+        "f0_hz": 92.60634465596921,
+        "q_rms_m3s": 0.00002090137035126386,
+        "q_baseline_m3s": 0.00002090137035126386,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.0,
+        "max_slope": 0.0,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.050000000000000044,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 1.0,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 1.0,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 1.0,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 0.0,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 28783.139693999998
+      },
+      "tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.310907540865809e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010339222012975767,
+          "box_pressure_amplitude_pa": 0.09321133369073485,
+          "peak_excursion_m": 7.038586680186028e-7,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.589194605917363e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009595180095701031,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.3762708337940639e-9,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.008393290184500564,
+          "energy_algebraic_relative_closure": 9.54988503804882e-16,
+          "energy_interface_relative_residual": 3.7453896481011582e-19,
+          "energy_scale_j": 2.5638576835237135e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0663886138836104e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00006234765897579786,
+            "box_conservation_relative_residual": 8.83927047365867e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007310906717606833,
+          "port_flow_fundamental_amplitude_m3s": 0.00010339220845981526,
+          "box_pressure_amplitude_pa": 0.9321132329645081,
+          "peak_excursion_m": 7.038586912460185e-6,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.618144285920481e-6,
+          "imd_fraction": null,
+          "compression_db": 9.803816698941704e-7,
+          "peak_mach_bulk": 0.0009595178858732343,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.13762695910703843,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.00839329429554685,
+          "energy_algebraic_relative_closure": 2.542850600239634e-15,
+          "energy_interface_relative_residual": 8.947976567704666e-21,
+          "energy_scale_j": 0.000025638575523404935,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.93624556074581e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00006643088070190596,
+            "box_conservation_relative_residual": 8.18796084807869e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007310824994511476,
+          "port_flow_fundamental_amplitude_m3s": 0.0010339104989850042,
+          "box_pressure_amplitude_pa": 9.32102746136315,
+          "peak_excursion_m": 0.00007038523828440395,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.910587599658708e-6,
+          "imd_fraction": null,
+          "compression_db": 0.00009831065685413906,
+          "peak_mach_bulk": 0.009595062773289212,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 13761462.216059074,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.00839345575433422,
+          "energy_algebraic_relative_closure": 1.2950742798610494e-16,
+          "energy_interface_relative_residual": 2.5810632171975632e-20,
+          "energy_scale_j": 0.0025638445646477552,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.872359371486254e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00011937976353573069,
+            "box_conservation_relative_residual": 1.1314423087105543e-16,
+            "passed": true
+          }
+        }
+      ]
+    },
+    {
+      "u": [
+        0.00025000000000000006,
+        0.0
+      ],
+      "tier0": {
+        "u": [
+          0.00025000000000000006,
+          0.0
+        ],
+        "tier": "Tier0",
+        "f0_hz": 92.60464780897478,
+        "q_rms_m3s": 0.000020348703715588113,
+        "q_baseline_m3s": 0.00002034944941142087,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 9.89567999998727e-6,
+        "max_slope": 0.00015000000000015,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.04996335547868258,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.9991515765027827,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9996999999999997,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999999999010432,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 9.89567999998727e-11,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 0.06969199999999999
+      },
+      "tier1": {
+        "u": [
+          0.00025000000000000006,
+          0.0
+        ],
+        "tier": "Tier1",
+        "f0_hz": 92.60464780897478,
+        "q_rms_m3s": 0.00002090054768459535,
+        "q_baseline_m3s": 0.00002090137035126386,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 9.89567999998727e-6,
+        "max_slope": 0.00015000000000015,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.04996064053912819,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.9991515765027827,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9996999999999997,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999999999010432,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 9.89567999998727e-11,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 27909.043781
+      },
+      "tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.00024999999999981634,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.306853127227133e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010333489860787773,
+          "box_pressure_amplitude_pa": 0.09303447282509361,
+          "peak_excursion_m": 7.039116867657489e-7,
+          "f0_estimate_hz": 40.42265879725092,
+          "thd_fraction": 8.737509924903588e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009591926004125878,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.3723726859375887e-9,
+          "curvature_integral_m3": 1.583308799997224e-6,
+          "energy_physical_relative_closure": 0.008397189752284045,
+          "energy_algebraic_relative_closure": 4.839991018620165e-16,
+          "energy_interface_relative_residual": 2.7453399576645953e-19,
+          "energy_scale_j": 2.563581035700503e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0802894394134911e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 8.05326711791222e-6,
+            "box_conservation_relative_residual": 9.322414131270408e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.00024999999999981634,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0000730685227966924,
+          "port_flow_fundamental_amplitude_m3s": 0.00010333488659079883,
+          "box_pressure_amplitude_pa": 0.9303446219492021,
+          "peak_excursion_m": 7.039115809235935e-6,
+          "f0_estimate_hz": 40.42265879725092,
+          "thd_fraction": 8.468290309057127e-6,
+          "imd_fraction": null,
+          "compression_db": 1.0101043161690376e-6,
+          "peak_mach_bulk": 0.0009591926124005198,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.13723714091643502,
+          "curvature_integral_m3": 1.583308799997224e-6,
+          "energy_physical_relative_closure": 0.008397195202603713,
+          "energy_algebraic_relative_closure": 1.7119371802162819e-15,
+          "energy_interface_relative_residual": 8.432172297642265e-20,
+          "energy_scale_j": 0.000025635809004433724,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0609815076607993e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.000011660918642233276,
+            "box_conservation_relative_residual": 8.949508075382794e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.00024999999999981634,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.000730676890482224,
+          "port_flow_fundamental_amplitude_m3s": 0.0010333370425009776,
+          "box_pressure_amplitude_pa": 9.303339842266698,
+          "peak_excursion_m": 0.0000703906463485592,
+          "f0_estimate_hz": 40.42265879725092,
+          "thd_fraction": 0.00001001166594848649,
+          "imd_fraction": null,
+          "compression_db": 0.00010039318717781554,
+          "peak_mach_bulk": 0.009591821618866606,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 13722457.946193065,
+          "curvature_integral_m3": 1.583308799997224e-6,
+          "energy_physical_relative_closure": 0.00839749216584064,
+          "energy_algebraic_relative_closure": 9.621591094871637e-16,
+          "energy_interface_relative_residual": 3.64614564235979e-20,
+          "energy_scale_j": 0.002563567624193896,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.107141883365395e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007835701953595118,
+            "box_conservation_relative_residual": 1.0142716996281985e-16,
+            "passed": true
+          }
+        }
+      ]
+    },
+    {
+      "u": [
+        0.0,
+        0.2
+      ],
+      "tier0": {
+        "u": [
+          0.0,
+          0.2
+        ],
+        "tier": "Tier0",
+        "f0_hz": 90.86940325964703,
+        "q_rms_m3s": 0.00001957850110293293,
+        "q_baseline_m3s": 0.00002034944941142087,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 6.2410752000000045,
+        "max_slope": 0.12000000000000013,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.012114537209284237,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.13152930183890987,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.7599999999999998,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.99937589248,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 0.00006241075200000005,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 0.139505
+      },
+      "tier1": {
+        "u": [
+          0.0,
+          0.2
+        ],
+        "tier": "Tier1",
+        "f0_hz": 90.86940325964703,
+        "q_rms_m3s": 0.00002019259423206659,
+        "q_baseline_m3s": 0.00002090137035126386,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 6.2410752000000045,
+        "max_slope": 0.12000000000000013,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.01608949043599861,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.13152930183890987,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.7599999999999998,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.99937589248,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 0.00006241075200000005,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 27765.074572
+      },
+      "tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.2000000000000001
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.3548632081485035e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010401309576352759,
+          "box_pressure_amplitude_pa": 0.09512959660088749,
+          "peak_excursion_m": 7.03280201576807e-7,
+          "f0_estimate_hz": 39.65601308173439,
+          "thd_fraction": 6.657917874451037e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00011404772094728213,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 5.481506853556185e-9,
+          "curvature_integral_m3": 0.9985720320000001,
+          "energy_physical_relative_closure": 0.008350330907490058,
+          "energy_algebraic_relative_closure": 5.059416525800323e-16,
+          "energy_interface_relative_residual": 5.723660060645986e-20,
+          "energy_scale_j": 2.566844526608378e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0723052612044864e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 6.606050464898094e-6,
+            "box_conservation_relative_residual": 9.116879131245751e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.2000000000000001
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007354862338904767,
+          "port_flow_fundamental_amplitude_m3s": 0.00010401308351558062,
+          "box_pressure_amplitude_pa": 0.9512958562580782,
+          "peak_excursion_m": 7.032800968012013e-6,
+          "f0_estimate_hz": 39.65601308173439,
+          "thd_fraction": 6.820331381762151e-6,
+          "imd_fraction": null,
+          "compression_db": 1.022797381038183e-6,
+          "peak_mach_bulk": 0.0011404769274719383,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.5481501689808131,
+          "curvature_integral_m3": 0.9985720320000001,
+          "energy_physical_relative_closure": 0.008350336731738035,
+          "energy_algebraic_relative_closure": 1.3003667937306728e-15,
+          "energy_interface_relative_residual": 3.188570548431415e-19,
+          "energy_scale_j": 0.000025668443887266,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.558496341203828e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00001026726966259986,
+            "box_conservation_relative_residual": 8.022845645151577e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.2000000000000001
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007354776920941759,
+          "port_flow_fundamental_amplitude_m3s": 0.0010401187975840466,
+          "box_pressure_amplitude_pa": 9.512848922286658,
+          "peak_excursion_m": 0.00007032751284848645,
+          "f0_estimate_hz": 39.65601308173439,
+          "thd_fraction": 0.000011697314547730283,
+          "imd_fraction": null,
+          "compression_db": 0.00010154632895099794,
+          "peak_mach_bulk": 0.011404610274716724,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 54809942.052107796,
+          "curvature_integral_m3": 0.9985720320000001,
+          "energy_physical_relative_closure": 0.008350654845011091,
+          "energy_algebraic_relative_closure": 1.1444113043980113e-15,
+          "energy_interface_relative_residual": 8.056438613402415e-20,
+          "energy_scale_j": 0.0025668308673542127,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0443206452396653e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007959320963707576,
+            "box_conservation_relative_residual": 1.0502557773422073e-16,
+            "passed": true
+          }
+        }
+      ]
+    },
+    {
+      "u": [
+        0.0153777489057228,
+        0.028578258339773364
+      ],
+      "tier0": {
+        "u": [
+          0.0153777489057228,
+          0.028578258339773364
+        ],
+        "tier": "Tier0",
+        "f0_hz": 92.26475457516253,
+        "q_rms_m3s": 0.000020197538755843086,
+        "q_baseline_m3s": 0.00002034944941142087,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.0719735529736959,
+        "max_slope": 0.017146955003864154,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.042534900944665166,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.8292049595966589,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9657060899922717,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999928026447026,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 7.19735529736959e-7,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 0.06980199999999999
+      },
+      "tier1": {
+        "u": [
+          0.0153777489057228,
+          0.028578258339773364
+        ],
+        "tier": "Tier1",
+        "f0_hz": 92.26475457516253,
+        "q_rms_m3s": 0.00002075382920782948,
+        "q_baseline_m3s": 0.00002090137035126386,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.0719735529736959,
+        "max_slope": 0.017146955003864154,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.04294107797934621,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.8292049595966589,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9657060899922717,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.9999928026447026,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 7.19735529736959e-7,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 27837.386842
+      },
+      "tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.015377748905722605,
+            0.02857825833977321
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.316841112949405e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010347606893701207,
+          "box_pressure_amplitude_pa": 0.09347055264791933,
+          "peak_excursion_m": 7.037802553983074e-7,
+          "f0_estimate_hz": 40.26523590453499,
+          "thd_fraction": 8.213145734452291e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009826274040401241,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.6649865207512023e-9,
+          "curvature_integral_m3": 0.01151576847579116,
+          "energy_physical_relative_closure": 0.00838745931569338,
+          "energy_algebraic_relative_closure": 1.717741329214589e-15,
+          "energy_interface_relative_residual": 1.5987267542847782e-19,
+          "energy_scale_j": 2.564260803958691e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0446827224138664e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 7.804631603977524e-6,
+            "box_conservation_relative_residual": 9.278510983970783e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.015377748905722605,
+            0.02857825833977321
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007316840259166773,
+          "port_flow_fundamental_amplitude_m3s": 0.00010347605684093628,
+          "box_pressure_amplitude_pa": 0.9347054191743935,
+          "peak_excursion_m": 7.037802235861599e-6,
+          "f0_estimate_hz": 40.26523590453499,
+          "thd_fraction": 7.530044721634872e-6,
+          "imd_fraction": null,
+          "compression_db": 1.0153573351382165e-6,
+          "peak_mach_bulk": 0.0009826271469414827,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.16649849636920583,
+          "curvature_integral_m3": 0.01151576847579116,
+          "energy_physical_relative_closure": 0.008387464826417005,
+          "energy_algebraic_relative_closure": 1.7042575535087845e-15,
+          "energy_interface_relative_residual": 2.833920521240424e-19,
+          "energy_scale_j": 0.00002564260667786226,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0005331111752853e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00001143993015439597,
+            "box_conservation_relative_residual": 8.165081066819997e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.015377748905722605,
+            0.02857825833977321
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.000731675628116559,
+          "port_flow_fundamental_amplitude_m3s": 0.0010347486690342827,
+          "box_pressure_amplitude_pa": 9.346946840766046,
+          "peak_excursion_m": 0.0000703773974177891,
+          "f0_estimate_hz": 40.26523590453499,
+          "thd_fraction": 4.989913441343776e-6,
+          "imd_fraction": null,
+          "compression_db": 0.00010090054444787485,
+          "peak_mach_bulk": 0.009826134130876496,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 16648317.960218599,
+          "curvature_integral_m3": 0.01151576847579116,
+          "energy_physical_relative_closure": 0.008387765380265269,
+          "energy_algebraic_relative_closure": 1.3133690319750735e-15,
+          "energy_interface_relative_residual": 3.9984067371344856e-19,
+          "energy_scale_j": 0.0025642473031502206,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.435475178281046e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007854290730750823,
+            "box_conservation_relative_residual": 1.0688776376883003e-16,
+            "passed": true
+          }
+        }
+      ]
+    },
+    {
+      "u": [
+        0.013591722953684573,
+        0.012254386361375892
+      ],
+      "tier0": {
+        "u": [
+          0.013591722953684573,
+          0.012254386361375892
+        ],
+        "tier": "Tier0",
+        "f0_hz": 92.41322459899271,
+        "q_rms_m3s": 0.000020263821817520837,
+        "q_baseline_m3s": 0.00002034944941142087,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.02339707535019663,
+        "max_slope": 0.008155033772210829,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.045792141980412815,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.9034399715117516,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9836899324555783,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999997660292465,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.339707535019663e-7,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 0.069552
+      },
+      "tier1": {
+        "u": [
+          0.013591722953684573,
+          0.012254386361375892
+        ],
+        "tier": "Tier1",
+        "f0_hz": 92.41322459899271,
+        "q_rms_m3s": 0.000020815479026949543,
+        "q_baseline_m3s": 0.00002090137035126386,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.02339707535019663,
+        "max_slope": 0.008155033772210829,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.04589063669650151,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.9034399715117516,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9836899324555783,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999997660292465,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 2.339707535019663e-7,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 27984.908595
+      },
+      "tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.013591722953684628,
+            0.01225438636137579
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.31267105523466e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010341714503454132,
+          "box_pressure_amplitude_pa": 0.09328853263984388,
+          "peak_excursion_m": 7.038349321708889e-7,
+          "f0_estimate_hz": 40.331168359911736,
+          "thd_fraction": 8.426437301712002e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.0000970262687206959,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.5046047419630983e-9,
+          "curvature_integral_m3": 0.0037435320560313813,
+          "energy_physical_relative_closure": 0.008391522772129833,
+          "energy_algebraic_relative_closure": 9.146170041660693e-16,
+          "energy_interface_relative_residual": 4.123281126689068e-19,
+          "energy_scale_j": 2.563977081014378e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0419074938923204e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 7.940721174324672e-6,
+            "box_conservation_relative_residual": 9.29672305817956e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.013591722953684628,
+            0.01225438636137579
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007312670203774534,
+          "port_flow_fundamental_amplitude_m3s": 0.00010341713296595231,
+          "box_pressure_amplitude_pa": 0.9328852194565487,
+          "peak_excursion_m": 7.038349006344933e-6,
+          "f0_estimate_hz": 40.331168359911736,
+          "thd_fraction": 7.889476974400098e-6,
+          "imd_fraction": null,
+          "compression_db": 1.0136272701483298e-6,
+          "peak_mach_bulk": 0.0009702626999935604,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.15046033372870118,
+          "curvature_integral_m3": 0.0037435320560313813,
+          "energy_physical_relative_closure": 0.008391528253763134,
+          "energy_algebraic_relative_closure": 1.2254255423968603e-15,
+          "energy_interface_relative_residual": 1.5009216678760513e-19,
+          "energy_scale_j": 0.00002563976945164637,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.570682937970635e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.000011559920233929262,
+            "box_conservation_relative_residual": 7.43737053341424e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.013591722953684628,
+            0.01225438636137579
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007312586448308387,
+          "port_flow_fundamental_amplitude_m3s": 0.0010341594563136817,
+          "box_pressure_amplitude_pa": 9.328745189738935,
+          "peak_excursion_m": 0.00007038292291827814,
+          "f0_estimate_hz": 40.331168359911736,
+          "thd_fraction": 7.134462241208193e-6,
+          "imd_fraction": null,
+          "compression_db": 0.0001007371070091833,
+          "peak_mach_bulk": 0.009702522921064808,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 15044651.477440193,
+          "curvature_integral_m3": 0.0037435320560313813,
+          "energy_physical_relative_closure": 0.008391827134102386,
+          "energy_algebraic_relative_closure": 9.065099040315125e-16,
+          "energy_interface_relative_residual": 2.013135833707008e-19,
+          "energy_scale_j": 0.002563963611350685,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.325016347366672e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007844013253498725,
+            "box_conservation_relative_residual": 1.0114768035969221e-16,
+            "passed": true
+          }
+        }
+      ]
+    },
+    {
+      "u": [
+        0.0005000000000000001,
+        0.0
+      ],
+      "tier0": {
+        "u": [
+          0.0005000000000000001,
+          0.0
+        ],
+        "tier": "Tier0",
+        "f0_hz": 92.6029506770551,
+        "q_rms_m3s": 0.00002034795790551919,
+        "q_baseline_m3s": 0.00002034944941142087,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.000039582720000012723,
+        "max_slope": 0.0003000000000003,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.04992670534364241,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.9983030105429478,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9993999999999994,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999999996041728,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 3.9582720000012723e-10,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 0.069653
+      },
+      "tier1": {
+        "u": [
+          0.0005000000000000001,
+          0.0
+        ],
+        "tier": "Tier1",
+        "f0_hz": 92.6029506770551,
+        "q_rms_m3s": 0.000020899724920409387,
+        "q_baseline_m3s": 0.00002090137035126386,
+        "thd": null,
+        "noise_proxy": null,
+        "compression_db": null,
+        "peak_mach": null,
+        "curvature_m3": 0.000039582720000012723,
+        "max_slope": 0.0003000000000003,
+        "constraints": [
+          {
+            "name": "airflow",
+            "value": 0.04992127641265531,
+            "enforced": true
+          },
+          {
+            "name": "tuning",
+            "value": 0.9983030105429478,
+            "enforced": true
+          },
+          {
+            "name": "compression",
+            "value": 0.0,
+            "enforced": false
+          },
+          {
+            "name": "slope",
+            "value": 0.9993999999999994,
+            "enforced": true
+          },
+          {
+            "name": "curvature",
+            "value": 0.999999996041728,
+            "enforced": true
+          }
+        ],
+        "feasible": true,
+        "max_violation": 0.0,
+        "objective_j": 3.9582720000012723e-10,
+        "objective_partial": true,
+        "cached": false,
+        "wall_time_ms": 27683.005736
+      },
+      "tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0005000000000000664,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.306909887541825e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010333570124011094,
+          "box_pressure_amplitude_pa": 0.09303695213250938,
+          "peak_excursion_m": 7.039109343993124e-7,
+          "f0_estimate_hz": 40.4217766568561,
+          "thd_fraction": 8.734411129420372e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009593917630915334,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.374655985597128e-9,
+          "curvature_integral_m3": 6.333235200001366e-6,
+          "energy_physical_relative_closure": 0.008397134477647845,
+          "energy_algebraic_relative_closure": 3.0330564655232393e-16,
+          "energy_interface_relative_residual": 1.1304323959093066e-19,
+          "energy_scale_j": 2.5635849007041457e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.1327060977450109e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 8.052885833123307e-6,
+            "box_conservation_relative_residual": 9.322161977251588e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0005000000000000664,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007306909039933891,
+          "port_flow_fundamental_amplitude_m3s": 0.0001033356892223364,
+          "box_pressure_amplitude_pa": 0.9303694150152939,
+          "peak_excursion_m": 7.039108285642354e-6,
+          "f0_estimate_hz": 40.4217766568561,
+          "thd_fraction": 8.462347983863988e-6,
+          "imd_fraction": null,
+          "compression_db": 1.010154943355144e-6,
+          "peak_mach_bulk": 0.0009593917750980967,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.13746547066355475,
+          "curvature_integral_m3": 6.333235200001366e-6,
+          "energy_physical_relative_closure": 0.008397139928154792,
+          "energy_algebraic_relative_closure": 3.448649916380842e-16,
+          "energy_interface_relative_residual": 1.5855989174509011e-19,
+          "energy_scale_j": 0.000025635847654391022,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.359884231622834e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00001166055076826807,
+            "box_conservation_relative_residual": 8.203493838731747e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0005000000000000664,
+            0.0
+          ],
+          "n_control_points": 5,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007306825660151261,
+          "port_flow_fundamental_amplitude_m3s": 0.001033345068133223,
+          "box_pressure_amplitude_pa": 9.30358776490602,
+          "peak_excursion_m": 0.00007039057110130542,
+          "f0_estimate_hz": 40.4217766568561,
+          "thd_fraction": 9.985063874610662e-6,
+          "imd_fraction": null,
+          "compression_db": 0.00010039820799295551,
+          "peak_mach_bulk": 0.009593813235376265,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 13745288.768057754,
+          "curvature_integral_m3": 6.333235200001366e-6,
+          "energy_physical_relative_closure": 0.008397436904617141,
+          "energy_algebraic_relative_closure": 6.753606646091324e-16,
+          "energy_interface_relative_residual": 6.080664695335004e-19,
+          "energy_scale_j": 0.002563571488413242,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.505488609624382e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007835730432946207,
+            "box_conservation_relative_residual": 1.0142442675465787e-16,
+            "passed": true
+          }
+        }
+      ]
+    }
+  ],
+  "winner_u": [
+    0.0153777489057228,
+    0.028578258339773364
+  ],
+  "winner_is_straight": false,
+  "equal_voltage": [
+    {
+      "voltage_peak_v": 0.1,
+      "q_straight_m3s": 0.00007310906717606833,
+      "q_winner_m3s": 0.00007316840259166773,
+      "airflow_ratio": 1.0008116013223982,
+      "d_thd_abs": -1.0880995642856088e-6,
+      "d_thd_rel": -0.1262568284059997,
+      "d_noise_ratio": 1.2097811173733248,
+      "d_noise_db": 0.8270680162564885,
+      "d_compression_db": 3.4975665244046085e-8,
+      "d_mach_ratio": 1.0240842421058334
+    },
+    {
+      "voltage_peak_v": 1.0,
+      "q_straight_m3s": 0.0007310824994511476,
+      "q_winner_m3s": 0.000731675628116559,
+      "airflow_ratio": 1.0008113019609368,
+      "d_thd_abs": -3.920674158314932e-6,
+      "d_thd_rel": -0.4400017523496544,
+      "d_noise_ratio": 1.2097782705671116,
+      "d_noise_db": 0.8270577966087658,
+      "d_compression_db": 2.589887593735786e-6,
+      "d_mach_ratio": 1.0240823184847254
+    }
+  ],
+  "equal_airflow": [
+    {
+      "v_straight_v": 0.1,
+      "v_winner_v": 0.09991890568401428,
+      "match_residual_pct": 1.910758313013729e-8,
+      "d_thd_rel": -0.12618689572961353,
+      "d_noise_db": 0.7988815413874241
+    },
+    {
+      "v_straight_v": 1.0,
+      "v_winner_v": 0.99918935571636,
+      "match_residual_pct": 1.8333718791487691e-6,
+      "d_thd_rel": -0.44038685732093275,
+      "d_noise_db": 0.7988823459720829
+    }
+  ],
+  "sensitivity": [
+    {
+      "n_control_points": 4,
+      "best_u": [
+        0.026208214596884837
+      ],
+      "best_tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.026208214596884754
+          ],
+          "n_control_points": 4,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.314787707908959e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010344705644530488,
+          "box_pressure_amplitude_pa": 0.09338093043612249,
+          "peak_excursion_m": 7.038071972394781e-7,
+          "f0_estimate_hz": 40.298193535835665,
+          "thd_fraction": 8.318854311129203e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009804673053074888,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.6359516543118612e-9,
+          "curvature_integral_m3": 0.007148177217262811,
+          "energy_physical_relative_closure": 0.008389460375650864,
+          "energy_algebraic_relative_closure": 2.0936617052120023e-15,
+          "energy_interface_relative_residual": 2.0123001947168818e-19,
+          "energy_scale_j": 2.56412110996965e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0619583946266888e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 7.86676284434704e-6,
+            "box_conservation_relative_residual": 9.287457264519649e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.026208214596884754
+          ],
+          "n_control_points": 4,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007314786854814684,
+          "port_flow_fundamental_amplitude_m3s": 0.00010344704435607152,
+          "box_pressure_amplitude_pa": 0.9338091971727361,
+          "peak_excursion_m": 7.038071667794464e-6,
+          "f0_estimate_hz": 40.298193535835665,
+          "thd_fraction": 7.716668985695989e-6,
+          "imd_fraction": null,
+          "compression_db": 1.0150675759835887e-6,
+          "peak_mach_bulk": 0.000980467051170172,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.16359501248420896,
+          "curvature_integral_m3": 0.007148177217262811,
+          "energy_physical_relative_closure": 0.008389465870576209,
+          "energy_algebraic_relative_closure": 5.140923683366377e-16,
+          "energy_interface_relative_residual": 2.245585369740408e-19,
+          "energy_scale_j": 0.000025641209738817308,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.344615354655641e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.000011488015058688602,
+            "box_conservation_relative_residual": 7.429958241769727e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.026208214596884754
+          ],
+          "n_control_points": 4,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007314702936912799,
+          "port_flow_fundamental_amplitude_m3s": 0.001034458549749631,
+          "box_pressure_amplitude_pa": 9.337984721864,
+          "peak_excursion_m": 0.00007038010624273962,
+          "f0_estimate_hz": 40.298193535835665,
+          "thd_fraction": 5.935337290015012e-6,
+          "imd_fraction": null,
+          "compression_db": 0.0001008815499825265,
+          "peak_mach_bulk": 0.009804533914283192,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 16357996.563671978,
+          "curvature_integral_m3": 0.007148177217262811,
+          "energy_physical_relative_closure": 0.00838976550661755,
+          "energy_algebraic_relative_closure": 2.7088060278473053e-16,
+          "energy_interface_relative_residual": 5.790666468161576e-20,
+          "energy_scale_j": 0.0025641076164486403,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.163675438760653e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007839134866738641,
+            "box_conservation_relative_residual": 1.0104692700166991e-16,
+            "passed": true
+          }
+        }
+      ],
+      "straight_tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0
+          ],
+          "n_control_points": 4,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.310907540865809e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010339222012975767,
+          "box_pressure_amplitude_pa": 0.09321133369073485,
+          "peak_excursion_m": 7.038586680186028e-7,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.589194605917363e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009595180095701031,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.3762708337940639e-9,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.008393290184500564,
+          "energy_algebraic_relative_closure": 9.54988503804882e-16,
+          "energy_interface_relative_residual": 3.7453896481011582e-19,
+          "energy_scale_j": 2.5638576835237135e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0663886138836104e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00006234765897579786,
+            "box_conservation_relative_residual": 8.83927047365867e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0
+          ],
+          "n_control_points": 4,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007310906717606833,
+          "port_flow_fundamental_amplitude_m3s": 0.00010339220845981526,
+          "box_pressure_amplitude_pa": 0.9321132329645081,
+          "peak_excursion_m": 7.038586912460185e-6,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.618144285920481e-6,
+          "imd_fraction": null,
+          "compression_db": 9.803816698941704e-7,
+          "peak_mach_bulk": 0.0009595178858732343,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.13762695910703843,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.00839329429554685,
+          "energy_algebraic_relative_closure": 2.542850600239634e-15,
+          "energy_interface_relative_residual": 8.947976567704666e-21,
+          "energy_scale_j": 0.000025638575523404935,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.93624556074581e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00006643088070190596,
+            "box_conservation_relative_residual": 8.18796084807869e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0
+          ],
+          "n_control_points": 4,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007310824994511476,
+          "port_flow_fundamental_amplitude_m3s": 0.0010339104989850042,
+          "box_pressure_amplitude_pa": 9.32102746136315,
+          "peak_excursion_m": 0.00007038523828440395,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.910587599658708e-6,
+          "imd_fraction": null,
+          "compression_db": 0.00009831065685413906,
+          "peak_mach_bulk": 0.009595062773289212,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 13761462.216059074,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.00839345575433422,
+          "energy_algebraic_relative_closure": 1.2950742798610494e-16,
+          "energy_interface_relative_residual": 2.5810632171975632e-20,
+          "energy_scale_j": 0.0025638445646477552,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.872359371486254e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00011937976353573069,
+            "box_conservation_relative_residual": 1.1314423087105543e-16,
+            "passed": true
+          }
+        }
+      ],
+      "max_rel_change_vs_n5": 0.18946698370315512,
+      "within_tolerance": false
+    },
+    {
+      "n_control_points": 7,
+      "best_u": [
+        0.002934513235544611,
+        0.015377748905722948,
+        0.026208214596884837,
+        0.021169080251684163
+      ],
+      "best_tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0029345132355447848,
+            0.015377748905723038,
+            0.026208214596884754,
+            0.02116908025168434
+          ],
+          "n_control_points": 7,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.316847758827988e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010347616282866178,
+          "box_pressure_amplitude_pa": 0.09347084269264011,
+          "peak_excursion_m": 7.037801681763387e-7,
+          "f0_estimate_hz": 40.265222038291164,
+          "thd_fraction": 8.213275795308487e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009807447152108385,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.6396363865712394e-9,
+          "curvature_integral_m3": 0.015357500211525786,
+          "energy_physical_relative_closure": 0.00838745284143537,
+          "energy_algebraic_relative_closure": 8.661285738684889e-16,
+          "energy_interface_relative_residual": 8.229897358121753e-20,
+          "energy_scale_j": 2.5642612560223746e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.257229234676512e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 7.771009306222695e-6,
+            "box_conservation_relative_residual": 9.278482108080457e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0029345132355447848,
+            0.015377748905723038,
+            0.026208214596884754,
+            0.02116908025168434
+          ],
+          "n_control_points": 7,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007316846903290704,
+          "port_flow_fundamental_amplitude_m3s": 0.00010347615070774387,
+          "box_pressure_amplitude_pa": 0.934708319404595,
+          "peak_excursion_m": 7.037801365945335e-6,
+          "f0_estimate_hz": 40.265222038291164,
+          "thd_fraction": 7.5339544334090834e-6,
+          "imd_fraction": null,
+          "compression_db": 1.0174416843542031e-6,
+          "peak_mach_bulk": 0.000980744459109915,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.16396348500712882,
+          "curvature_integral_m3": 0.015357500211525786,
+          "energy_physical_relative_closure": 0.008387458352000528,
+          "energy_algebraic_relative_closure": 9.878704974896982e-16,
+          "energy_interface_relative_residual": 6.300400226650885e-20,
+          "energy_scale_j": 0.000025642611195692767,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.895462450020151e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.000011421864820193568,
+            "box_conservation_relative_residual": 8.907333533788901e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0029345132355447848,
+            0.015377748905723038,
+            0.026208214596884754,
+            0.02116908025168434
+          ],
+          "n_control_points": 7,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007316762753100929,
+          "port_flow_fundamental_amplitude_m3s": 0.0010347495833222624,
+          "box_pressure_amplitude_pa": 9.346975626755164,
+          "peak_excursion_m": 0.00007037738752250055,
+          "f0_estimate_hz": 40.265222038291164,
+          "thd_fraction": 4.962308296657466e-6,
+          "imd_fraction": null,
+          "compression_db": 0.00010110718946527009,
+          "peak_mach_bulk": 0.009807307359095798,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 16394837.055540916,
+          "curvature_integral_m3": 0.015357500211525786,
+          "energy_physical_relative_closure": 0.008387758996314809,
+          "energy_algebraic_relative_closure": 2.810397855909598e-15,
+          "energy_interface_relative_residual": 2.0951712352221851e-19,
+          "energy_scale_j": 0.0025642477274475262,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 8.981790183040967e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00007875657666319571,
+            "box_conservation_relative_residual": 1.0688744317336018e-16,
+            "passed": true
+          }
+        }
+      ],
+      "straight_tier2": [
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "n_control_points": 7,
+          "voltage_peak_v": 0.01,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 7.310907540865809e-6,
+          "port_flow_fundamental_amplitude_m3s": 0.000010339222012975767,
+          "box_pressure_amplitude_pa": 0.09321133369073485,
+          "peak_excursion_m": 7.038586680186028e-7,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.589194605917363e-6,
+          "imd_fraction": null,
+          "compression_db": null,
+          "peak_mach_bulk": 0.00009595180095701031,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 1.3762708337940639e-9,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.008393290184500564,
+          "energy_algebraic_relative_closure": 9.54988503804882e-16,
+          "energy_interface_relative_residual": 3.7453896481011582e-19,
+          "energy_scale_j": 2.5638576835237135e-7,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 1.0663886138836104e-15,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00006234765897579786,
+            "box_conservation_relative_residual": 8.83927047365867e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "n_control_points": 7,
+          "voltage_peak_v": 0.1,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.00007310906717606833,
+          "port_flow_fundamental_amplitude_m3s": 0.00010339220845981526,
+          "box_pressure_amplitude_pa": 0.9321132329645081,
+          "peak_excursion_m": 7.038586912460185e-6,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.618144285920481e-6,
+          "imd_fraction": null,
+          "compression_db": 9.803816698941704e-7,
+          "peak_mach_bulk": 0.0009595178858732343,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 0.13762695910703843,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.00839329429554685,
+          "energy_algebraic_relative_closure": 2.542850600239634e-15,
+          "energy_interface_relative_residual": 8.947976567704666e-21,
+          "energy_scale_j": 0.000025638575523404935,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.93624556074581e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00006643088070190596,
+            "box_conservation_relative_residual": 8.18796084807869e-17,
+            "passed": true
+          }
+        },
+        {
+          "schema_version": 1,
+          "provenance": "Tier2MeridianSlot[CoupledP2P1BDF2,NoStabilisation,AffineBoxClosure]",
+          "profile_normalized": [
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "n_control_points": 7,
+          "voltage_peak_v": 1.0,
+          "frequency_hz": 159.15369311606253,
+          "second_tone_frequency_hz": null,
+          "dt_s": 0.00002493347085172649,
+          "steps_completed": 10080,
+          "tail_samples": 2016,
+          "n_tail_snapshots": 0,
+          "port_flow_rms_m3s": 0.0007310824994511476,
+          "port_flow_fundamental_amplitude_m3s": 0.0010339104989850042,
+          "box_pressure_amplitude_pa": 9.32102746136315,
+          "peak_excursion_m": 0.00007038523828440395,
+          "f0_estimate_hz": 40.42354079879238,
+          "thd_fraction": 8.910587599658708e-6,
+          "imd_fraction": null,
+          "compression_db": 0.00009831065685413906,
+          "peak_mach_bulk": 0.009595062773289212,
+          "peak_mach_field": null,
+          "separation_fraction": null,
+          "turbulence_power_trend": 13761462.216059074,
+          "curvature_integral_m3": 0.0,
+          "energy_physical_relative_closure": 0.00839345575433422,
+          "energy_algebraic_relative_closure": 1.2950742798610494e-16,
+          "energy_interface_relative_residual": 2.5810632171975632e-20,
+          "energy_scale_j": 0.0025638445646477552,
+          "health": {
+            "dissipations_nonnegative": true,
+            "max_accepted_linear_relative_residual": 9.872359371486254e-16,
+            "linear_residual_ok": true,
+            "cap_continuity_relative_error": 0.00011937976353573069,
+            "box_conservation_relative_residual": 1.1314423087105543e-16,
+            "passed": true
+          }
+        }
+      ],
+      "max_rel_change_vs_n5": 0.015225616502722968,
+      "within_tolerance": true
+    }
+  ],
+  "criterion_1": {
+    "passed": true,
+    "outcome": "feasible",
+    "detail": "SC1: Q_ratio_tier0=0.9925 (>=0.95: true), Q_ratio_tier2=1.0008 (>=0.95: true), |f0-f_target|=0.342 Hz (<=2: true), compression=0.0001 dB (<=1 dB: true)"
+  },
+  "criterion_2": {
+    "passed": true,
+    "outcome": "null-documented",
+    "detail": "SC2: no equal-airflow improvement under inward-only constraint (documented null result, Pareto front archived): @V_s=0.1 V: dTHD=-12.62%, dNoise=+0.799 dB (match +0.00%); @V_s=1 V: dTHD=-44.04%, dNoise=+0.799 dB (match +0.00%)"
+  },
+  "notes": "Step-7 campaign N=5: Tier-0 grid 121 + AL-BOBYQA refine (3 starts); Tier-1 coarse-mesh (0.02 m) re-rank of quota; Tier-2 production (252 spc, 40/8 cycles, reference mesh) at 3 drives incl Vmax=1 V with per-candidate compression refs; Tier-1 f0 is the embedded Tier-0 screen (tautological tuning agreement), so the Tier-1 cross-check is the airflow-ratio comparison; searched Pareto front (if run) at /home/pierre/src/all_of_sonium/sonium-portopt/crates/sonium-sim-speaker-modeling/fixtures/port_optim_step7/pareto_front_tier2_coarse.json"
+}

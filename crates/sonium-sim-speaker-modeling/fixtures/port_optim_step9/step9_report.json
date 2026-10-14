@@ -1,0 +1,676 @@
+{
+  "schema_version": 1,
+  "provenance": "PortOptimStep9Promotion[Tier2RegeneratedLadder,SplineLRFTransferGate]",
+  "case": {
+    "schema_version": 1,
+    "density_kg_per_m3": 1.2,
+    "sound_speed_m_per_s": 343.0,
+    "dynamic_viscosity_pa_s": 0.0000185,
+    "thermal_diffusivity_m2_per_s": 0.000022,
+    "box_volume_m3": 0.005,
+    "driver_mms_kg": 0.02,
+    "driver_rms_kg_per_s": 1.0,
+    "driver_kms_n_per_m": 4000.0,
+    "voice_coil_resistance_ohm": 6.0,
+    "voice_coil_inductance_h": 0.0005,
+    "voice_coil_bl_n_per_a": 10.0,
+    "diaphragm_area_m2": 0.01,
+    "xmax_m": 0.005,
+    "port_radius_r0_m": 0.025,
+    "port_length_l_m": 0.1,
+    "end_correction_radius_factor": 1.46,
+    "tier1_chamber_length_m": 0.05,
+    "tier1_chamber_radius_m": 0.08,
+    "tier1_mesh_size_m": 0.01,
+    "tier1_frequency_factors": [
+      0.75,
+      1.0,
+      1.25
+    ],
+    "tier2_duct_length_m": 0.1,
+    "tier2_duct_height_m": 0.02,
+    "tier2_chamber_length_m": 0.05,
+    "tier2_chamber_height_m": 0.08,
+    "tier2_mesh_size_m": 0.01,
+    "tier2_samples_per_cycle": 252,
+    "tier2_total_cycles": 40,
+    "tier2_tail_cycles": 8,
+    "tier2_drives_v_peak": [
+      0.01,
+      0.1,
+      1.0
+    ]
+  },
+  "f_target_hz": 92.60634465596921,
+  "n_control_points": 5,
+  "winner_u": [
+    0.0153777489057228,
+    0.028578258339773364
+  ],
+  "ladder_voltage_peak_v": 1.0,
+  "low_drive_voltage_peak_v": 0.01,
+  "ladder_config": {
+    "spatial_mesh_sizes_m": [
+      0.016,
+      0.012,
+      0.01
+    ],
+    "temporal_samples_per_cycle": [
+      252,
+      504
+    ],
+    "total_cycles": 40,
+    "tail_cycles": 8,
+    "voltage_peak_v": 1.0
+  },
+  "promotion_evidence": {
+    "schema_version": 1,
+    "provenance": "port-optim-step9-winner.v1",
+    "frequency_hz": 159.15369311606253,
+    "spatial_levels": [
+      {
+        "mesh_size_m": 0.016,
+        "dt_s": 0.000012466735425863246,
+        "frequency_hz": 159.15369311606253,
+        "port_flow": {
+          "real": -0.00075171155539299,
+          "imaginary": 0.0007087433153807503
+        },
+        "box_pressure": {
+          "real": 6.409333824465144,
+          "imaginary": 6.809019592573672
+        },
+        "diaphragm_flow": {
+          "real": -0.0005061434344154615,
+          "imaginary": 0.00048643461920463754
+        },
+        "max_linear_relative_residual": 7.255673034348467e-16,
+        "max_box_conservation_relative_residual": 1.0388610822637729e-16,
+        "cap_continuity_relative_error": 0.000963622885463673,
+        "energy_algebraic_relative_closure": 2.1168407713933793e-17,
+        "energy_physical_relative_closure": 0.00417765404419553,
+        "energy_interface_relative_residual": 1.5094393203457164e-19
+      },
+      {
+        "mesh_size_m": 0.012,
+        "dt_s": 0.000012466735425863246,
+        "frequency_hz": 159.15369311606253,
+        "port_flow": {
+          "real": -0.0007511672169912638,
+          "imaginary": 0.0007083302248688605
+        },
+        "box_pressure": {
+          "real": 6.3949927973901195,
+          "imaginary": 6.793895625779888
+        },
+        "diaphragm_flow": {
+          "real": -0.0005061372785181197,
+          "imaginary": 0.000486525967107441
+        },
+        "max_linear_relative_residual": 8.877538380204293e-16,
+        "max_box_conservation_relative_residual": 1.0114336712868423e-16,
+        "cap_continuity_relative_error": 0.0007540528922773924,
+        "energy_algebraic_relative_closure": 2.209076561419247e-15,
+        "energy_physical_relative_closure": 0.004180401480781972,
+        "energy_interface_relative_residual": 1.2473614493222946e-19
+      },
+      {
+        "mesh_size_m": 0.01,
+        "dt_s": 0.000012466735425863246,
+        "frequency_hz": 159.15369311606253,
+        "port_flow": {
+          "real": -0.0007504181425949779,
+          "imaginary": 0.0007078164668668467
+        },
+        "box_pressure": {
+          "real": 6.376915329519175,
+          "imaginary": 6.772901388759663
+        },
+        "diaphragm_flow": {
+          "real": -0.0005061349199590227,
+          "imaginary": 0.00048664764459280734
+        },
+        "max_linear_relative_residual": 8.984287834539069e-16,
+        "max_box_conservation_relative_residual": 1.0144429533767672e-16,
+        "cap_continuity_relative_error": 0.0007819950949039939,
+        "energy_algebraic_relative_closure": 3.5824981589098215e-15,
+        "energy_physical_relative_closure": 0.004183090908198153,
+        "energy_interface_relative_residual": 2.0335144370027622e-20
+      }
+    ],
+    "temporal_levels": [
+      {
+        "mesh_size_m": 0.01,
+        "dt_s": 0.00002493347085172649,
+        "frequency_hz": 159.15369311606253,
+        "port_flow": {
+          "real": -0.0007477137062791905,
+          "imaginary": 0.000714341194026542
+        },
+        "box_pressure": {
+          "real": 6.436748776004126,
+          "imaginary": 6.749635787426933
+        },
+        "diaphragm_flow": {
+          "real": -0.000499751691836125,
+          "imaginary": 0.000495688781479827
+        },
+        "max_linear_relative_residual": 1.0536441078370153e-15,
+        "max_box_conservation_relative_residual": 1.0713213899300119e-16,
+        "cap_continuity_relative_error": 0.0007819954921241706,
+        "energy_algebraic_relative_closure": 5.69548177999136e-16,
+        "energy_physical_relative_closure": 0.008392176444001155,
+        "energy_interface_relative_residual": 7.468686739074282e-20
+      },
+      {
+        "mesh_size_m": 0.01,
+        "dt_s": 0.000012466735425863246,
+        "frequency_hz": 159.15369311606253,
+        "port_flow": {
+          "real": -0.0007504181425949779,
+          "imaginary": 0.0007078164668668467
+        },
+        "box_pressure": {
+          "real": 6.376915329519175,
+          "imaginary": 6.772901388759663
+        },
+        "diaphragm_flow": {
+          "real": -0.0005061349199590227,
+          "imaginary": 0.00048664764459280734
+        },
+        "max_linear_relative_residual": 8.984287834539069e-16,
+        "max_box_conservation_relative_residual": 1.0144429533767672e-16,
+        "cap_continuity_relative_error": 0.0007819950949039939,
+        "energy_algebraic_relative_closure": 3.5824981589098215e-15,
+        "energy_physical_relative_closure": 0.004183090908198153,
+        "energy_interface_relative_residual": 2.0335144370027622e-20
+      }
+    ]
+  },
+  "promotion_gate": {
+    "min_spatial_levels": 3,
+    "min_temporal_levels": 2,
+    "max_spatial_observable_relative_change": 0.02,
+    "max_temporal_observable_relative_change": 0.02,
+    "max_cross_ladder_observable_relative_change": 0.02,
+    "max_linear_relative_residual": 1e-8,
+    "max_box_conservation_relative_residual": 1e-8,
+    "max_cap_continuity_relative_error": 0.003,
+    "max_energy_algebraic_relative_closure": 1e-8,
+    "max_energy_physical_relative_closure": 0.04,
+    "max_energy_interface_relative_residual": 1e-8
+  },
+  "promotion": {
+    "frequency_hz": 159.15369311606253,
+    "spatial_levels": 3,
+    "temporal_levels": 2,
+    "max_spatial_observable_relative_change": 0.002978191457847666,
+    "max_temporal_observable_relative_change": 0.015762443704211388,
+    "cross_ladder_observable_relative_change": 0.0,
+    "promoted_mesh_size_m": 0.01,
+    "promoted_dt_s": 0.000012466735425863246,
+    "promoted_port_flow": [
+      -0.0007504181425949779,
+      0.0007078164668668467
+    ]
+  },
+  "spatial_levels": [
+    {
+      "frequency_hz": 159.15369311606253,
+      "mesh_size_m": 0.016,
+      "dt_s": 0.000012466735425863246,
+      "samples_per_cycle": 504,
+      "steps_completed": 20160,
+      "tail_samples": 4032,
+      "mesh_nodes": 91,
+      "mesh_elements": 128,
+      "port_flow": [
+        -0.00075171155539299,
+        0.0007087433153807503
+      ],
+      "box_pressure": [
+        6.409333824465144,
+        6.809019592573672
+      ],
+      "diaphragm_flow": [
+        -0.0005061434344154615,
+        0.00048643461920463754
+      ],
+      "port_impedance": [
+        7.379535006150323,
+        -9051.063998757432
+      ],
+      "flow_ratio_direct": [
+        1.471654678122081,
+        0.014068082460678135
+      ],
+      "flow_ratio_from_impedance": [
+        1.4717799645212135,
+        0.0005661244892662444
+      ],
+      "transfer_identity_relative_error": 0.009174291374913266,
+      "cap_continuity_relative_error": 0.000963622885463673,
+      "energy_algebraic_relative_closure": 2.1168407713933793e-17,
+      "energy_physical_relative_closure": 0.00417765404419553,
+      "energy_interface_relative_residual": 1.5094393203457164e-19,
+      "energy_scale_j": 0.002560896849534517,
+      "max_linear_relative_residual": 7.255673034348467e-16,
+      "max_box_conservation_relative_residual": 1.0388610822637729e-16,
+      "port_flow_rms_m3s": 0.0007305313905924209,
+      "port_flow_fundamental_amplitude_m3s": 0.0010331443992047994,
+      "box_pressure_amplitude_pa": 9.351059185219881,
+      "thd_fraction": 0.000039012527427762,
+      "noise_proxy": 16442943.159439502,
+      "peak_mach_bulk": 0.009816488146212193
+    },
+    {
+      "frequency_hz": 159.15369311606253,
+      "mesh_size_m": 0.012,
+      "dt_s": 0.000012466735425863246,
+      "samples_per_cycle": 504,
+      "steps_completed": 20160,
+      "tail_samples": 4032,
+      "mesh_nodes": 135,
+      "mesh_elements": 200,
+      "port_flow": [
+        -0.0007511672169912638,
+        0.0007083302248688605
+      ],
+      "box_pressure": [
+        6.3949927973901195,
+        6.793895625779888
+      ],
+      "diaphragm_flow": [
+        -0.0005061372785181197,
+        0.000486525967107441
+      ],
+      "port_impedance": [
+        8.07955362846624,
+        -9036.832918415746
+      ],
+      "flow_ratio_direct": [
+        1.4705631370669885,
+        0.014100774410658393
+      ],
+      "flow_ratio_from_impedance": [
+        1.4706889869024127,
+        0.0006189081942199374
+      ],
+      "transfer_identity_relative_error": 0.009167439559396456,
+      "cap_continuity_relative_error": 0.0007540528922773924,
+      "energy_algebraic_relative_closure": 2.209076561419247e-15,
+      "energy_physical_relative_closure": 0.004180401480781972,
+      "energy_interface_relative_residual": 1.2473614493222946e-19,
+      "energy_scale_j": 0.002560565858401097,
+      "max_linear_relative_residual": 8.877538380204293e-16,
+      "max_box_conservation_relative_residual": 1.0114336712868423e-16,
+      "port_flow_rms_m3s": 0.0007300463406105961,
+      "port_flow_fundamental_amplitude_m3s": 0.001032464960831684,
+      "box_pressure_amplitude_pa": 9.33021707425195,
+      "thd_fraction": 0.00006180669004348555,
+      "noise_proxy": 16356633.556703253,
+      "peak_mach_bulk": 0.009809990288071967
+    },
+    {
+      "frequency_hz": 159.15369311606253,
+      "mesh_size_m": 0.01,
+      "dt_s": 0.000012466735425863246,
+      "samples_per_cycle": 504,
+      "steps_completed": 20160,
+      "tail_samples": 4032,
+      "mesh_nodes": 150,
+      "mesh_elements": 224,
+      "port_flow": [
+        -0.0007504181425949779,
+        0.0007078164668668467
+      ],
+      "box_pressure": [
+        6.376915329519175,
+        6.772901388759663
+      ],
+      "diaphragm_flow": [
+        -0.0005061349199590227,
+        0.00048664764459280734
+      ],
+      "port_impedance": [
+        8.098786706597952,
+        -9017.864241349405
+      ],
+      "flow_ratio_direct": [
+        1.469112100265409,
+        0.014074263776709176
+      ],
+      "flow_ratio_from_impedance": [
+        1.4692373859143533,
+        0.0006191574277742903
+      ],
+      "transfer_identity_relative_error": 0.009158280725652924,
+      "cap_continuity_relative_error": 0.0007819950949039939,
+      "energy_algebraic_relative_closure": 3.5824981589098215e-15,
+      "energy_physical_relative_closure": 0.004183090908198153,
+      "energy_interface_relative_residual": 2.0335144370027622e-20,
+      "energy_scale_j": 0.0025601332774056653,
+      "max_linear_relative_residual": 8.984287834539069e-16,
+      "max_box_conservation_relative_residual": 1.0144429533767672e-16,
+      "port_flow_rms_m3s": 0.0007294076849867901,
+      "port_flow_fundamental_amplitude_m3s": 0.0010315675157271881,
+      "box_pressure_amplitude_pa": 9.302539564103945,
+      "thd_fraction": 0.0000739207323228741,
+      "noise_proxy": 16243238.135117332,
+      "peak_mach_bulk": 0.009801428851016192
+    }
+  ],
+  "temporal_levels": [
+    {
+      "frequency_hz": 159.15369311606253,
+      "mesh_size_m": 0.01,
+      "dt_s": 0.00002493347085172649,
+      "samples_per_cycle": 252,
+      "steps_completed": 10080,
+      "tail_samples": 2016,
+      "mesh_nodes": 150,
+      "mesh_elements": 224,
+      "port_flow": [
+        -0.0007477137062791905,
+        0.000714341194026542
+      ],
+      "box_pressure": [
+        6.436748776004126,
+        6.749635787426933
+      ],
+      "diaphragm_flow": [
+        -0.000499751691836125,
+        0.000495688781479827
+      ],
+      "port_impedance": [
+        8.13347332310985,
+        -9019.26185884792
+      ],
+      "flow_ratio_direct": [
+        1.4688640778921218,
+        0.027530173740372373
+      ],
+      "flow_ratio_from_impedance": [
+        1.4693442401595065,
+        0.0006218996915657905
+      ],
+      "transfer_identity_relative_error": 0.018316031511074676,
+      "cap_continuity_relative_error": 0.0007819954921241706,
+      "energy_algebraic_relative_closure": 5.69548177999136e-16,
+      "energy_physical_relative_closure": 0.008392176444001155,
+      "energy_interface_relative_residual": 7.468686739074282e-20,
+      "energy_scale_j": 0.002563935514984,
+      "max_linear_relative_residual": 1.0536441078370153e-15,
+      "max_box_conservation_relative_residual": 1.0713213899300119e-16,
+      "port_flow_rms_m3s": 0.0007312153115920485,
+      "port_flow_fundamental_amplitude_m3s": 0.0010340982197262643,
+      "box_pressure_amplitude_pa": 9.32680642386798,
+      "thd_fraction": 0.00001018386970954908,
+      "noise_proxy": 16564780.055527285,
+      "peak_mach_bulk": 0.009819971836754383
+    },
+    {
+      "frequency_hz": 159.15369311606253,
+      "mesh_size_m": 0.01,
+      "dt_s": 0.000012466735425863246,
+      "samples_per_cycle": 504,
+      "steps_completed": 20160,
+      "tail_samples": 4032,
+      "mesh_nodes": 150,
+      "mesh_elements": 224,
+      "port_flow": [
+        -0.0007504181425949779,
+        0.0007078164668668467
+      ],
+      "box_pressure": [
+        6.376915329519175,
+        6.772901388759663
+      ],
+      "diaphragm_flow": [
+        -0.0005061349199590227,
+        0.00048664764459280734
+      ],
+      "port_impedance": [
+        8.098786706597952,
+        -9017.864241349405
+      ],
+      "flow_ratio_direct": [
+        1.469112100265409,
+        0.014074263776709176
+      ],
+      "flow_ratio_from_impedance": [
+        1.4692373859143533,
+        0.0006191574277742903
+      ],
+      "transfer_identity_relative_error": 0.009158280725652924,
+      "cap_continuity_relative_error": 0.0007819950949039939,
+      "energy_algebraic_relative_closure": 3.5824981589098215e-15,
+      "energy_physical_relative_closure": 0.004183090908198153,
+      "energy_interface_relative_residual": 2.0335144370027622e-20,
+      "energy_scale_j": 0.0025601332774056653,
+      "max_linear_relative_residual": 8.984287834539069e-16,
+      "max_box_conservation_relative_residual": 1.0144429533767672e-16,
+      "port_flow_rms_m3s": 0.0007294076849867901,
+      "port_flow_fundamental_amplitude_m3s": 0.0010315675157271881,
+      "box_pressure_amplitude_pa": 9.302539564103945,
+      "thd_fraction": 0.0000739207323228741,
+      "noise_proxy": 16243238.135117332,
+      "peak_mach_bulk": 0.009801428851016192
+    }
+  ],
+  "extended": {
+    "spatial_thd": {
+      "coarse": 0.00006180669004348555,
+      "fine": 0.0000739207323228741,
+      "relative_change": 0.16387881854952852,
+      "max_allowed": 0.02,
+      "floor": 0.0001,
+      "passed": true,
+      "passed_by_floor": true
+    },
+    "spatial_noise_proxy": {
+      "coarse": 16356633.556703253,
+      "fine": 16243238.135117332,
+      "relative_change": 0.006981084722310641,
+      "max_allowed": 0.02,
+      "floor": null,
+      "passed": true,
+      "passed_by_floor": false
+    },
+    "temporal_thd": {
+      "coarse": 0.00001018386970954908,
+      "fine": 0.0000739207323228741,
+      "relative_change": 0.8622325646739057,
+      "max_allowed": 0.02,
+      "floor": 0.0001,
+      "passed": true,
+      "passed_by_floor": true
+    },
+    "temporal_noise_proxy": {
+      "coarse": 16564780.055527285,
+      "fine": 16243238.135117332,
+      "relative_change": 0.01979543227374045,
+      "max_allowed": 0.02,
+      "floor": null,
+      "passed": true,
+      "passed_by_floor": false
+    },
+    "passed": true
+  },
+  "linear_gate": {
+    "tier2_frequency_hz": 159.15369311606253,
+    "tier1_frequency_hz": 92.60634465596921,
+    "tier2_impedance_ratio": [
+      1.005166583434318,
+      -0.000011215741626075732
+    ],
+    "tier1_impedance_ratio": [
+      1.0068480515777194,
+      0.00003908568142487938
+    ],
+    "impedance_ratio_relative_error": 0.0016707787826745646,
+    "tier2_flow_ratio_ratio": [
+      1.0024118463798464,
+      0.000041714595864893655
+    ],
+    "tier1_flow_ratio_ratio": [
+      1.4213915841401048,
+      0.47774862538353347
+    ],
+    "flow_ratio_relative_error": 0.4237397989088263,
+    "winner_transfer_identity_error": 0.018316066919606022,
+    "straight_transfer_identity_error": 0.018271946795733685,
+    "winner_thd": 8.532479267667337e-6,
+    "winner_mach": 0.00009820081654225477,
+    "passed": true,
+    "failures": []
+  },
+  "low_drive_winner": {
+    "frequency_hz": 159.15369311606253,
+    "mesh_size_m": 0.01,
+    "dt_s": 0.00002493347085172649,
+    "samples_per_cycle": 252,
+    "steps_completed": 10080,
+    "tail_samples": 2016,
+    "mesh_nodes": 150,
+    "mesh_elements": 224,
+    "port_flow": [
+      -7.476792656622017e-6,
+      7.143924211703194e-6
+    ],
+    "box_pressure": [
+      0.0643817561920286,
+      0.06748409049285348
+    ],
+    "diaphragm_flow": [
+      -4.997599721525339e-6,
+      4.956889682825228e-6
+    ],
+    "port_impedance": [
+      6.846822468750591,
+      -9019.26540016059
+    ],
+    "flow_ratio_direct": [
+      1.4688682692730946,
+      0.02743192038679615
+    ],
+    "flow_ratio_from_impedance": [
+      1.4693445876258007,
+      0.0005235203220050119
+    ],
+    "transfer_identity_relative_error": 0.018316066919606022,
+    "cap_continuity_relative_error": 0.0007819775092080687,
+    "energy_algebraic_relative_closure": 4.1295358064760943e-16,
+    "energy_physical_relative_closure": 0.008392434897753613,
+    "energy_interface_relative_residual": 2.695719966442954e-19,
+    "energy_scale_j": 2.563947217523672e-7,
+    "max_linear_relative_residual": 1.0204325055609703e-15,
+    "max_box_conservation_relative_residual": 1.0229524790781454e-16,
+    "port_flow_rms_m3s": 7.312227080256955e-6,
+    "port_flow_fundamental_amplitude_m3s": 0.00001034108705952503,
+    "box_pressure_amplitude_pa": 0.09326903559069027,
+    "thd_fraction": 8.532479267667337e-6,
+    "noise_proxy": 1.6566123898446876e-9,
+    "peak_mach_bulk": 0.00009820081654225477
+  },
+  "low_drive_straight": {
+    "frequency_hz": 159.15369311606253,
+    "mesh_size_m": 0.01,
+    "dt_s": 0.00002493347085172649,
+    "samples_per_cycle": 252,
+    "steps_completed": 10080,
+    "tail_samples": 2016,
+    "mesh_nodes": 151,
+    "mesh_elements": 226,
+    "port_flow": [
+      -7.45847086151244e-6,
+      7.131416001861181e-6
+    ],
+    "box_pressure": [
+      0.06393797473586794,
+      0.06697344891874267
+    ],
+    "diaphragm_flow": [
+      -4.997519800727552e-6,
+      4.9598704474302815e-6
+    ],
+    "port_impedance": [
+      6.911750130968141,
+      -8972.906054859459
+    ],
+    "flow_ratio_direct": [
+      1.4653352447822092,
+      0.027304939200490846
+    ],
+    "flow_ratio_from_impedance": [
+      1.4658083972017844,
+      0.0005259441190026193
+    ],
+    "transfer_identity_relative_error": 0.018271946795733685,
+    "cap_continuity_relative_error": 0.0007822918301781391,
+    "energy_algebraic_relative_closure": 1.4685250896528823e-16,
+    "energy_physical_relative_closure": 0.008407479505830762,
+    "energy_interface_relative_residual": 2.6160624665433815e-19,
+    "energy_scale_j": 2.5628923970280284e-7,
+    "max_linear_relative_residual": 1.0103998079903607e-15,
+    "max_box_conservation_relative_residual": 9.367441611997155e-17,
+    "port_flow_rms_m3s": 7.296752543059403e-6,
+    "port_flow_fundamental_amplitude_m3s": 0.000010319199667785861,
+    "box_pressure_amplitude_pa": 0.09259323665039429,
+    "thd_fraction": 9.26064793124322e-6,
+    "noise_proxy": 1.3550931332949017e-9,
+    "peak_mach_bulk": 0.00009576885913164427
+  },
+  "tier1_winner": {
+    "profile_normalized": [
+      0.015377748905722948,
+      0.02857825833977346
+    ],
+    "frequency_hz": 92.60634465596921,
+    "port_impedance": [
+      381.15152950342406,
+      -48180.9850406475
+    ],
+    "flow_ratio": [
+      63.352079993134424,
+      69.88844403726944
+    ],
+    "flow_ratio_condition_number": 93.65989797891505,
+    "relative_residual": 9.919348138116312e-11,
+    "flux_relative_difference": 0.003063191921426119,
+    "scalar_dofs": 99666,
+    "mesh_nodes": 13088,
+    "mesh_elements": 71145
+  },
+  "tier1_straight": {
+    "profile_normalized": [
+      0.0,
+      0.0
+    ],
+    "frequency_hz": 92.60634465596921,
+    "port_impedance": [
+      376.7014795845073,
+      -47853.297912016074
+    ],
+    "flow_ratio": [
+      54.89519835818555,
+      30.71802237235291
+    ],
+    "flow_ratio_condition_number": 62.03458152141062,
+    "relative_residual": 9.855600377176595e-11,
+    "flux_relative_difference": 0.0030612174218172085,
+    "scalar_dofs": 99666,
+    "mesh_nodes": 13088,
+    "mesh_elements": 71145
+  },
+  "mesh_independence": {
+    "straight_regenerated_q_rms_m3s": 7.296752543059403e-6,
+    "step0_archived_q_rms_m3s": 7.310907540865809e-6,
+    "straight_relative_difference": 0.0019361478349005964,
+    "winner_regenerated_q_rms_m3s": 0.0007294076849867901,
+    "step7_archived_q_rms_m3s": 0.000731675628116559,
+    "winner_relative_difference": 0.003099656518021353
+  },
+  "verdict": "Pass",
+  "notes": "Step-9 leg: regenerated-validation-mesh ladders (spatial [0.016, 0.012, 0.01] m, temporal [252, 504] spc, 40/8 cycles) at V_max=1 V; low-drive final-mesh runs at 0.01 V; Tier-1 spline oracle (0.01 m reference mesh) at f_target=92.606345 Hz. Winner u=[0.0153777489057228, 0.028578258339773364]. Measured: temporal proxy 1.9795% vs 2% bar (U^8 of 0.2478% Q change); THD spatial 6.18e-5/7.39e-5 (floor) temporal 1.02e-5/7.39e-5 (floor); H-ratio 42.37% reported only (Tier-1 Helmholtz-pole condition 93.7, see STEP9_MAX_FLOW_RATIO doc)."
+}
