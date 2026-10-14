@@ -461,6 +461,7 @@ fn main() -> Result<()> {
         min_freq: args.min_freq,
         max_freq: args.max_freq,
         num_points: args.num_freqs,
+        spacing: sonium_xem::FrequencySpacing::default(),
     };
     let scenario = scenarios::scenario_by_name_with_config(&args.scenario, &freq_config)
         .ok_or_else(|| anyhow::anyhow!("scenario not found: {}", args.scenario))?;

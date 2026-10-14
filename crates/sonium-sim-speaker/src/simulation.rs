@@ -50,7 +50,9 @@ use sonium_solvers::iterative::{
     block_gmres_preconditioned_with_guess, fgmres_preconditioned, gcro_dr_preconditioned,
     try_block_gmres_preconditioned_with_abort, try_fgmres_preconditioned_with_abort,
 };
-use sonium_solvers::lanes::{LaneConfig, host_memory_bytes, run_lanes, try_plan_lanes};
+use sonium_solvers::lanes::{
+    LaneConfig, host_memory_bytes, run_lanes_with_worker_budgets, try_plan_lanes,
+};
 use sonium_solvers::preconditioners::IluPreconditioner;
 use sonium_solvers::sparse::CsrMatrix;
 use sonium_solvers::traits::LinearOperator;
@@ -5763,9 +5765,16 @@ fn try_run_simulation_with_config_inner(
                     .map(|output| output.expect("completed lane covers its samples"))
                     .collect::<Result<Vec<_>, _>>()?
             } else {
-                let outcome = run_lanes(
+                // Per-lane worker budgets: each lane's assembly/solve runs
+                // in a nested pool of budget/num_lanes threads instead of
+                // fanning out to the global pool, so lanes x workers stays
+                // within budget past the bandwidth knee (SIM-PERF-20261013.md
+                // section 6, recommendation 4).
+                let workers_per_lane = (thread_budget / plan.num_lanes).max(1);
+                let outcome = run_lanes_with_worker_budgets(
                     &frequencies,
                     &plan,
+                    workers_per_lane,
                     || FrequencySweepState::new(&elements, solver_config),
                     &|state, index, &frequency| {
                         let output = solve_at(state, index, frequency, control)?;
@@ -6915,6 +6924,12 @@ fn solve_typed_driver_coupling_with_structure_control(
 /// product branch transfer supplies the complex gain and phase at the current
 /// frequency. Untyped drivers return zero because their velocity is a
 /// prescribed boundary condition rather than an electrical unknown.
+///
+/// Convention note (SIM-PERF-20261013.md section 1): crossover lives at the
+/// SOURCE here (drive voltages → velocity BCs, orthogonal to propagation),
+/// unlike the room TBEM/FEM `ReceiverOnly` convention, which excites
+/// isotropically and applies the pattern to the total field at the receiver.
+/// Keep the two apart when comparing speaker and room transfer functions.
 fn typed_driver_drive_voltages(
     model: &LoudspeakerModel,
     frequency: f64,

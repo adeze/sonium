@@ -1773,6 +1773,239 @@ fn cuda_fem_f32_smoke_matches_cpu_tiny_room() {
         "CUDA pressure drifted too far from CPU: cpu={cpu_p:?}, cuda={cuda_p:?}, rel={rel:.3e}"
     );
 }
+
+#[test]
+fn test_gpu_solution_evidence_parsing() {
+    use super::fem_mesh_config::GpuSolutionEvidence;
+
+    assert_eq!("full".parse(), Ok(GpuSolutionEvidence::Full));
+    assert_eq!("listeners".parse(), Ok(GpuSolutionEvidence::ListenersOnly));
+    assert_eq!(
+        "listeners-only".parse(),
+        Ok(GpuSolutionEvidence::ListenersOnly)
+    );
+    assert_eq!(GpuSolutionEvidence::default(), GpuSolutionEvidence::Full);
+    assert!("wide".parse::<GpuSolutionEvidence>().is_err());
+}
+
+#[cfg(feature = "cuda")]
+#[test]
+fn cuda_fem_listeners_evidence_matches_full_pressures() {
+    // SIM-PERF-20261013.md section 6, recommendation 3: listener
+    // pressures are evaluated on-device either way, so skipping the
+    // full-solution D2H must not move them by one ulp — only the power
+    // ledger and the D2H byte count change.
+    use super::fem_mesh_config::GpuSolutionEvidence;
+
+    if sonium_compute::CudaBackend::new(0).is_err() {
+        eprintln!("no CUDA device — skipping");
+        return;
+    }
+    let room = RectangularRoom::new(0.9, 0.8, 0.7);
+    let source = Source::omnidirectional(Point3D::new(0.22, 0.31, 0.28), 1.0);
+    let lp = Point3D::new(0.68, 0.53, 0.42);
+    let sim = RoomSimulation::with_frequencies(
+        RoomGeometry::Rectangular(room),
+        vec![source],
+        vec![lp],
+        80.0,
+        80.0,
+        1,
+    );
+    let full_cfg = FemMeshConfig {
+        fine_radius: 0.2,
+        modal_damping_ratio: 0.02,
+        ..FemMeshConfig::default()
+    };
+    let mut lean_cfg = full_cfg;
+    lean_cfg.gpu_solution_evidence = GpuSolutionEvidence::ListenersOnly;
+    let (full, full_diagnostics) =
+        run_fem_gpu_report(&sim, &full_cfg, GpuPrecision::F32Pure, GpuPrecond::Amg, 0)
+            .expect("full-evidence CUDA sweep should run");
+    let (lean, lean_diagnostics) =
+        run_fem_gpu_report(&sim, &lean_cfg, GpuPrecision::F32Pure, GpuPrecond::Amg, 0)
+            .expect("listeners-only CUDA sweep should run");
+    full_diagnostics
+        .require_converged()
+        .expect("full converges");
+    lean_diagnostics
+        .require_converged()
+        .expect("lean converges");
+    assert_eq!(full.pressures, lean.pressures);
+    let full_stats = &full_diagnostics.frequency_stats[0];
+    let lean_stats = &lean_diagnostics.frequency_stats[0];
+    assert!(full_stats.operator_work.is_some());
+    assert!(lean_stats.operator_work.is_none());
+    assert!(lean_stats.physical_power.is_none());
+    let full_d2h = full_stats
+        .transfer_stats
+        .as_ref()
+        .map(|stats| stats.d2h_bytes)
+        .unwrap_or(usize::MAX);
+    let lean_d2h = lean_stats
+        .transfer_stats
+        .as_ref()
+        .map(|stats| stats.d2h_bytes)
+        .unwrap_or(usize::MAX);
+    assert!(
+        lean_d2h < full_d2h,
+        "listeners-only must download fewer bytes: full={full_d2h} lean={lean_d2h}",
+    );
+}
+
+#[test]
+fn waveholtz_matches_default_solver_on_tiny_rigid_room() {
+    // SIM-PERF-20261013.md section 6, recommendation 5: WaveHoltz as a
+    // comparison arm on the room demo path. Rigid walls (Neumann is the
+    // natural BC, so no boundary matrices) plus zero modal damping keep
+    // the discrete OPERATOR real, which is what the current real-valued
+    // WaveHoltz solver supports (the -iωρQ source puts the field in the
+    // imaginary part, where the comparison happens); production
+    // complex-Robin wiring awaits complex WaveHoltz and stays out of the
+    // default path.
+    use sonium_fem::assembly::HelmholtzAssembler;
+    use sonium_fem::waveholtz::{WaveHoltzConfig, solve_waveholtz};
+
+    let freq = 50.0;
+    let source = Source::omnidirectional(Point3D::new(0.4, 0.35, 0.35), 1.0);
+    let lp = Point3D::new(1.2, 1.1, 1.0);
+    let sim = RoomSimulation::with_frequencies(
+        RoomGeometry::Rectangular(RectangularRoom::new(1.6, 1.5, 1.4)),
+        vec![source.clone()],
+        vec![lp],
+        freq,
+        freq,
+        1,
+    );
+    // Match the runner's base resolution to the comparison mesh (4/m ≈ 27
+    // per wavelength at 50 Hz) so both solvers discretize the same PDE on
+    // comparably fine meshes; otherwise mesh-discretization differences
+    // swamp the solver comparison.
+    let mesh_config = FemMeshConfig {
+        modal_damping_ratio: 0.0,
+        elements_per_wavelength: 27.0,
+        ..FemMeshConfig::default()
+    };
+    let output = run_fem_with_mesh(&sim, &mesh_config).expect("rigid room sweep should converge");
+    let room_p = output.pressures[0][0][0];
+
+    let mesh = create_room_mesh(&sim, 4, &SymmetryConfig::none(), &mesh_config);
+    let assembler = HelmholtzAssembler::new(&mesh, PolynomialDegree::P1);
+    let basis = build_point_source_rhs_basis(&mesh, &source).expect("source inside mesh");
+    let mut rhs_complex = vec![Complex64::new(0.0, 0.0); mesh.num_nodes()];
+    super::types::assemble_rhs_from_basis_into(&basis, &source, freq, &mut rhs_complex);
+    // The room source scale is -iωρQ (purely imaginary) while the rigid,
+    // undamped operator is real, so real/imaginary parts decouple and the
+    // physical field lives in the imaginary part: drive WaveHoltz with it.
+    let rhs_real: Vec<f64> = rhs_complex.iter().map(|z| z.im).collect();
+    // WaveHoltz works in the assembler's unit sound speed: the Helmholtz
+    // wavenumber is k = ω/c, so the filter frequency is k, not the
+    // physical ω (passing physical ω targets k = ω, a different problem).
+    let omega = 2.0 * std::f64::consts::PI * freq / sim.speed_of_sound;
+    // No dispersion correction: its default eigenvalue window [0.1ω², 10ω²]
+    // does not cover this mesh's spectrum, and the broadband point source
+    // excites the mistuned high modes (the smooth-source 2D validation
+    // tests run uncorrected for the same reason).
+    let wh_config = WaveHoltzConfig {
+        verbosity: 0,
+        steps_per_period: 20,
+        dispersion_correction: false,
+        ..WaveHoltzConfig::default()
+    };
+    let wh =
+        solve_waveholtz(&assembler, &rhs_real, omega, &wh_config).expect("waveholtz converges");
+    assert!(wh.converged, "waveholtz outer GMRES should converge");
+    let wh_p = evaluate_solution_at_point_interpolated(&mesh, &wh.values, lp, None);
+
+    // The room solve should be near-imaginary in this regime: the -iωρQ
+    // source is purely imaginary and the rigid, undamped operator is real
+    // (negligible air absorption at 50 Hz); document it.
+    let real_fraction = room_p.re.abs() / room_p.norm().max(1.0e-30);
+    assert!(
+        real_fraction < 0.05,
+        "room solution should be near-imaginary here, got real fraction {real_fraction:.3e}",
+    );
+    let rel = (room_p.im - wh_p.re).abs() / room_p.norm().max(1.0e-30);
+    assert!(
+        rel < 0.05,
+        "waveholtz drifted from the default solver: room={room_p:?} wh={wh_p:?} rel={rel:.3e}",
+    );
+}
+
+#[test]
+fn freefield_monopole_matches_greens_function_magnitude() {
+    // SIM-PERF-20261013.md section 6, recommendation 5: cheap
+    // gross-error insurance from sonium-wave. Matched ρc walls (first-order
+    // absorbing BC, exact at normal incidence) approximate free field at
+    // the listeners; magnitude-only comparison sidesteps phasor-convention
+    // questions. A porous-layer fit is deliberately NOT used here: a 25 mm
+    // layer cannot absorb at 200 Hz (λ/68 thick). The full-domain entry
+    // point bypasses the automatic symmetry reduction (mirror images
+    // would corrupt a free-field comparison). Catches 4π /
+    // volume-velocity / 1-r scaling blunders, not fine physics.
+    use sonium_wave::special::helmholtz::greens_function_3d;
+
+    let freq = 200.0;
+    let source_pos = Point3D::new(2.5, 2.0, 1.75);
+    let lp_near = Point3D::new(3.5, 2.0, 1.75);
+    let lp_far = Point3D::new(1.0, 2.0, 1.75);
+    let mut sim = RoomSimulation::with_frequencies(
+        RoomGeometry::Rectangular(RectangularRoom::new(5.0, 4.0, 3.5)),
+        vec![Source::omnidirectional(source_pos, 1.0)],
+        vec![lp_near, lp_far],
+        freq,
+        freq,
+        1,
+    );
+    let matched = SurfaceConfig::Admittance {
+        real: 1.0,
+        imag: 0.0,
+    };
+    sim.boundaries = BoundaryConfig {
+        floor: matched.clone(),
+        ceiling: matched.clone(),
+        walls: matched,
+        front_wall: None,
+        back_wall: None,
+        left_wall: None,
+        right_wall: None,
+    };
+    let mesh_config = FemMeshConfig {
+        fine_radius: 0.3,
+        modal_damping_ratio: 0.0,
+        ..FemMeshConfig::default()
+    };
+    // Full-domain solve: the centered source would otherwise trigger the
+    // automatic 8x symmetry reduction (Neumann mirror images), which a
+    // free-field reference must not see.
+    let (output, _) = super::run::run_fem_full_domain_with_mesh_report(&sim, &mesh_config)
+        .expect("absorptive room sweep should converge");
+    let omega = 2.0 * std::f64::consts::PI * freq;
+    let k = omega / sim.speed_of_sound;
+    let strength =
+        omega * AIR_DENSITY * crate::source_calibration::SOURCE_VOLUME_VELOCITY_REFERENCE;
+    for (lp_idx, lp) in [lp_near, lp_far].iter().enumerate() {
+        let r = ((lp.x - source_pos.x).powi(2)
+            + (lp.y - source_pos.y).powi(2)
+            + (lp.z - source_pos.z).powi(2))
+        .sqrt();
+        let predicted = strength * greens_function_3d(r, k).norm();
+        let got = output.pressures[0][lp_idx][0].norm();
+        let rel = (got - predicted).abs() / predicted;
+        assert!(
+            rel < 0.30,
+            "listener {lp_idx} at r={r:.2} m: got {got:.4e}, free-field predicts {predicted:.4e}",
+        );
+    }
+    // 1/r decay between the two listeners (convention-free).
+    let near = output.pressures[0][0][0].norm();
+    let far = output.pressures[0][1][0].norm();
+    let decay = near / far.max(1.0e-30);
+    assert!(
+        (decay - 1.5).abs() < 0.45,
+        "expected ~1/r decay ratio 1.5, got {decay:.3}",
+    );
+}
 #[cfg(feature = "cuda")]
 #[test]
 fn gpu_amg_config_uses_tuned_shifted_laplacian_setup() {
@@ -1826,6 +2059,7 @@ fn cuda_low_frequency_sweep_completes_with_amg() {
         min_freq: 20.0,
         max_freq: 100.0,
         num_points: 2,
+        spacing: crate::scenarios::FrequencyConfig::default().spacing,
     };
     let scenario = crate::scenarios::scenario_by_name_with_config("small_stereo_2_0", &freq_config)
         .expect("built-in scenario must resolve");

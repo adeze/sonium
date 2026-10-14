@@ -450,6 +450,55 @@ pub fn lin_space(start: f64, end: f64, num: usize) -> Vec<f64> {
         .collect()
 }
 
+/// Frequency-grid spacing for sweep constructors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum FrequencySpacing {
+    /// Logarithmically spaced grid (room-EQ default: resolves low
+    /// frequencies where modal density is lowest).
+    #[default]
+    Log,
+    /// Linearly spaced grid (modal analysis, narrowband sweeps).
+    Linear,
+}
+
+impl FrequencySpacing {
+    /// Canonical spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Log => "log",
+            Self::Linear => "linear",
+        }
+    }
+
+    /// Build the grid for `num` points over `[start, end]`.
+    pub fn generate(self, start: f64, end: f64, num: usize) -> Vec<f64> {
+        match self {
+            Self::Log => log_space(start, end, num),
+            Self::Linear => lin_space(start, end, num),
+        }
+    }
+}
+
+impl std::fmt::Display for FrequencySpacing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for FrequencySpacing {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
+            "log" | "logarithmic" => Ok(Self::Log),
+            "linear" => Ok(Self::Linear),
+            other => Err(format!(
+                "unknown frequency spacing '{other}' (expected 'log' or 'linear')"
+            )),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -9,7 +9,7 @@ use super::build::build_source_rhs_basis_for_model;
 use super::compute::{
     compute_barycentric_coords, compute_boundary_coefficients, find_containing_element_parallel,
 };
-use super::fem_mesh_config::{FemMeshConfig, create_room_mesh};
+use super::fem_mesh_config::{FemMeshConfig, GpuSolutionEvidence, create_room_mesh};
 use super::fem_run_diagnostics::{
     FemBackendExecutionError, FemBackendFailureDiagnostics, FemRunDiagnostics,
 };
@@ -152,6 +152,13 @@ fn collect_device_solution_evidence<B: Backend>(
         operator_work,
         boundary_power_by_tag,
     )
+}
+
+/// Whether the sweep downloads full nodal solutions for host-side power
+/// evidence. Listener pressures are evaluated on-device either way, so
+/// [`GpuSolutionEvidence::ListenersOnly`] only drops the power ledger.
+fn wants_full_solution_evidence(mesh_config: &FemMeshConfig) -> bool {
+    mesh_config.gpu_solution_evidence == GpuSolutionEvidence::Full
 }
 
 fn finish_device_physical_evidence(
@@ -1757,27 +1764,29 @@ fn run_fem_gpu_report_with_cancellation_inner(
                             freq_idx,
                         );
                     }
-                    let mut solution_block_host =
-                        vec![Complex64::new(0.0, 0.0); n_nodes * n_sources];
-                    backend.copy_d2h(
-                        x_block_dev_64_opt
-                            .as_ref()
-                            .expect("batched f64 solution gate buffer must be initialized"),
-                        &mut solution_block_host,
-                    );
-                    for (src_idx, source) in simulation.sources.iter().enumerate() {
-                        let start = src_idx * n_nodes;
-                        accumulate_host_solution_evidence(
-                            &assembler,
-                            k_complex,
-                            &boundary_coeffs,
-                            &rhs_bases[src_idx],
-                            source,
-                            freq,
-                            &solution_block_host[start..start + n_nodes],
-                            &mut operator_work,
-                            &mut boundary_power_by_tag,
-                        )?;
+                    if wants_full_solution_evidence(mesh_config) {
+                        let mut solution_block_host =
+                            vec![Complex64::new(0.0, 0.0); n_nodes * n_sources];
+                        backend.copy_d2h(
+                            x_block_dev_64_opt
+                                .as_ref()
+                                .expect("batched f64 solution gate buffer must be initialized"),
+                            &mut solution_block_host,
+                        );
+                        for (src_idx, source) in simulation.sources.iter().enumerate() {
+                            let start = src_idx * n_nodes;
+                            accumulate_host_solution_evidence(
+                                &assembler,
+                                k_complex,
+                                &boundary_coeffs,
+                                &rhs_bases[src_idx],
+                                source,
+                                freq,
+                                &solution_block_host[start..start + n_nodes],
+                                &mut operator_work,
+                                &mut boundary_power_by_tag,
+                            )?;
+                        }
                     }
                     prev_solution_valid.fill(false);
                     batch_succeeded = true;
@@ -1929,7 +1938,7 @@ fn run_fem_gpu_report_with_cancellation_inner(
                                     .fold(0.0_f64, f64::max);
                                 let gates =
                                     f32_policy.validate_gates(promoted_residual, physical_error);
-                                if gates.is_ok() {
+                                if gates.is_ok() && wants_full_solution_evidence(mesh_config) {
                                     if let Err(error) = collect_device_solution_evidence(
                                         &backend,
                                         &x_dev_64,
@@ -2021,7 +2030,7 @@ fn run_fem_gpu_report_with_cancellation_inner(
                                     backend.copy_d2d(x_dev, prev_x);
                                     prev_solution_valid[src_idx] = true;
                                 }
-                                if status.converged {
+                                if status.converged && wants_full_solution_evidence(mesh_config) {
                                     if let Err(error) = collect_device_solution_evidence(
                                         &backend,
                                         x_dev,
@@ -2330,7 +2339,16 @@ fn run_fem_gpu_report_with_cancellation_inner(
 
         let runtime_stats = backend.runtime_stats().since(runtime_start);
         let (operator_work, physical_power, boundary_flux) =
-            finish_device_physical_evidence(&mut operator_work, boundary_power_by_tag, freq)?;
+            if wants_full_solution_evidence(mesh_config) {
+                let (work, power, flux) = finish_device_physical_evidence(
+                    &mut operator_work,
+                    boundary_power_by_tag,
+                    freq,
+                )?;
+                (Some(work), Some(power), Some(flux))
+            } else {
+                (None, None, None)
+            };
         diagnostics.record_frequency(FemFrequencyStats {
             frequency_hz: freq,
             symmetry_mode: None,
@@ -2354,9 +2372,9 @@ fn run_fem_gpu_report_with_cancellation_inner(
             fallback_stage: usize::from(retry_count > 0),
             max_residual,
             converged: true,
-            operator_work: Some(operator_work),
-            physical_power: Some(physical_power),
-            boundary_flux: Some(boundary_flux),
+            operator_work,
+            physical_power,
+            boundary_flux,
             transfer_stats: Some(FemTransferStats::from(
                 backend.transfer_stats().saturating_sub(transfer_start),
             )),
@@ -2935,7 +2953,7 @@ fn run_fem_metal_report_with_cancellation(
                         );
                     }
                     lp_values_host = listener.evaluate_to_host(&backend, x_dev_64);
-                    if status.converged {
+                    if status.converged && wants_full_solution_evidence(mesh_config) {
                         collect_device_solution_evidence(
                             &backend,
                             &*x_dev_64,
@@ -3132,7 +3150,16 @@ fn run_fem_metal_report_with_cancellation(
         }
 
         let (operator_work, physical_power, boundary_flux) =
-            finish_device_physical_evidence(&mut operator_work, boundary_power_by_tag, freq)?;
+            if wants_full_solution_evidence(mesh_config) {
+                let (work, power, flux) = finish_device_physical_evidence(
+                    &mut operator_work,
+                    boundary_power_by_tag,
+                    freq,
+                )?;
+                (Some(work), Some(power), Some(flux))
+            } else {
+                (None, None, None)
+            };
         diagnostics.record_frequency(FemFrequencyStats {
             frequency_hz: freq,
             symmetry_mode: None,
@@ -3152,9 +3179,9 @@ fn run_fem_metal_report_with_cancellation(
             fallback_stage: usize::from(retry_count > 0),
             max_residual,
             converged: true,
-            operator_work: Some(operator_work),
-            physical_power: Some(physical_power),
-            boundary_flux: Some(boundary_flux),
+            operator_work,
+            physical_power,
+            boundary_flux,
             transfer_stats: Some(FemTransferStats::from(
                 backend.transfer_stats().saturating_sub(transfer_start),
             )),

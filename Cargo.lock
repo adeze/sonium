@@ -2813,6 +2813,7 @@ dependencies = [
  "sonium-mesher",
  "sonium-roomeq",
  "sonium-solvers",
+ "sonium-wave",
  "sonium-xem",
  "sysinfo",
  "tempfile",

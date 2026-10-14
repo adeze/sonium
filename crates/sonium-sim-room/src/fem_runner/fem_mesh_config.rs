@@ -48,6 +48,52 @@ pub enum FemSourceModel {
     PointLoad,
 }
 
+/// How much per-frequency solution evidence a GPU sweep downloads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GpuSolutionEvidence {
+    /// Download the full nodal solution per frequency and accumulate the
+    /// host-side operator-work / boundary-power evidence (current
+    /// behaviour). Costs one `n·n_sources·16` B D2H per frequency.
+    #[default]
+    Full,
+    /// Skip the full-solution download: listener pressures are already
+    /// evaluated on-device, so only they cross back to the host.
+    /// Per-frequency power evidence is omitted (`None`) in diagnostics
+    /// and downstream metadata. Listener pressures are bit-identical to
+    /// [`Self::Full`] (SIM-PERF-20261013.md section 6, recommendation 3).
+    ListenersOnly,
+}
+
+impl GpuSolutionEvidence {
+    /// Canonical CLI spelling.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::ListenersOnly => "listeners",
+        }
+    }
+}
+
+impl std::fmt::Display for GpuSolutionEvidence {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl std::str::FromStr for GpuSolutionEvidence {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value.to_ascii_lowercase().as_str() {
+            "full" => Ok(Self::Full),
+            "listeners" | "listeners-only" | "listeners_only" => Ok(Self::ListenersOnly),
+            other => Err(format!(
+                "unknown GPU solution evidence '{other}' (expected 'full' or 'listeners')"
+            )),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct FemMeshConfig {
     /// Target elements per shortest wavelength before applying far-field grading.
@@ -136,6 +182,13 @@ pub struct FemMeshConfig {
     /// phase; leaving this false prevents accidental double-filtering. Set
     /// true only when the chained filter is deliberate.
     pub allow_chained_complex_crossover: bool,
+    /// How much per-frequency solution evidence a GPU (CUDA/Metal) sweep
+    /// downloads. [`GpuSolutionEvidence::ListenersOnly`] skips the full
+    /// nodal-solution D2H (`n·n_sources·16` B per frequency) because
+    /// listener pressures are already evaluated on-device; power
+    /// evidence is then omitted from diagnostics. CPU sweeps ignore
+    /// this field (their solutions are already host-side).
+    pub gpu_solution_evidence: GpuSolutionEvidence,
 }
 
 impl Default for FemMeshConfig {
@@ -156,6 +209,7 @@ impl Default for FemMeshConfig {
             source_model: FemSourceModel::PointLoad,
             block_source_solve: false,
             allow_chained_complex_crossover: false,
+            gpu_solution_evidence: GpuSolutionEvidence::default(),
         }
     }
 }

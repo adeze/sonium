@@ -33,6 +33,8 @@ sonium-mesher = { workspace = true }
 # Backend abstraction for the optional GPU path (CudaBackend etc).
 sonium-compute = { workspace = true }
 sonium-fastmath = { workspace = true }
+# Analytical references (free-field Green's function) for validation checks.
+sonium-wave = { workspace = true }
 
 # Provides acoustic-impedance material models used by FEM setup, and the optional
 # dense BLR TBEM path exposed by `generate-roomeq-data --dense`.
