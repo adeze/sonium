@@ -540,6 +540,10 @@ fn solve_pressure(
     } else {
         let preconditioner = IluPreconditioner::try_from_csr(matrix)
             .map_err(|error| reference_error(format!("ILU setup failed: {error}")))?;
+        // FGMRES(50) + ILU with a sparse-direct fallback below: the small
+        // restart is safe because ILU holds iteration counts low and any
+        // stall falls through to the direct solve, not to a silent wrong
+        // answer (SIM-PERF-20261013.md section 2, gap 4).
         let iterative = fgmres_preconditioned(
             matrix,
             &preconditioner,

@@ -7,8 +7,8 @@
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
 use sonium_xem::{
-    BoundaryConfig, CrossoverFilter, Point3D, RectangularRoom, RoomGeometry, RoomSimulation,
-    Source, SurfaceConfig,
+    BoundaryConfig, CrossoverFilter, FrequencySpacing, Point3D, RectangularRoom, RoomGeometry,
+    RoomSimulation, Source, SurfaceConfig,
 };
 use std::collections::HashSet;
 
@@ -174,6 +174,8 @@ pub struct FrequencyConfig {
     pub min_freq: f64,
     pub max_freq: f64,
     pub num_points: usize,
+    /// Grid spacing (log default; linear for modal/narrowband work).
+    pub spacing: FrequencySpacing,
 }
 
 impl Default for FrequencyConfig {
@@ -182,6 +184,7 @@ impl Default for FrequencyConfig {
             min_freq: DEFAULT_MIN_FREQ,
             max_freq: DEFAULT_MAX_FREQ,
             num_points: DEFAULT_NUM_POINTS,
+            spacing: FrequencySpacing::default(),
         }
     }
 }
@@ -372,13 +375,14 @@ fn make_simulation_with_boundaries(
     boundaries: BoundaryConfig,
     freq_config: &FrequencyConfig,
 ) -> RoomSimulation {
-    let mut sim = RoomSimulation::with_frequencies(
+    let mut sim = RoomSimulation::with_frequencies_spaced(
         RoomGeometry::Rectangular(room),
         sources,
         listening_positions,
         freq_config.min_freq,
         freq_config.max_freq,
         freq_config.num_points,
+        freq_config.spacing,
     );
     sim.boundaries = boundaries;
     sim
@@ -1252,6 +1256,7 @@ mod tests {
             min_freq: 20.0,
             max_freq: 2_000.0,
             num_points: 17,
+            spacing: FrequencySpacing::default(),
         };
         let scenarios = all_scenarios_with_config(&config);
         assert_eq!(scenarios.len(), 20);

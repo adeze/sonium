@@ -34,6 +34,7 @@ const ALL_PRECONDITIONERS: &[FemPreconditionerKind] = &[
     FemPreconditionerKind::Ilut,
     FemPreconditionerKind::BlockJacobi,
     FemPreconditionerKind::AdditiveSchwarz,
+    FemPreconditionerKind::SweepingSchwarz,
     FemPreconditionerKind::IluColoring,
     FemPreconditionerKind::IluFixedPoint,
     FemPreconditionerKind::Amg,
@@ -101,7 +102,7 @@ struct Args {
     #[arg(long, default_value = "cpu")]
     backend: String,
     /// Optional comma-separated subset, e.g. `ilut,amg,block-jacobi`. Defaults
-    /// to all six. Used only with `--backend cpu`.
+    /// to all seven. Used only with `--backend cpu`.
     #[arg(long)]
     preconditioners: Option<String>,
     /// Optional comma-separated GPU preconditioner subset, e.g.
@@ -460,6 +461,7 @@ fn main() -> Result<()> {
         min_freq: args.min_freq,
         max_freq: args.max_freq,
         num_points: args.num_freqs,
+        spacing: sonium_xem::FrequencySpacing::default(),
     };
     let scenario = scenarios::scenario_by_name_with_config(&args.scenario, &freq_config)
         .ok_or_else(|| anyhow::anyhow!("scenario not found: {}", args.scenario))?;

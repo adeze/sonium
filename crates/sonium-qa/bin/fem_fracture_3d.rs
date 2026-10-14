@@ -598,20 +598,36 @@ fn run() -> Result<QaResult, String> {
         .history_error
         .max(patch.elastic_energy)
         .max(patch.crack_energy);
-    let mut spatial = Vec::new();
-    for n in [3, 6, 9] {
-        let m = solve(n, PolynomialDegree::P1, Control::Full)?;
+    // Independent solves (own mesh, locals only): run concurrently and
+    // rejoin in order. Prints stay in schedule order after the join.
+    use rayon::prelude::*;
+    let spatial: Vec<Metrics> = [3, 6, 9]
+        .into_par_iter()
+        .map(|n| solve(n, PolynomialDegree::P1, Control::Full))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (n, m) in [3, 6, 9].iter().zip(spatial.iter()) {
         println!("fracture P1 n={n}: {m:?}");
-        spatial.push(m);
     }
-    let mut negative = f64::INFINITY;
-    for control in [
+    let controls = [
         Control::NoHistoryMaximum,
         Control::NoHistoryTangent,
         Control::NoDegradation,
         Control::NoDamageSource,
-    ] {
-        let m = solve(2, PolynomialDegree::P2, control)?;
+    ];
+    let control_runs: Vec<Metrics> = controls
+        .into_par_iter()
+        .map(|control| solve(2, PolynomialDegree::P2, control))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut negative = f64::INFINITY;
+    for (control, m) in [
+        Control::NoHistoryMaximum,
+        Control::NoHistoryTangent,
+        Control::NoDegradation,
+        Control::NoDamageSource,
+    ]
+    .iter()
+    .zip(control_runs.iter())
+    {
         println!("fracture {control:?}: {m:?}");
         negative = negative.min(m.history_error);
     }

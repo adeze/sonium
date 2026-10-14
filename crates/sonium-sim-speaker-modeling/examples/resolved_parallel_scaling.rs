@@ -30,7 +30,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     let pool = rayon::ThreadPoolBuilder::new().num_threads(1).build()?;
     let reference = pool.install(|| model.solve_sweep(&frequencies, drive))?;
     let mut rows = Vec::new();
-    for threads in [1, 2, 4] {
+    // Thread ladder covers single-core through typical workstation core
+    // counts; the parity gate below fails the run if any budget changes
+    // the answer, so wider ladders stay honest.
+    let max_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let mut ladder: Vec<usize> = vec![1, 2, 4, 8, 16];
+    ladder.retain(|&t| t <= max_threads);
+    if !ladder.contains(&max_threads) {
+        ladder.push(max_threads);
+    }
+    for threads in ladder {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
             .build()?;

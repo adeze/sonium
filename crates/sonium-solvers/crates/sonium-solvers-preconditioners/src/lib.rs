@@ -83,10 +83,12 @@ pub use saddle_point::{
 };
 pub use schwarz::{
     AdditiveSchwarzPreconditioner, GeneoConfig, GeneoSetupError, SCHWARZ_CHECKPOINT_FORMAT_VERSION,
-    SchwarzCoarseSetup, SchwarzRuntimeDiagnostics,
+    SchwarzCoarseSetup, SchwarzRuntimeDiagnostics, SweepingSchwarzPreconditioner,
+    coordinate_layers,
 };
 pub use sonium_compute::preconditioner::{
-    ChebyshevBackend, ChebyshevBackendF32, PointJacobiBackend, PolynomialJacobiBackend,
+    BlockJacobiBackend, ChebyshevBackend, ChebyshevBackendF32, DEFAULT_BLOCK_SIZE,
+    PointJacobiBackend, PolynomialJacobiBackend,
 };
 
 // Re-export IdentityPreconditioner from traits

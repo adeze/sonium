@@ -2813,6 +2813,7 @@ dependencies = [
  "sonium-mesher",
  "sonium-roomeq",
  "sonium-solvers",
+ "sonium-wave",
  "sonium-xem",
  "sysinfo",
  "tempfile",
@@ -2991,6 +2992,7 @@ dependencies = [
  "sonium-solvers-direct",
  "sonium-solvers-preconditioners",
  "sonium-solvers-sparse",
+ "sonium-solvers-sys",
  "thiserror 2.0.21",
 ]
 

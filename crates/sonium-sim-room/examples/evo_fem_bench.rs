@@ -12,6 +12,7 @@ fn main() {
         min_freq: 30.0,
         max_freq: 150.0,
         num_points: 15,
+        spacing: sonium_xem::FrequencySpacing::default(),
     };
     let scenario = scenarios::scenario_by_name_with_config("small_stereo_2_0", &freq_config)
         .expect("scenario not found");

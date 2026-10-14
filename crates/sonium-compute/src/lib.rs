@@ -122,8 +122,8 @@ pub use perf::PerfModel;
 pub use pool::{Buffer, MemoryPool, MemoryPoolConfig};
 pub use precision::{MixedPrecisionGateError, MixedPrecisionPolicy};
 pub use preconditioner::{
-    ChebyshevBackend, ChebyshevBackendF32, PointJacobiBackend, PolynomialJacobiBackend,
-    PolynomialJacobiBackendF32,
+    BlockJacobiBackend, ChebyshevBackend, ChebyshevBackendF32, DEFAULT_BLOCK_SIZE,
+    PointJacobiBackend, PolynomialJacobiBackend, PolynomialJacobiBackendF32,
 };
 pub use scalar::{BufferElement, DeviceScalar, LowerPrecision};
 pub use scaled_storage::{

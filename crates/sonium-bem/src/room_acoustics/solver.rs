@@ -440,6 +440,17 @@ pub enum RoomSourceDirectivityMode {
     /// Excite the room as an isotropic monopole, then apply receiver-side
     /// directivity to the total field. This mirrors the `sonium-sim-room` FEM
     /// convention used for low-frequency RoomEQ data.
+    ///
+    /// Convention contrast (SIM-PERF-20261013.md section 1): the excitation
+    /// carries amplitude × crossover while the pure pattern multiplies the
+    /// total (direct + reverberant) field at each receiver, so reflected
+    /// energy inherits the receiver-side pattern. The speaker path instead
+    /// applies per-driver crossover transfers at the SOURCE (drive voltages
+    /// → velocity BCs) with source-side radiation, keeping crossover
+    /// orthogonal to propagation. Unifying the two conventions (e.g.
+    /// source-side patterns in the room path) is future work; either change
+    /// moves every absorbing-room response and needs revalidation against
+    /// the analytical references before it becomes the default.
     ReceiverOnly,
 }
 

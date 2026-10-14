@@ -4,6 +4,7 @@ use num_complex::Complex64;
 use sonium_solvers::{
     AdditiveSchwarzPreconditioner, AmgPreconditioner, BlockJacobiPreconditioner,
     IluColoringPreconditioner, IluFixedPointPreconditioner, IlutPreconditioner, Preconditioner,
+    SweepingSchwarzPreconditioner,
 };
 
 pub(super) enum FemPreconditioner {
@@ -11,6 +12,7 @@ pub(super) enum FemPreconditioner {
     BlockJacobi(BlockJacobiPreconditioner<Complex64>),
     AdditiveSchwarz(AdditiveSchwarzPreconditioner<Complex64>),
     Oras(AdditiveSchwarzPreconditioner<Complex64>),
+    SweepingSchwarz(SweepingSchwarzPreconditioner<Complex64>),
     IluColoring(IluColoringPreconditioner<Complex64>),
     IluFixedPoint(IluFixedPointPreconditioner<Complex64>),
     Amg(Box<AmgPreconditioner<Complex64>>),
@@ -29,6 +31,7 @@ impl Preconditioner<Complex64> for FemPreconditioner {
             Self::BlockJacobi(precond) => precond.apply(r),
             Self::AdditiveSchwarz(precond) => precond.apply(r),
             Self::Oras(precond) => precond.apply(r),
+            Self::SweepingSchwarz(precond) => precond.apply(r),
             Self::IluColoring(precond) => precond.apply(r),
             Self::IluFixedPoint(precond) => precond.apply(r),
             Self::Amg(precond) => precond.apply(r),
@@ -41,6 +44,7 @@ impl Preconditioner<Complex64> for FemPreconditioner {
             Self::BlockJacobi(precond) => precond.apply_into(r, y),
             Self::AdditiveSchwarz(precond) => precond.apply_into(r, y),
             Self::Oras(precond) => precond.apply_into(r, y),
+            Self::SweepingSchwarz(precond) => precond.apply_into(r, y),
             Self::IluColoring(precond) => precond.apply_into(r, y),
             Self::IluFixedPoint(precond) => precond.apply_into(r, y),
             Self::Amg(precond) => precond.apply_into(r, y),

@@ -388,7 +388,9 @@ pub fn thread_budget_exceeds_host(thread_budget: usize) -> bool {
 /// pool with `num_lanes` threads (cached across calls, see `lane_pool`) so
 /// they don't fight the global pool. Callers that already own a pool should
 /// use [`run_lanes_on_pool`] instead, and callers that scope pool retention
-/// should use [`run_lanes_on_registry`].
+/// should use [`run_lanes_on_registry`]. Note the inner `work` still runs on
+/// the global pool; callers with rayon-heavy work should prefer
+/// [`run_lanes_with_worker_budgets`] to keep lanes × workers in budget.
 ///
 /// Nested execution (called from inside a Rayon worker) runs serially on the
 /// calling thread with identical per-chunk state semantics instead of
@@ -482,6 +484,92 @@ fn run_lanes_serial<T, S, R>(
     }
 }
 
+/// [`run_lanes`] with per-lane worker budgets (nested pools).
+///
+/// Each lane's state construction and `work` run inside a dedicated Rayon
+/// pool of `worker_threads_per_lane` threads, so rayon calls inside the
+/// work (assembly, SpMV, orthogonalization) stay within the lane's share:
+/// `num_lanes × worker_threads_per_lane` bounds total workers. Plain
+/// [`run_lanes`] instead lets every lane fan its inner work out to the
+/// global pool, which oversubscribes past the memory-bandwidth knee
+/// (measured: 2 lanes slower than serial on a 128-thread box,
+/// SIM-PERF-20261013.md section 6, recommendation 4). Callers typically
+/// pass `thread_budget / num_lanes` (floored at 1).
+///
+/// Worker pools are built per call (pool construction is milliseconds
+/// against sweep seconds) and dropped on return; the outer lane
+/// scheduling reuses the cached [`lane_pool`]. Like [`run_lanes`], nested
+/// calls from inside a Rayon worker run serially on the calling thread.
+///
+/// # Panics
+///
+/// Panics when a worker pool cannot be built (OS thread exhaustion).
+pub fn run_lanes_with_worker_budgets<T, S, R>(
+    items: &[T],
+    plan: &LanePlan,
+    worker_threads_per_lane: usize,
+    state_init: impl Fn() -> S + Send + Sync,
+    work: &(impl Fn(&mut S, usize, &T) -> R + Sync),
+    cancel: Option<Arc<AtomicBool>>,
+) -> LaneOutcome<R>
+where
+    T: Sync,
+    S: Send,
+    R: Send,
+{
+    if plan.num_lanes == 0 || items.is_empty() {
+        return empty_outcome(items.len());
+    }
+    if rayon::current_thread_index().is_some() {
+        return run_lanes_serial(items, plan, state_init, work, cancel);
+    }
+    let workers = worker_threads_per_lane.max(1);
+    let worker_pools: Vec<rayon::ThreadPool> = (0..plan.num_lanes)
+        .map(|lane| {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(workers)
+                .thread_name(move |index| format!("lane-{lane}-worker-{index}"))
+                .build()
+                .expect("lane worker pool construction failed")
+        })
+        .collect();
+    let pool = lane_pool(plan.num_lanes);
+    let mut results: Vec<Option<R>> = (0..items.len()).map(|_| None).collect();
+    let lane_results: Vec<Vec<(usize, R)>> = pool.install(|| {
+        plan.chunks
+            .par_iter()
+            .enumerate()
+            .map(|(lane_idx, chunk)| {
+                worker_pools[lane_idx].install(|| {
+                    let mut state = state_init();
+                    let mut outputs = Vec::with_capacity(chunk.len());
+                    for index in chunk.clone() {
+                        if let Some(flag) = &cancel
+                            && flag.load(Ordering::Relaxed)
+                        {
+                            break;
+                        }
+                        outputs.push((index, work(&mut state, index, &items[index])));
+                    }
+                    outputs
+                })
+            })
+            .collect()
+    });
+    let mut completed = 0;
+    for lane in lane_results {
+        for (index, output) in lane {
+            results[index] = Some(output);
+            completed += 1;
+        }
+    }
+    LaneOutcome {
+        cancelled: completed < items.len(),
+        results,
+        completed,
+    }
+}
+
 /// [`run_lanes`] on a caller-supplied pool (no pool construction or cache
 /// lookup; useful when the caller already scopes its own executor).
 ///
@@ -565,6 +653,49 @@ mod tests {
     fn plan_respects_thread_budget() {
         let plan = plan_lanes(10, |_| 1, &config(None, 4, None));
         assert_eq!(plan.num_lanes, 4);
+    }
+
+    #[test]
+    fn worker_budgets_cap_inner_pool_width() {
+        // SIM-PERF-20261013.md section 6, recommendation 4: inner rayon
+        // work must see the lane's worker pool, not the global pool.
+        let plan = plan_lanes(8, |_| 1, &config(Some(2), 8, None));
+        assert_eq!(plan.num_lanes, 2);
+        let outcome = run_lanes_with_worker_budgets(
+            &[0usize, 1, 2, 3, 4, 5, 6, 7],
+            &plan,
+            3,
+            || 0usize,
+            &|_state, _index, _item| rayon::current_num_threads(),
+            None,
+        );
+        assert!(!outcome.cancelled);
+        for width in outcome.results.into_iter().flatten() {
+            assert_eq!(width, 3);
+        }
+    }
+
+    #[test]
+    fn worker_budgets_cover_every_item_once() {
+        let plan = plan_lanes(7, |_| 1, &config(Some(3), 9, None));
+        let seen = std::sync::Mutex::new(vec![false; 7]);
+        let outcome = run_lanes_with_worker_budgets(
+            &[10usize, 11, 12, 13, 14, 15, 16],
+            &plan,
+            2,
+            Vec::new,
+            &|state: &mut Vec<usize>, index, item| {
+                state.push(*item);
+                seen.lock().unwrap()[index] = true;
+                *item * 2
+            },
+            None,
+        );
+        assert!(!outcome.cancelled);
+        assert_eq!(outcome.completed, 7);
+        assert!(seen.lock().unwrap().iter().all(|seen| *seen));
+        let values: Vec<usize> = outcome.results.into_iter().flatten().collect();
+        assert_eq!(values, vec![20, 22, 24, 26, 28, 30, 32]);
     }
 
     #[test]

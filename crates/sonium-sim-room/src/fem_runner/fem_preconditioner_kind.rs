@@ -19,7 +19,9 @@ pub use sonium_fem::backend_selection::FemPreconditionerKind;
 pub(super) fn uses_geometric_schwarz_transmission(kind: FemPreconditionerKind) -> bool {
     matches!(
         kind,
-        FemPreconditionerKind::Oras | FemPreconditionerKind::Habc
+        FemPreconditionerKind::Oras
+            | FemPreconditionerKind::Habc
+            | FemPreconditionerKind::SweepingSchwarz
     )
 }
 

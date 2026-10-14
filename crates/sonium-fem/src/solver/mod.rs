@@ -213,7 +213,10 @@ pub enum SolverType {
     ///
     /// Domain decomposition with PML at artificial boundaries achieves
     /// k-independent convergence. Requires mesh geometry — use
-    /// `schwarz_pml::solve_schwarz_pml()` directly.
+    /// `schwarz_pml::solve_schwarz_pml()` directly. CSR dispatch through
+    /// `solve`/`solve_csr` is intentionally unimplemented (the CSR view
+    /// carries no mesh) and fails closed naming the direct entry point
+    /// (SIM-PERF-20261013.md section 2, gap 5).
     ///
     /// Reference: Galkowski et al. (2024, arXiv:2408.16580)
     SchwarzPmlAdditive,
@@ -221,7 +224,8 @@ pub enum SolverType {
     ///
     /// Sequential variant of PML-Schwarz. Each subdomain sees updated
     /// solution from previous subdomains. Requires mesh geometry — use
-    /// `schwarz_pml::solve_schwarz_pml()` directly.
+    /// `schwarz_pml::solve_schwarz_pml()` directly. CSR dispatch is
+    /// intentionally unimplemented, same as the additive variant.
     ///
     /// Reference: Galkowski et al. (2024, arXiv:2408.16580)
     SchwarzPmlMultiplicative,
@@ -1325,6 +1329,34 @@ mod tests {
         let solution = solve_csr_with_guess(&matrix, &rhs, Some(&exact), &config).unwrap();
         assert_eq!(solution.iterations, 0);
         assert_eq!(solution.values, exact);
+    }
+
+    #[test]
+    fn schwarz_pml_csr_dispatch_points_at_direct_api() {
+        // SIM-PERF-20261013.md section 2, gap 5: CSR dispatch is
+        // intentionally unimplemented (Schwarz-PML needs mesh geometry
+        // the CSR view does not carry); the refusal must name the
+        // direct entry point instead of failing opaquely.
+        let mut matrix = TripletMatrix::new(1, 1);
+        matrix.push(0, 0, Complex64::new(2.0, 0.0));
+        let matrix = matrix.to_csr();
+        let rhs = [Complex64::new(1.0, 0.0)];
+        for variant in [
+            SolverType::SchwarzPmlAdditive,
+            SolverType::SchwarzPmlMultiplicative,
+        ] {
+            let config = SolverConfig {
+                solver_type: variant,
+                ..SolverConfig::default()
+            };
+            let error = solve_csr(&matrix, &rhs, &config)
+                .expect_err("CSR dispatch must refuse Schwarz-PML");
+            let message = format!("{error}");
+            assert!(
+                message.contains("schwarz_pml::solve_schwarz_pml"),
+                "error must name the direct API, got: {message}"
+            );
+        }
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::geometry::{LShapedRoom, RectangularRoom, RoomGeometry};
 use crate::source::{
     ComplexDirectivityGrid, CrossoverFilter, Directivity, DirectivityGrid, Source,
 };
-use crate::types::{Point3D, log_space};
+use crate::types::{FrequencySpacing, Point3D, log_space};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
@@ -1239,7 +1239,32 @@ impl RoomSimulation {
         max_freq: f64,
         num_points: usize,
     ) -> Self {
-        let frequencies = log_space(min_freq, max_freq, num_points);
+        Self::with_frequencies_spaced(
+            room,
+            sources,
+            listening_positions,
+            min_freq,
+            max_freq,
+            num_points,
+            FrequencySpacing::Log,
+        )
+    }
+
+    /// Build a simulation with an explicit frequency-grid spacing.
+    ///
+    /// [`FrequencySpacing::Log`] reproduces [`Self::with_frequencies`];
+    /// [`FrequencySpacing::Linear`] gives a uniform grid for modal
+    /// analysis and narrowband sweeps (SIM-PERF-20261013.md section 1).
+    pub fn with_frequencies_spaced(
+        room: RoomGeometry,
+        sources: Vec<Source>,
+        listening_positions: Vec<Point3D>,
+        min_freq: f64,
+        max_freq: f64,
+        num_points: usize,
+        spacing: FrequencySpacing,
+    ) -> Self {
+        let frequencies = spacing.generate(min_freq, max_freq, num_points);
 
         Self {
             room,
@@ -1260,6 +1285,38 @@ impl RoomSimulation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn with_frequencies_spaced_selects_grid() {
+        // SIM-PERF-20261013.md section 1: linear spacing must be
+        // representable; the legacy constructor stays log.
+        let room = RoomGeometry::Rectangular(RectangularRoom::new(4.0, 3.0, 2.5));
+        let mk = |spacing| {
+            RoomSimulation::with_frequencies_spaced(
+                room.clone(),
+                Vec::new(),
+                Vec::new(),
+                100.0,
+                200.0,
+                3,
+                spacing,
+            )
+            .frequencies
+        };
+        assert_eq!(mk(FrequencySpacing::Linear), vec![100.0, 150.0, 200.0]);
+        let log = mk(FrequencySpacing::Log);
+        assert_eq!(log.len(), 3);
+        assert!((log[0] - 100.0).abs() < 1.0e-9);
+        assert!((log[2] - 200.0).abs() < 1.0e-9);
+        assert!((log[1] - 141.4213562373095).abs() < 1.0e-9);
+        let legacy =
+            RoomSimulation::with_frequencies(room, Vec::new(), Vec::new(), 100.0, 200.0, 3)
+                .frequencies;
+        assert_eq!(legacy, log);
+        assert_eq!(FrequencySpacing::default(), FrequencySpacing::Log);
+        assert_eq!("linear".parse(), Ok(FrequencySpacing::Linear));
+        assert!("decade".parse::<FrequencySpacing>().is_err());
+    }
 
     #[test]
     fn test_frequency_config() {

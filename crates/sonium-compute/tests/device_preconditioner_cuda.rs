@@ -13,8 +13,8 @@ use sonium_compute::preconditioner::{
     PressureSchurBackendKind, SaddlePointJacobiSchurBackend, SaddlePointJacobiSchurBackendConfig,
 };
 use sonium_compute::{
-    Backend, BackendCsr, BackendError, ChebyshevBackend, CpuBackend, CudaBackend,
-    DeviceAdjointCapability, DevicePreconditioner, HostCsrRef, PointJacobiBackend,
+    Backend, BackendCsr, BackendError, BlockJacobiBackend, ChebyshevBackend, CpuBackend,
+    CudaBackend, DeviceAdjointCapability, DevicePreconditioner, HostCsrRef, PointJacobiBackend,
     PolynomialJacobiBackend,
 };
 
@@ -58,6 +58,19 @@ fn native_cuda_preconditioners_match_cpu_without_action_staging() {
         ChebyshevBackend::from_csr_host(&cpu, &a_cpu, &row_ptr, &col_idx, &values, 3, 30.0);
     let chebyshev_cuda =
         ChebyshevBackend::from_csr_host(&cuda, &a_cuda, &row_ptr, &col_idx, &values, 3, 30.0);
+    // Same tridiagonal fixture in dense row-major form for the fixed-block
+    // preconditioner: blocks [0,1], [2,3], [4], all nonsingular.
+    let dense = vec![
+        10.0, -1.0, 0.0, 0.0, 0.0, //
+        -1.0, 20.0, -1.0, 0.0, 0.0, //
+        0.0, -1.0, 30.0, -1.0, 0.0, //
+        0.0, 0.0, -1.0, 40.0, -1.0, //
+        0.0, 0.0, 0.0, -1.0, 50.0, //
+    ];
+    let block_cpu = BlockJacobiBackend::from_dense_host(&cpu, &dense, 5, 2);
+    let block_cuda = BlockJacobiBackend::from_dense_host(&cuda, &dense, 5, 2);
+    assert_eq!(block_cuda.num_blocks(), 3);
+    assert_eq!(block_cuda.fallback_blocks(), 0);
 
     let rhs_host = [1.0_f64, -2.0, 3.0, -4.0, 5.0];
     let block_rhs_host = [1.0_f64, -2.0, 3.0, -4.0, 5.0, -5.0, 4.0, -3.0, 2.0, -1.0];
@@ -124,6 +137,7 @@ fn native_cuda_preconditioners_match_cpu_without_action_staging() {
     exercise!(&point_cpu, &point_cuda);
     exercise!(&polynomial_cpu, &polynomial_cuda);
     exercise!(&chebyshev_cpu, &chebyshev_cuda);
+    exercise!(&block_cpu, &block_cuda);
 
     assert_eq!(
         point_cuda.transpose_capability(),
@@ -180,6 +194,12 @@ fn native_cuda_preconditioners_match_cpu_without_action_staging() {
     unsupported_adjoint!(&polynomial_cuda, try_apply_hermitian);
     unsupported_adjoint!(&chebyshev_cuda, try_apply_transpose);
     unsupported_adjoint!(&chebyshev_cuda, try_apply_hermitian);
+    assert_eq!(
+        block_cuda.transpose_capability(),
+        DeviceAdjointCapability::Unsupported
+    );
+    unsupported_adjoint!(&block_cuda, try_apply_transpose);
+    unsupported_adjoint!(&block_cuda, try_apply_hermitian);
     assert_eq!(polynomial_cuda.diagnostics().hermitian_failures, 1);
 
     let mut fault_output = cuda.raw_alloc::<f64>(5).unwrap();
@@ -473,6 +493,82 @@ fn native_cuda_saddle_preconditioner_matches_cpu_without_action_staging() {
         assert!((cpu_value - cuda_value).abs() < 2.0e-10);
     }
     assert_eq!(cuda_pre.diagnostics().apply_count, 2);
+}
+
+#[test]
+fn native_cuda_saddle_preconditioner_f32_matches_cpu_without_action_staging() {
+    // f32 mirror of the f64 saddle parity test above: exercises the
+    // generic `T: DeviceScalar` saddle-point path (the mixed-precision
+    // NS inner preconditioner) on device.
+    let Some(cuda) = cuda_or_skip() else {
+        return;
+    };
+    let cpu = CpuBackend::new();
+    let row_ptr = vec![0, 3, 6, 7, 8];
+    let col_idx = vec![0, 1, 2, 0, 1, 3, 2, 3];
+    let values = vec![4.0_f32, 0.5, 1.0, 0.25, 3.0, -0.5, 0.1, 0.1];
+    let schur_row_ptr = vec![0_usize, 2, 4];
+    let schur_col_idx = vec![0_usize, 1, 0, 1];
+    let schur_values = vec![2.0_f32, 0.5, 0.5, 2.0];
+    let config = SaddlePointJacobiSchurBackendConfig {
+        velocity_block_size: 2,
+        velocity_degree: 2,
+        velocity_damping: 0.75,
+        pressure_degree: 2,
+        pressure_damping: 0.75,
+        pressure_kind: PressureSchurBackendKind::Polynomial,
+        pressure_chebyshev_degree: 3,
+        pressure_chebyshev_eigenvalue_ratio: 30.0,
+    };
+    let a_cpu = BackendCsr::try_from_host(&cpu, 4, 4, &row_ptr, &col_idx, &values)
+        .expect("fixture CSR upload");
+    let a_cuda = BackendCsr::try_from_host(&cuda, 4, 4, &row_ptr, &col_idx, &values)
+        .expect("fixture CSR upload");
+    let cpu_pre = SaddlePointJacobiSchurBackend::try_from_csr_host_parts_f32(
+        &cpu,
+        &a_cpu,
+        &row_ptr,
+        &col_idx,
+        &values,
+        HostCsrRef::new(2, 2, &schur_row_ptr, &schur_col_idx, &schur_values),
+        config,
+    )
+    .expect("f32 saddle setup");
+    let cuda_pre = SaddlePointJacobiSchurBackend::try_from_csr_host_parts_f32(
+        &cuda,
+        &a_cuda,
+        &row_ptr,
+        &col_idx,
+        &values,
+        HostCsrRef::new(2, 2, &schur_row_ptr, &schur_col_idx, &schur_values),
+        config,
+    )
+    .expect("f32 saddle setup");
+
+    let rhs_host = [1.0_f32, -2.0, 0.5, 3.0];
+    let mut rhs_cpu = cpu.raw_alloc::<f32>(4).unwrap();
+    let mut rhs_cuda = cuda.raw_alloc::<f32>(4).unwrap();
+    cpu.copy_h2d(&rhs_host, &mut rhs_cpu);
+    cuda.copy_h2d(&rhs_host, &mut rhs_cuda);
+    let mut cpu_out = cpu.raw_alloc::<f32>(4).unwrap();
+    let mut cuda_out = cuda.raw_alloc::<f32>(4).unwrap();
+    cpu_pre.try_apply(&cpu, &rhs_cpu, &mut cpu_out).unwrap();
+    let before = cuda.runtime_stats();
+    cuda_pre.try_apply(&cuda, &rhs_cuda, &mut cuda_out).unwrap();
+    cuda.try_synchronize().unwrap();
+    let action_stats = cuda.runtime_stats_since(before);
+    assert_eq!(action_stats.transfer.h2d_operations, 0);
+    assert_eq!(action_stats.transfer.d2h_operations, 0);
+    assert_eq!(action_stats.staging_allocation_operations, 0);
+    assert_eq!(action_stats.live_staging_bytes, 0);
+    let mut cpu_values = [0.0_f32; 4];
+    let mut cuda_values = [0.0_f32; 4];
+    cpu.copy_d2h(&cpu_out, &mut cpu_values);
+    cuda.copy_d2h(&cuda_out, &mut cuda_values);
+    for (cpu_value, cuda_value) in cpu_values.iter().zip(cuda_values) {
+        assert!((cpu_value - cuda_value).abs() < 2.0e-5);
+    }
+    assert_eq!(cuda_pre.diagnostics().apply_count, 1);
 }
 
 #[test]

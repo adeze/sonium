@@ -10,6 +10,7 @@ repository = { workspace = true }
 [dependencies]
 sonium-solvers-core = { workspace = true }
 sonium-solvers-sparse = { workspace = true }
+sonium-solvers-sys = { workspace = true }
 sonium-solvers-direct = { workspace = true }
 sonium-compute = { workspace = true }
 num-complex = { workspace = true, features = ["serde"] }

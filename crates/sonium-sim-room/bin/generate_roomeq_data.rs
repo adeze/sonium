@@ -249,9 +249,20 @@ struct Args {
     #[arg(long, default_value = "20", value_name = "HZ")]
     min_freq: f64,
 
-    /// Number of frequency points, log-spaced from `--min-freq` to `--max-freq`.
+    /// Number of frequency points, spaced per `--freq-spacing` from
+    /// `--min-freq` to `--max-freq`.
     #[arg(long, default_value = "200", value_name = "N")]
     num_points: usize,
+
+    /// Frequency-grid spacing: `log` (default) or `linear` for
+    /// modal-analysis and narrowband sweeps.
+    #[arg(
+        long,
+        default_value_t = sonium_xem::FrequencySpacing::default(),
+        value_name = "SPACING",
+        value_parser = parse_freq_spacing,
+    )]
+    freq_spacing: sonium_xem::FrequencySpacing,
 
     /// Number of rayon worker threads. `0` = use all performance cores.
     /// Scenarios run sequentially so each one gets the entire pool for its
@@ -280,7 +291,7 @@ struct Args {
     mesh_fine_radius: f64,
 
     /// FEM preconditioner: ilut, block-jacobi, additive-schwarz, oras, habc,
-    /// ilu-coloring, ilu-fixedpoint, or amg.
+    /// sweeping-schwarz, ilu-coloring, ilu-fixedpoint, or amg.
     #[arg(
         long,
         default_value_t = fem_runner::FemPreconditionerKind::default(),
@@ -474,6 +485,18 @@ struct Args {
     #[arg(long, default_value = "auto", value_name = "SPEC")]
     gpu_precond: String,
 
+    /// Per-frequency solution evidence on GPU backends: `full` (default)
+    /// downloads the nodal solution for the power ledger; `listeners`
+    /// skips that download (listener pressures are on-device either way)
+    /// and omits power evidence from diagnostics and metadata.
+    #[arg(
+        long,
+        default_value_t = fem_runner::GpuSolutionEvidence::default(),
+        value_name = "LEVEL",
+        value_parser = parse_gpu_evidence,
+    )]
+    gpu_evidence: fem_runner::GpuSolutionEvidence,
+
     /// Enable verbose (debug-level) logging.
     #[arg(short, long)]
     verbose: bool,
@@ -516,6 +539,14 @@ impl BackendKind {
 }
 
 fn parse_preconditioner(value: &str) -> Result<fem_runner::FemPreconditionerKind, String> {
+    value.parse()
+}
+
+fn parse_gpu_evidence(value: &str) -> Result<fem_runner::GpuSolutionEvidence, String> {
+    value.parse()
+}
+
+fn parse_freq_spacing(value: &str) -> Result<sonium_xem::FrequencySpacing, String> {
     value.parse()
 }
 
@@ -2022,6 +2053,7 @@ fn main() -> Result<()> {
         min_freq: args.min_freq,
         max_freq: args.max_freq,
         num_points: args.num_points,
+        spacing: args.freq_spacing,
     };
 
     let all_scenarios = if let Some(ref name) = args.scenario {
@@ -2169,6 +2201,7 @@ fn main() -> Result<()> {
             min_freq: args.min_freq,
             max_freq: effective_max_freq,
             num_points: args.num_points,
+            spacing: args.freq_spacing,
         };
         if let Some(ref name) = args.scenario {
             scenarios::scenario_by_name_with_config(name, &cfg)
@@ -2358,6 +2391,7 @@ fn main() -> Result<()> {
         source_model: args.source_model,
         block_source_solve: args.block_source_solve,
         allow_chained_complex_crossover: args.allow_chained_complex_crossover,
+        gpu_solution_evidence: args.gpu_evidence,
     };
     let solver_config = SolverRunConfig {
         solver,
