@@ -45,6 +45,8 @@ struct NativeRun {
     axial_warping: f64,
     max_residual: f64,
     section_rotations: [f64; 2],
+    nodal_coordinates: Vec<[f64; 3]>,
+    nodal_displacements: Vec<[f64; 3]>,
 }
 
 fn integrate_section_triangle(points: [[f64; 3]; 3], values: [[f64; 3]; 6]) -> [f64; 3] {
@@ -393,6 +395,12 @@ fn solve(
         axial_warping,
         max_residual: max_true_residual,
         section_rotations: section_rotations(&mesh, &coordinates, &state.displacement)?,
+        nodal_coordinates: coordinates.iter().step_by(3).copied().collect(),
+        nodal_displacements: state
+            .displacement
+            .chunks_exact(3)
+            .map(|u| [u[0], u[1], u[2]])
+            .collect(),
     })
 }
 
@@ -513,6 +521,9 @@ pub fn probe_transient(
         "section_x_m":[1.0,2.0],
         "section_rotation_projection_rad":run.section_rotations,
         "section_rotation_time_s":case.stop_time_s,
+        "nodal_field_time_s":case.stop_time_s,
+        "nodal_coordinates_m":run.nodal_coordinates,
+        "nodal_displacements_m":run.nodal_displacements,
         "midspan_displacement_pair_m":run.probes[0],
         "tip_displacement_pair_m":run.probes[1],
         "axial_warping_displacement_m":run.axial_warping,
@@ -757,6 +768,8 @@ mod tests {
             axial_warping: analytical_axial_warping(&case),
             max_residual: 1e-10,
             section_rotations: [0.0; 2],
+            nodal_coordinates: Vec::new(),
+            nodal_displacements: Vec::new(),
         };
         let runs = [make(0.995), make(0.999), make(1.0), make(1.0001)];
         // At .495 s the measured history is 10% above the final displacement.
@@ -812,6 +825,8 @@ mod tests {
             axial_warping: analytical_axial_warping(&case),
             max_residual: 1e-10,
             section_rotations: [0.0; 2],
+            nodal_coordinates: Vec::new(),
+            nodal_displacements: Vec::new(),
         };
         let mut runs = [make(0.995), make(0.999), make(1.0), make(1.0001)];
         assert!(

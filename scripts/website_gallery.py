@@ -30,11 +30,17 @@ REPO = Path(__file__).resolve().parent.parent
 
 ROOMSIM_SLICE_GRID = 400
 SIMROOM_SLICE_GRID = 128
-# Converged CFD cells: 2^3 converges in 2 Picard iterations (residual
-# 1.1e-2 < 2e-2 gate); 4^3 stagnates at 3.7e-2 and 8^3 fails outright,
-# so larger CFD meshes await solver work, not parameter tweaks.
-# Override with WG_PCFAN_CELLS when that lands.
-PCFAN_CELLS = int(os.environ.get("WG_PCFAN_CELLS", "2"))
+# Converged CFD cells: 4^3 with the sparse-direct inner solver is the
+# admissible gallery point (2 Picard iterations: residual 7.7e-3 below
+# the 2e-2 gate, forward-signed -1.9e-3 Pa drop). 2^3 drifts to a
+# stalled-signed drop after its second iteration, and monolithic ILU(0)
+# stalls on the finer coupled saddle-point systems, so the direct solver
+# is required above 2^3. Keep the Picard budget at 2: the transient is
+# quasi-steady from there (residual flat near 8e-3) while the drop erodes
+# toward the stall floor past budget 6.
+# Override with WG_PCFAN_CELLS / WG_PCFAN_PICARD when that changes.
+PCFAN_CELLS = int(os.environ.get("WG_PCFAN_CELLS", "4"))
+PCFAN_PICARD_ITERATIONS = int(os.environ.get("WG_PCFAN_PICARD", "2"))
 # Keeper stills: first / third / two-thirds / last sweep frames.
 KEEPER_FRACTIONS = (0.0, 1 / 3, 2 / 3, 1.0)
 SWEEP_FRAMERATE = 12
@@ -72,7 +78,8 @@ def stage_generate(work: Path) -> None:
          "--cfd-cells-x", str(PCFAN_CELLS),
          "--cfd-cells-y", str(PCFAN_CELLS),
          "--cfd-cells-z", str(PCFAN_CELLS),
-         "--cfd-picard-iterations", "2",
+         "--cfd-picard-iterations", str(PCFAN_PICARD_ITERATIONS),
+         "--cfd-direct-solver",
          "--cfd-linear-iterations", "40"])
 
 

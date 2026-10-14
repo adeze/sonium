@@ -36,7 +36,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let work = std::env::temp_dir().join(format!("p2_rail_full_{factor}_{}", std::process::id()));
     std::fs::create_dir_all(&work)?;
-    let starter = write_explicit_solid_contact_starter(&case, &surfaces, &extra)?;
+    let formulation = match std::env::var("SONIUM_RAIL_REFERENCE_SOLID") {
+        Err(std::env::VarError::NotPresent) => "heph24".to_string(),
+        Ok(value) => value,
+        Err(error) => return Err(error.into()),
+    };
+    if formulation != "heph24"
+        && matches!(
+            std::env::var("P2_RAIL_MODE").as_deref(),
+            Ok("native" | "contact-initial" | "contact-bench")
+        )
+    {
+        return Err("reference integration control requires the external rail mode".into());
+    }
+    let starter = reference_starter(
+        &write_explicit_solid_contact_starter(&case, &surfaces, &extra)?,
+        &formulation,
+    )?;
     let engine = write_extended_engine(&case);
     if std::env::var("P2_RAIL_MODE").as_deref() == Ok("contact-initial") {
         return inspect_initial_contact(&case, &surfaces, &extra, &starter, &engine);
@@ -90,6 +106,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let result = serde_json::json!({"status":"complete full-stroke external diagnostic;folding/native parity/convergence unproven",
         "refinement_factor":factor,"fixture":fixture,"engine":output.engine,"work_directory":work,
+        "reference_solid_formulation":formulation,
         "physical_stop_time_s":case.base.stop_time_s,"stroke_m":0.12,
         "bricks":case.base.mesh.bricks.len(),"node_ids":case.base.th_nodes,
         "contact_boundary_quads":surfaces[0].quads.len(),
@@ -103,6 +120,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     println!("Complete full-stroke hollow rail reference;originalQA gate unproven");
     Ok(())
+}
+
+/// Select a reference integration rule while preserving every physical card.
+fn reference_starter(
+    starter: &str,
+    formulation: &str,
+) -> Result<String, Box<dyn std::error::Error>> {
+    match formulation {
+        "heph24" => Ok(starter.to_owned()),
+        "h8c17" => {
+            let mut lines = starter.lines().map(str::to_owned).collect::<Vec<_>>();
+            let rows = lines
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| line.as_str() == "/PROP/SOLID/1/1")
+                .map(|(i, _)| i + 2)
+                .collect::<Vec<_>>();
+            let [row] = rows.as_slice() else {
+                return Err("exactly one original rail solid property required".into());
+            };
+            if lines
+                .get(*row)
+                .ok_or("rail solid property row missing")?
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                != ["24", "2"]
+            {
+                return Err("original rail HEPH property changed".into());
+            }
+            // Only Isolid changes: material, Ismstr, original TYPE7 cards,
+            // all-body platens, geometry and the full loading history remain.
+            lines[*row] = format!("{:>10}{:>10}", 17, 2);
+            Ok(lines.join("\n") + "\n")
+        }
+        _ => Err("SONIUM_RAIL_REFERENCE_SOLID must be heph24 or h8c17".into()),
+    }
+}
+
+#[cfg(test)]
+mod integration_control_tests {
+    use super::*;
+
+    #[test]
+    fn full_rail_integration_control_changes_only_one_numerical_property_row() {
+        for factor in [1, 2] {
+            let (case, surfaces, extra) =
+                original::rail_full_fixture::full_platen_case(factor).unwrap();
+            let original = write_explicit_solid_contact_starter(&case, &surfaces, &extra).unwrap();
+            assert_eq!(reference_starter(&original, "heph24").unwrap(), original);
+            let alternate = reference_starter(&original, "h8c17").unwrap();
+            let replacement = format!("{:>10}{:>10}", 17, 2);
+            let restored = alternate.replacen(&replacement, &format!("{:>10}{:>10}", 24, 2), 1);
+            assert_eq!(restored, original);
+            assert!(reference_starter(&alternate, "h8c17").is_err());
+            assert!(reference_starter(&format!("{original}{original}"), "h8c17").is_err());
+            assert!(reference_starter(&original, "automatic").is_err());
+        }
+    }
 }
 
 fn inspect_initial_contact(

@@ -468,6 +468,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !(1..=16384).contains(&regularized_iteration_budget) {
         return Err("regularized CG budget must be in[1,16384]".into());
     }
+    let merit_scaling = match std::env::var("SONIUM_PCFAN_MERIT_SCALING") {
+        Err(std::env::VarError::NotPresent) => "row".to_string(),
+        Ok(value) if value == "row" || value == "raw" => value,
+        _ => return Err("SONIUM_PCFAN_MERIT_SCALING must be row or raw".into()),
+    };
     // Benchmark the exact original equations; continuation alone uses modified
     // intermediate viscosities and restores the same final physical viscosity.
     let multipliers = if linear_benchmark {
@@ -507,15 +512,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             if residual <= 1.0e-8 {
                 stages.push(serde_json::json!({"viscosity_multiplier":multiplier,
                     "actual_stage_residual":residual,"iterations":iteration}));
-                checkpoint(
-                    &path,
-                    &serde_json::json!({"configuration":original,
+                let converged_state = serde_json::json!({"configuration":original,
                     "effective_configuration":config,"design":design,"state":state,
                     "continuation_resumed":resume,"initial_checkpoint_path":initial_path,
                     "accepted_iterations":accepted_iterations,"viscosity_multiplier":multiplier,
                     "actual_stage_residual":residual,"converged_stages":stages,
-                    "diagnostic":"stage convergence only; original conservation/mesh QA unproven"}),
-                )?;
+                    "diagnostic":"stage convergence only; original conservation/mesh QA unproven"});
+                checkpoint(&path, &converged_state)?;
+                // Preserve actual converged roots before the next stage replaces
+                // the working checkpoint. They are needed to investigate folds
+                // and initialize a branch continuation without inventing states.
+                let root_path =
+                    path.with_extension(format!("converged-{:016x}.json", multiplier.to_bits()));
+                checkpoint(&root_path, &converged_state)?;
                 converged = true;
                 break;
             }
@@ -568,6 +577,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             let weights = (0..matrix.num_rows)
                 .map(|row| {
+                    if merit_scaling == "raw" {
+                        return 1.0;
+                    }
                     let size = norm(&matrix.values[matrix.row_range(row)]);
                     if size == 0.0 { 1.0 } else { size.recip() }
                 })
@@ -708,6 +720,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         "regularized_direction_enabled":regularized,"regularized_direction_damping":used_damping,
                         "regularized_adaptive":adaptive,"regularized_next_damping":damping,
                         "regularized_cg_iteration_budget":regularized_iteration_budget,
+                        "merit_scaling":merit_scaling,
                         "regularized_model_reduction_ratio":reduction_ratio,
                         "diagnostic":"modified intermediate viscosity; original QA unproven"}),
                         )?;

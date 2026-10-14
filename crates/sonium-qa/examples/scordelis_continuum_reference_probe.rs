@@ -94,13 +94,50 @@ fn reference_starter(
     Ok(deck.replacen(original, &replacement, 1))
 }
 
+/// Refine the brick timestep without changing mass or geometric kinematics.
+fn reference_engine(
+    case: &RadExtendedCase,
+    timestep_scale: f64,
+) -> Result<String, Box<dyn std::error::Error>> {
+    if !timestep_scale.is_finite() || !(0.0 < timestep_scale && timestep_scale <= 1.0) {
+        return Err("roof reference timestep scale must be in (0,1]".into());
+    }
+    let original = write_extended_engine(case);
+    if timestep_scale == 1.0 {
+        return Ok(original);
+    }
+    if original.lines().any(|line| line.starts_with("/DT/")) {
+        return Err("original roof engine already has explicit timestep controls".into());
+    }
+    // The default element safety factor is .9. STOP with a zero minimum
+    // changes only this factor: it neither adds mass nor switches to small
+    // strain or deletes elements, unlike CST/DEL alternatives.
+    // https://2021.help.altair.com/2021/hwsolvers/rad/topics/solvers/rad/dt_eltyp_keyword3_iflag_engine_r.htm
+    Ok(format!(
+        "{original}/DT/BRICK/STOP\n{:>20.12E}{:>20.12E}\n",
+        0.9 * timestep_scale,
+        0.0
+    ))
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let engine = engine_exe().ok_or("OpenCourant required for the continuum reference study")?;
     let output = std::env::var("P2_SCORDELIS_REFERENCE_OUTPUT")?;
     let solid = std::env::var("P2_SCORDELIS_SOLID").map_or(Ok(24), |v| v.parse::<usize>())?;
+    let timestep_scale = match std::env::var("SONIUM_ROOF_REFERENCE_TIMESTEP_SCALE") {
+        Ok(value) => value.parse::<f64>()?,
+        Err(std::env::VarError::NotPresent) => 1.0,
+        Err(error) => return Err(error.into()),
+    };
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let requested = match args.as_slice() {
+        [] => vec![(12, 2), (24, 4), (32, 6)],
+        [cells, radial] => vec![(cells.parse()?, radial.parse()?)],
+        _ => return Err("provide surface cells and thickness cells, or neither".into()),
+    };
     let mut levels = Vec::new();
     let mut values = Vec::new();
-    for (cells, radial) in [(12, 2), (24, 4), (32, 6)] {
+    for (cells, radial) in requested {
         let case = continuum_case(cells, radial)?;
         let work = std::env::temp_dir().join(format!(
             "p2_scordelis_continuum_{}_{}_{}",
@@ -110,13 +147,24 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
         std::fs::create_dir_all(&work)?;
         let starter = reference_starter(&case, solid)?;
-        let deck = write_extended_engine(&case);
+        let deck = reference_engine(&case, timestep_scale)?;
         std::fs::write(work.join("scordelis_lo_continuum_0000.rad"), &starter)?;
         std::fs::write(work.join("scordelis_lo_continuum_0001.rad"), &deck)?;
         println!(
-            "external full-thickness roof {cells}x{cells}x{radial}, solid formulation={solid}: original complete 8 s gravity history starting"
+            "external full-thickness roof {cells}x{cells}x{radial}, solid formulation={solid}, timestep scale={timestep_scale}: original complete 8 s gravity history starting"
         );
         let result = run_extended_case(&work, &engine, &case)?;
+        let added_mass = result.history.channel("ADDED MASS")?;
+        let timestep = result.history.channel("TIME STEP")?;
+        if added_mass.is_empty()
+            || added_mass.iter().any(|v| !v.is_finite() || v.abs() > 1e-12)
+            || timestep.is_empty()
+            || timestep.iter().any(|v| !v.is_finite() || *v <= 0.0)
+        {
+            return Err(
+                "finite unscaled-mass reference and positive actual timesteps required".into(),
+            );
+        }
         let trace = result.history.channel(&case.base.probes[0].channel)?;
         let hold = result
             .history
@@ -137,6 +185,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         values.push(mean);
         levels.push(
             serde_json::json!({"surface_cells":cells,"thickness_cells":radial,"solid_formulation":solid,
+            "timestep_scale":timestep_scale,"physical_stop_time_s":case.base.stop_time_s,
+            "maximum_absolute_added_mass":added_mass.iter().map(|v|v.abs()).fold(0.0,f64::max),
+            "minimum_actual_timestep_s":timestep.iter().copied().fold(f64::INFINITY,f64::min),
+            "maximum_actual_timestep_s":timestep.iter().copied().fold(0.0,f64::max),
             "hold_mean_edge_dy_m":mean,"relative_macneal_error":(mean+0.3024).abs()/0.3024,
             "work_directory":work,"engine":result.engine,
             "starter_sha256":format!("{:x}",Sha256::digest(starter.as_bytes())),
@@ -147,6 +199,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             serde_json::to_vec_pretty(&serde_json::json!({"status":"incomplete","levels":levels,
             "scope":"Original roof geometry/thickness/material/gravity/history and neutral-plane diaphragm translational supports; external continuum mesh refinement, not original QA/native parity success"}))?,
         )?;
+    }
+    if levels.len() == 1 {
+        std::fs::write(
+            output,
+            serde_json::to_vec_pretty(&serde_json::json!({
+                "status":"completed single full-duration continuum reference;convergence/native QA unproven",
+                "levels":levels,
+                "scope":"Original full eight-second roof geometry/thickness/material/density/gravity and neutral-plane diaphragm supports. One actual reference level; scalar and whole-field h/time convergence remain required."
+            }))?,
+        )?;
+        return Ok(());
     }
     let first = (values[1] - values[0]).abs() / values[1].abs();
     let last = (values[2] - values[1]).abs() / values[2].abs();
@@ -172,6 +235,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn reference_timestep_control_preserves_original_mass_geometry_and_duration() {
+        let case = continuum_case(12, 2).unwrap();
+        let original = write_extended_engine(&case);
+        assert_eq!(reference_engine(&case, 1.0).unwrap(), original);
+        let refined = reference_engine(&case, 0.5).unwrap();
+        let (prefix, row) = refined.split_once("/DT/BRICK/STOP\n").unwrap();
+        assert_eq!(prefix, original);
+        assert_eq!(
+            row.split_whitespace().collect::<Vec<_>>(),
+            ["4.500000000000E-1", "0.000000000000E0"]
+        );
+        assert!(
+            !refined.contains("/DT/NODA") && !refined.contains("/CST") && !refined.contains("/DEL")
+        );
+        for scale in [0.0, -1.0, 1.1, f64::NAN, f64::INFINITY] {
+            assert!(reference_engine(&case, scale).is_err());
+        }
+    }
     #[test]
     fn continuum_roof_preserves_physics_volume_and_rotational_support_freedom() {
         let original = shell_scordelis_lo_case();

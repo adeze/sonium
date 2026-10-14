@@ -70,7 +70,7 @@ qa-wolfram-confidence:
 # Deterministic RoomSim website assets (SVG + source data + manifest).
 [group('gallery')]
 roomsim-gallery dir:
-    {{cargo}} run -p sonium-roomsim --example web_gallery -- {{dir}}
+    {{cargo}} run --release -p sonium-roomsim --example web_gallery -- {{dir}}
 
 # Export the canonical XEM JSON Schema artifacts used by the compatibility gate.
 [group('qa')]
@@ -111,10 +111,10 @@ website-demos *args:
 # ParaView script renders a nonblank 1920×1080 PNG.
 [group('gallery')]
 simulation-galleries dir:
-    {{cargo}} run -p sonium-roomsim --example web_gallery -- {{dir}}/roomsim
-    {{cargo}} run -p sonium-sim-room --bin generate-roomeq-data -- --solver fast-hybrid --scenario small_stereo_2_0 --min-freq 50 --max-freq 100 --num-points 2 --gallery {{dir}}/sim-room --output-dir {{dir}}/sim-room-data
-    {{cargo}} run -p sonium-sim-pcfan --bin pcfan-opt -- --solve-only --gallery {{dir}}/pcfan --cfd-cells-x 2 --cfd-cells-y 2 --cfd-cells-z 2 --cfd-picard-iterations 2 --cfd-linear-iterations 40
-    {{cargo}} run -p sonium-sim-speaker-modeling --example port_optim_gallery -- {{dir}}/port-optim
+    {{cargo}} run --release -p sonium-roomsim --example web_gallery -- {{dir}}/roomsim
+    {{cargo}} run --release -p sonium-sim-room --bin generate-roomeq-data -- --solver fast-hybrid --scenario small_stereo_2_0 --min-freq 50 --max-freq 100 --num-points 2 --gallery {{dir}}/sim-room --output-dir {{dir}}/sim-room-data
+    {{cargo}} run --release -p sonium-sim-pcfan --bin pcfan-opt -- --solve-only --gallery {{dir}}/pcfan --cfd-cells-x 4 --cfd-cells-y 4 --cfd-cells-z 4 --cfd-picard-iterations 2 --cfd-direct-solver --cfd-linear-iterations 40
+    {{cargo}} run --release -p sonium-sim-speaker-modeling --example port_optim_gallery -- {{dir}}/port-optim
 
 # --- Per-platform performance records (perf/*.md) ---
 #

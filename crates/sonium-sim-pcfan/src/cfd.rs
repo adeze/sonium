@@ -7979,7 +7979,7 @@ pub fn evaluate_pc_fan_cfd_picard_map(
             "production Picard initial state",
         ));
     }
-    let solution = solve_cfd_domain(
+    let solution = solve_cfd_domain_with_derivative_policy(
         config,
         design,
         &geometry,
@@ -7988,6 +7988,8 @@ pub fn evaluate_pc_fan_cfd_picard_map(
             &initial_state[..velocity_dimension],
             &initial_state[velocity_dimension..],
         )),
+        true,
+        SteadySolvePurpose::PicardMapProbe,
     );
     solution
         .picard_linearization
@@ -8096,6 +8098,11 @@ fn evaluate_pc_fan_cfd_newton_linearization_with_policy(
             &initial_state[velocity_dimension..],
         )),
         publish_design_derivatives,
+        if publish_design_derivatives {
+            SteadySolvePurpose::PicardMapProbe
+        } else {
+            SteadySolvePurpose::NewtonStateProbe
+        },
     );
     solution
         .newton_linearization
@@ -10710,6 +10717,13 @@ fn build_pc_fan_cfd_body_fitted_mesh(
     Ok(mesh)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SteadySolvePurpose {
+    Production,
+    PicardMapProbe,
+    NewtonStateProbe,
+}
+
 fn solve_cfd_domain(
     config: &PcFanConfig,
     design: &PcFanDesignVariables,
@@ -10717,7 +10731,15 @@ fn solve_cfd_domain(
     domain: &PcFanCfdDomain,
     initial_state: Option<(&[f64], &[f64])>,
 ) -> PcFanCfdFlowSolution {
-    solve_cfd_domain_with_derivative_policy(config, design, geometry, domain, initial_state, true)
+    solve_cfd_domain_with_derivative_policy(
+        config,
+        design,
+        geometry,
+        domain,
+        initial_state,
+        true,
+        SteadySolvePurpose::Production,
+    )
 }
 
 fn solve_cfd_domain_with_derivative_policy(
@@ -10727,6 +10749,7 @@ fn solve_cfd_domain_with_derivative_policy(
     domain: &PcFanCfdDomain,
     initial_state: Option<(&[f64], &[f64])>,
     publish_design_derivatives: bool,
+    purpose: SteadySolvePurpose,
 ) -> PcFanCfdFlowSolution {
     let nx = config.cfd.cells_x.max(1);
     let ny = config.cfd.cells_y.max(1);
@@ -10809,7 +10832,7 @@ fn solve_cfd_domain_with_derivative_policy(
         linear_solver_ir_inner_tolerance: config.cfd.solver_ir_inner_tolerance,
         ..NavierStokesConfig::default()
     };
-    if initial_state.is_some() {
+    if purpose != SteadySolvePurpose::Production && initial_state.is_some() {
         // A map probe must evaluate exactly one production Picard update at
         // the supplied state. It must not silently continue to a converged
         // solve, or the finite-difference residual would be for a different
@@ -10878,7 +10901,9 @@ fn solve_cfd_domain_with_derivative_policy(
         );
         jacobian
     };
-    let result = if !publish_design_derivatives && let Some((velocity, pressure)) = initial_state {
+    let result = if purpose == SteadySolvePurpose::NewtonStateProbe
+        && let Some((velocity, pressure)) = initial_state
+    {
         let linearization =
             sonium_fem::physics::fluid::stokes::navier_stokes::assemble_steady_newton_linearization(
                 &mesh,
@@ -13861,6 +13886,32 @@ mod state_transfer_runner_tests {
         config.cfd.max_relative_pressure_closure = 10.0;
         config.cfd.max_relative_energy_imbalance = 10.0;
         config
+    }
+
+    #[test]
+    fn state_transfer_runner_retains_production_iteration_budget() {
+        let source_config = transfer_runner_config(1);
+        let design = source_config.default_design_variables();
+        let geometry = source_config.build_geometry(&design);
+        let domain = geometry.build_cfd_domain(&source_config);
+        let source_mesh = pc_fan_cfd_mesh_for_domain(&source_config, &domain);
+        let mut target_config = transfer_runner_config(2);
+        target_config.cfd.max_picard_iterations = 4;
+        target_config.cfd.nonlinear_tolerance = 1e-7;
+        target_config.cfd.use_direct_solver = true;
+        let target = solve_pc_fan_cfd_mean_flow_with_state_transfer(
+            &target_config,
+            &design,
+            &source_mesh,
+            &vec![[0.0; 3]; source_mesh.num_nodes()],
+            &vec![0.0; source_mesh.num_nodes()],
+        )
+        .expect("valid transferred state must enter the production solve");
+        assert_eq!(
+            target.iterations, 4,
+            "warm start must retain the requested solve budget"
+        );
+        assert!(target.residual.is_finite());
     }
 
     #[test]

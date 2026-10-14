@@ -3385,6 +3385,38 @@ pub fn rail_elastic_history(
     timestep_scale: f64,
     penalty_scale: f64,
 ) -> Result<NativePlasticityHistory, String> {
+    objective_elastic_history(
+        directory,
+        "rail_crush",
+        timestep_scale,
+        penalty_scale,
+        false,
+    )
+}
+
+/// Measure the original full warping transient with objective eight-point solids.
+///
+/// Uses the unmodified LAW1 decks, original force couple and root restraints.
+/// The elastic adapter rejects any plastic increment. Observations do not
+/// certify reference parity, mesh convergence or release admission.
+///
+/// # Errors
+/// Rejects invalid CFL scales, non-LAW1 decks, failed integration, plasticity,
+/// erosion, nonfinite fields or incomplete original physical trajectories.
+pub fn warping_elastic_history(
+    directory: &Path,
+    timestep_scale: f64,
+) -> Result<NativePlasticityHistory, String> {
+    objective_elastic_history(directory, "beam_warping", timestep_scale, 1.0, true)
+}
+
+fn objective_elastic_history(
+    directory: &Path,
+    deck: &str,
+    timestep_scale: f64,
+    penalty_scale: f64,
+    gauss_bbar: bool,
+) -> Result<NativePlasticityHistory, String> {
     use sha2::{Digest, Sha256};
 
     if !timestep_scale.is_finite()
@@ -3392,16 +3424,18 @@ pub fn rail_elastic_history(
         || !penalty_scale.is_finite()
         || penalty_scale < 1.0
     {
-        return Err("rail elastic requires CFL scale in(0,1] and penalty scale>=1".into());
+        return Err(
+            "objective elastic solid requires CFL scale in(0,1] and penalty scale>=1".into(),
+        );
     }
     let decks = C3Decks {
-        starter: directory.join("rail_crush_0000.rad"),
-        engine: directory.join("rail_crush_0001.rad"),
+        starter: directory.join(format!("{deck}_0000.rad")),
+        engine: directory.join(format!("{deck}_0001.rad")),
         probes: directory.join("probes.json"),
     };
     let model = parse_native_model(&decks)?;
     if !matches!(model.material, NativeMaterial::Law1) {
-        return Err("original elastic rail requires LAW1".into());
+        return Err("objective elastic solid requires LAW1".into());
     }
     let probes = read_probe_file(&decks.probes)?;
     for probe in &probes {
@@ -3417,7 +3451,7 @@ pub fn rail_elastic_history(
         .collect();
     let mut history = NativePlasticityHistory::default();
     repeat_plastic_core(
-        "rail_crush",
+        deck,
         &model,
         &probes,
         &material,
@@ -3432,6 +3466,8 @@ pub fn rail_elastic_history(
             timestep_scale,
             penalty_scale,
             objective: true,
+            gauss_bbar,
+            parallel_gauss: gauss_bbar && native_gauss_parallel()?,
             capture: Some(&mut history),
             ..NativeRunOptions::default()
         },
@@ -3464,7 +3500,7 @@ pub fn rail_elastic_history(
             .any(|v| !v.is_finite())
         || !history.relative_energy_drift.is_finite()
     {
-        return Err("complete finite and purely elastic original rail history required".into());
+        return Err("complete finite and purely elastic original solid history required".into());
     }
     history.starter_sha256 = format!(
         "{:x}",
@@ -4097,6 +4133,7 @@ where
                 | "necking_bar_full_plastic"
                 | "rail_crush"
                 | "rail_crush_full_platens"
+                | "beam_warping"
         );
     let multiplier_walls = match std::env::var("SONIUM_NATIVE_PLASTIC_MULTIPLIER_WALLS") {
         Ok(value) if value == "1" => true,
@@ -4117,8 +4154,10 @@ where
     // Only this explicit diagnostic gets more runtime; mass,CFL and duration
     // are unchanged,and every other benchmark keeps its original step guard.
     let step_budget = if capture_profile
-        && matches!(deck, "necking_bar_full_plastic" | "rail_crush_full_platens")
-    {
+        && matches!(
+            deck,
+            "necking_bar_full_plastic" | "rail_crush_full_platens" | "beam_warping"
+        ) {
         8 * MAX_NATIVE_STEPS
     } else {
         MAX_NATIVE_STEPS
@@ -4230,11 +4269,13 @@ where
             Err(error) => return Err(format!("invalid {name}: {error}")),
         };
         if !capture_profile
-            || !matches!(deck, "necking_bar_full_plastic" | "rail_crush_full_platens")
+            || !matches!(
+                deck,
+                "necking_bar_full_plastic" | "rail_crush_full_platens" | "beam_warping"
+            )
         {
             return Err(
-                "bulk-viscosity override requires an explicit full necking or rail diagnostic"
-                    .into(),
+                "bulk-viscosity override requires an explicit full solid diagnostic".into(),
             );
         }
         let value: f64 = value

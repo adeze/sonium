@@ -303,6 +303,12 @@ struct Cli {
     /// diagonal velocity-block Jacobi plus pressure-mass Schur.
     #[arg(long = "cfd-cpu-precond", default_value = "ilu")]
     cfd_cpu_precond: String,
+    /// Solve each CFD Picard linear system with the sparse-direct (LU)
+    /// solver instead of preconditioned GMRES. Exact on the small
+    /// conforming-mesh systems (2^3-6^3 cells); use it where monolithic
+    /// ILU(0) stalls on the coupled saddle-point block.
+    #[arg(long = "cfd-direct-solver")]
+    cfd_direct_solver: bool,
     /// Finite-difference step (relative) used for the gradient when the
     /// CFD flow model is active. Default `0.05` (5 %): with the per-
     /// parameter scales in `finite_difference_step_for_variable`, this
@@ -1798,6 +1804,7 @@ fn build_config(cli: &Cli) -> PcFanConfig {
     config.cfd.nonlinear_tolerance = cli.cfd_tolerance;
     config.cfd.linear_solver_max_iterations = cli.cfd_linear_iterations.max(1);
     config.cfd.linear_solver_tolerance = cli.cfd_linear_tolerance;
+    config.cfd.use_direct_solver = cli.cfd_direct_solver;
     config.cfd.cpu_preconditioner = match cli.cfd_cpu_precond.to_ascii_lowercase().as_str() {
         "ilu" | "legacy" => sonium_sim_pcfan::PcFanCpuPreconditionerKind::Ilu,
         "jacobi-schur" | "jacobi_schur" | "schur" => {
@@ -2065,6 +2072,7 @@ mod tests {
             "2e-4",
             "--cfd-cpu-precond",
             "jacobi-schur",
+            "--cfd-direct-solver",
             "--cfd-precond",
             "jacobi-schur",
             "--cfd-schur-degree",
@@ -2092,6 +2100,7 @@ mod tests {
             config.cfd.cpu_preconditioner,
             sonium_sim_pcfan::PcFanCpuPreconditionerKind::JacobiSchur
         );
+        assert!(config.cfd.use_direct_solver);
         assert_eq!(
             config.cfd.precond_kind,
             sonium_sim_pcfan::PcFanBackendPreconditionerKind::JacobiSchur
@@ -2206,21 +2215,26 @@ mod tests {
     #[test]
     fn gallery_cli_flow_exports_the_pinned_production_asset_set() {
         let directory = tempfile::tempdir().unwrap();
+        // Pinned gallery smoke mirrors the `simulation-galleries` recipe:
+        // 4^3 conforming cells with the sparse-direct inner solver. The
+        // 2^3 transient drifts to a stalled-signed pressure drop and the
+        // monolithic ILU(0) path stalls on the finer coupled systems.
         let cli = Cli::parse_from([
             "pcfan-opt",
             "--solve-only",
             "--gallery",
             directory.path().to_str().unwrap(),
             "--cfd-cells-x",
-            "2",
+            "4",
             "--cfd-cells-y",
-            "2",
+            "4",
             "--cfd-cells-z",
-            "2",
+            "4",
             "--cfd-picard-iterations",
             "2",
             "--cfd-tolerance",
-            "0.05",
+            "0.02",
+            "--cfd-direct-solver",
             "--cfd-linear-iterations",
             "40",
             "--no-paraview",

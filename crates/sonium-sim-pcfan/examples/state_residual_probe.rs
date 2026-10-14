@@ -52,12 +52,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let j = &observation.state_jacobian;
     let r = &observation.state_residual;
     let mut weighted = vec![0.0; r.len()];
+    let mut row_weights = vec![0.0; r.len()];
     let mut gradient = vec![0.0; r.len()];
     let mut column_squared = vec![0.0; r.len()];
     for row in 0..r.len() {
         let range = j.row_ptrs[row]..j.row_ptrs[row + 1];
         let size = norm(&j.values[range.clone()]);
         let weight = if size == 0.0 { 1.0 } else { size.recip() };
+        row_weights[row] = weight;
         weighted[row] = weight * r[row];
         for entry in range {
             let column = j.column_indices[entry];
@@ -176,12 +178,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "momentum_analytic_action_norm":norm(&analytic[..3*nodes]),
                     "continuity_analytic_action_norm":norm(&analytic[3*nodes..])}));
             }
+            let direction_scan = match std::env::var("P2_PCFAN_SCAN_DIRECTION").as_deref() {
+                Ok("1") => {
+                    let size = norm(&delta);
+                    if !size.is_finite() || size == 0.0 {
+                        return Err("invalid direction norm for signed scan".into());
+                    }
+                    let scale = norm(&state).max(1.0) / size;
+                    let direction = delta.iter().map(|d| d * scale).collect::<Vec<_>>();
+                    let mut scan = Vec::new();
+                    // This is a read-only initial-state investigation. Signed
+                    // finite perturbations are not accepted nonlinear steps,
+                    // and retain all original residual equations and weights.
+                    for magnitude in [0.001, 0.01, 0.1, 1.0, 2.0, 4.0] {
+                        for step in [-magnitude, magnitude] {
+                            let trial = state
+                                .iter()
+                                .zip(&direction)
+                                .map(|(v, d)| v + step * d)
+                                .collect::<Vec<_>>();
+                            let actual = evaluate_pc_fan_cfd_newton_state_linearization(
+                                &config, &design, &trial,
+                            )?;
+                            actual.validate()?;
+                            if actual.state != trial {
+                                return Err("signed scan assembly changed the trial state".into());
+                            }
+                            let residual = actual.state_residual;
+                            let merit = residual
+                                .iter()
+                                .zip(&row_weights)
+                                .map(|(r, w)| r * w)
+                                .collect::<Vec<_>>();
+                            scan.push(serde_json::json!({"relative_state_step":step,
+                                "raw_equation_residual_norm":norm(&residual),
+                                "fixed_row_weighted_merit":norm(&merit)}));
+                        }
+                    }
+                    Some(
+                        serde_json::json!({"initial_fixed_row_weighted_merit":norm(&weighted),
+                        "normalized_direction_norm":norm(&direction),"samples":scan}),
+                    )
+                }
+                Ok("0") | Err(std::env::VarError::NotPresent) => None,
+                _ => return Err("P2_PCFAN_SCAN_DIRECTION must be0or1".into()),
+            };
             Some(
                 serde_json::json!({"state_norm":norm(&state),"direction_kind":direction_kind,
                     "direction_norm":norm(&delta),
                     "newton_direction_norm":(direction_kind=="newton").then(|| norm(&delta)),
                     "actual_linear_relative_residual":(direction_kind=="newton").then(|| norm(&linear_error)/norm(r)),
-                    "central_difference_samples":samples}),
+                    "central_difference_samples":samples,"signed_direction_scan":direction_scan}),
             )
         }
         Ok("0") | Err(_) => None,
