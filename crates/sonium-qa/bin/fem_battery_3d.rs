@@ -198,16 +198,27 @@ fn evaluate(point: &Point, state: &[f64], n: usize) -> ([f64; 4], [[f64; 3]; 4])
     (value, gradient)
 }
 fn heat_load(points: &[Point], state: &[f64], n: usize, control: Control) -> Vec<f64> {
+    // Per-point locals are independent; collect in index order (rayon
+    // above the machine-adaptive gate, serial below) and scatter in
+    // point order, so results are bitwise identical to the serial loop.
+    let locals: Vec<LocalVector<f64>> = sonium_fem::parallelism::collect_indexed(
+        points.len(),
+        sonium_fem::parallelism::ELEMENTS_PER_THREAD,
+        |i| {
+            let point = &points[i];
+            let (v, d) = evaluate(point, state, n);
+            let density = heat(v, d, control);
+            let mut local = LocalVector::zeros(point.dofs.len());
+            // Invoke the production heat source form with solved FE data.
+            BatteryHeatSourceForm {
+                heat_density: |_, _, _| density,
+            }
+            .integrate_point(&point.tab, point.weight, &mut local);
+            local
+        },
+    );
     let mut out = vec![0.0; n];
-    for point in points {
-        let (v, d) = evaluate(point, state, n);
-        let density = heat(v, d, control);
-        let mut local = LocalVector::zeros(point.dofs.len());
-        // Invoke the production heat source form with solved FE data.
-        BatteryHeatSourceForm {
-            heat_density: |_, _, _| density,
-        }
-        .integrate_point(&point.tab, point.weight, &mut local);
+    for (point, local) in points.iter().zip(locals.iter()) {
         for (i, &d) in point.dofs.iter().enumerate() {
             out[d] += local.values[i];
         }

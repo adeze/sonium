@@ -16,6 +16,74 @@ fn sha256(path: &Path) -> Result<String, String> {
     ))
 }
 
+/// One ring-resolution relaxation run (rings 8 or 16): fully
+/// self-contained (own mesh/model/load), so the two resolutions run
+/// concurrently from the driver below.
+/// Returns `(center_disp, energy, residual_ratio, energy_ratio, steps)`.
+fn run_rings(rings: usize) -> Result<(f64, f64, f64, f64, usize), String> {
+    let mesh = clamped_plate_shell_mesh(1.0, rings, 4 * rings);
+    let section = ShellSection::new(200e9, 0.3, 0.02, 7800.0);
+    let points: Vec<_> = mesh
+        .nodes
+        .iter()
+        .map(|p| Point::new_3d(p[0], p[1], p[2]))
+        .collect();
+    let mut triangles = mesh.tris;
+    for q in mesh.quads {
+        triangles.extend([[q[0], q[1], q[2]], [q[0], q[2], q[3]]]);
+    }
+    let elements = triangles
+        .into_iter()
+        .map(|t| {
+            let ids = t.map(|n| n - 1);
+            ShellElement::from_points(
+                ids,
+                &points[ids[0]],
+                &points[ids[1]],
+                &points[ids[2]],
+                section,
+            )
+        })
+        .collect();
+    let n_dofs = points.len() * 6;
+    let mut model = ShellExplicitModel::elastic(elements, n_dofs).map_err(|e| e.to_string())?;
+    for node in mesh.rim {
+        model.fix_node(node - 1);
+    }
+    let mut load = vec![0.0; n_dofs];
+    for (node, area) in mesh.nodal_area_m2.iter().enumerate() {
+        load[node * 6 + 2] = -1000.0 * area;
+    }
+    let dt = 0.5 * model.elastic_critical_dt(2000).map_err(|e| e.to_string())?;
+    let out = DynamicRelaxation::new(dt, 1e-6, 400_000)
+        .map_err(|e| e.to_string())?
+        .relax(&mut model, &load)
+        .map_err(|e| e.to_string())?;
+    if !out.converged {
+        return Err(format!(
+            "shell relaxation did not converge: rings={rings}, residual={}",
+            out.residual_norm / out.load_norm
+        ));
+    }
+    let u = out.displacement[2];
+    let e = model
+        .elastic_strain_energy(&out.displacement)
+        .map_err(|e| e.to_string())?;
+    let work = 0.5
+        * load
+            .iter()
+            .zip(&out.displacement)
+            .map(|(f, u)| f * u)
+            .sum::<f64>();
+    Ok((
+        u,
+        e,
+        out.residual_norm / out.load_norm,
+        (e - work).abs() / e,
+        out.steps,
+    ))
+}
+
 pub(super) fn run() -> Result<QaResult, String> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("decks/shell_clamped_plate");
     let golden: Value = serde_json::from_str(
@@ -100,74 +168,19 @@ pub(super) fn run() -> Result<QaResult, String> {
         .fold(0.0, f64::max);
     let kinetic_ratio = hold.iter().map(|v| v[2] / v[1]).fold(0.0, f64::max);
     let exact_u = -1000.0 / (64.0 * (200e9 * 0.02_f64.powi(3) / (12.0 * (1.0 - 0.3_f64.powi(2)))));
-    let mut runs = Vec::new();
-    for rings in [8, 16] {
-        let mesh = clamped_plate_shell_mesh(1.0, rings, 4 * rings);
-        let section = ShellSection::new(200e9, 0.3, 0.02, 7800.0);
-        let points: Vec<_> = mesh
-            .nodes
-            .iter()
-            .map(|p| Point::new_3d(p[0], p[1], p[2]))
-            .collect();
-        let mut triangles = mesh.tris;
-        for q in mesh.quads {
-            triangles.extend([[q[0], q[1], q[2]], [q[0], q[2], q[3]]]);
-        }
-        let elements = triangles
-            .into_iter()
-            .map(|t| {
-                let ids = t.map(|n| n - 1);
-                ShellElement::from_points(
-                    ids,
-                    &points[ids[0]],
-                    &points[ids[1]],
-                    &points[ids[2]],
-                    section,
-                )
-            })
-            .collect();
-        let n_dofs = points.len() * 6;
-        let mut model = ShellExplicitModel::elastic(elements, n_dofs).map_err(|e| e.to_string())?;
-        for node in mesh.rim {
-            model.fix_node(node - 1);
-        }
-        let mut load = vec![0.0; n_dofs];
-        for (node, area) in mesh.nodal_area_m2.iter().enumerate() {
-            load[node * 6 + 2] = -1000.0 * area;
-        }
-        let dt = 0.5 * model.elastic_critical_dt(2000).map_err(|e| e.to_string())?;
-        let out = DynamicRelaxation::new(dt, 1e-6, 400_000)
-            .map_err(|e| e.to_string())?
-            .relax(&mut model, &load)
-            .map_err(|e| e.to_string())?;
-        if !out.converged {
-            return Err(format!(
-                "shell relaxation did not converge: rings={rings}, residual={}",
-                out.residual_norm / out.load_norm
-            ));
-        }
-        let u = out.displacement[2];
-        let e = model
-            .elastic_strain_energy(&out.displacement)
-            .map_err(|e| e.to_string())?;
-        let work = 0.5
-            * load
-                .iter()
-                .zip(&out.displacement)
-                .map(|(f, u)| f * u)
-                .sum::<f64>();
+    // The two ring resolutions are independent relaxation runs;
+    // execute them concurrently and rejoin in order. Prints stay in
+    // schedule order after the join.
+    use rayon::prelude::*;
+    let runs: Vec<(f64, f64, f64, f64, usize)> = [8, 16]
+        .into_par_iter()
+        .map(run_rings)
+        .collect::<Result<Vec<_>, _>>()?;
+    for (rings, &(u, e, res_ratio, energy_ratio, steps)) in [8, 16].iter().zip(runs.iter()) {
         println!(
-            "native plate rings={rings}: center={u:.9e}, energy={e:.9e}, steps={}, residual={:.3e}",
-            out.steps,
-            out.residual_norm / out.load_norm
+            "native plate rings={rings}: center={u:.9e}, energy={e:.9e}, steps={steps}, residual={res_ratio:.3e}"
         );
-        runs.push((
-            u,
-            e,
-            out.residual_norm / out.load_norm,
-            (e - work).abs() / e,
-            out.steps,
-        ));
+        let _ = (e, energy_ratio);
     }
     let fine = runs[1];
     let mut result = QaResult::passed("fem.shell-plate-harvest.v1")

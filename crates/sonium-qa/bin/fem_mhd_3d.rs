@@ -542,48 +542,72 @@ fn run() -> Result<QaResult, String> {
     if exact > 1e-9 {
         return Err(format!("exact cubic MHD patch error={exact:e}"));
     }
-    let mut spatial = Vec::new();
-    for n in [2, 4, 6] {
-        let m = solve(
-            n,
-            PolynomialDegree::P2,
-            PolynomialDegree::P1,
-            8,
-            Law::Linear,
-            Control::Full,
-        )?;
+    // Independent solves (own mesh, locals only): run each group
+    // concurrently and rejoin in order; prints stay in schedule order.
+    use rayon::prelude::*;
+    let spatial: Vec<_> = [2, 4, 6]
+        .into_par_iter()
+        .map(|n| {
+            solve(
+                n,
+                PolynomialDegree::P2,
+                PolynomialDegree::P1,
+                8,
+                Law::Linear,
+                Control::Full,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (n, m) in [2, 4, 6].iter().zip(spatial.iter()) {
         println!("MHD P2/P1 n={n}: {m:?}");
-        spatial.push(m);
     }
-    let mut temporal = Vec::new();
-    for steps in [8, 16, 32] {
-        let m = solve(
-            2,
-            PolynomialDegree::P3,
-            PolynomialDegree::P2,
-            steps,
-            Law::Exponential,
-            Control::Full,
-        )?;
+    let temporal: Vec<_> = [8, 16, 32]
+        .into_par_iter()
+        .map(|steps| {
+            solve(
+                2,
+                PolynomialDegree::P3,
+                PolynomialDegree::P2,
+                steps,
+                Law::Exponential,
+                Control::Full,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (steps, m) in [8, 16, 32].iter().zip(temporal.iter()) {
         println!("MHD P3/P2 steps={steps}: {m:?}");
-        temporal.push(m);
     }
-    let mut negative = f64::INFINITY;
-    for c in [
+    let controls = [
         Control::NoInertia,
         Control::NoDamping,
         Control::NoMotionalEmf,
         Control::NoLorentzPotential,
         Control::NoZField,
-    ] {
-        let m = solve(
-            2,
-            PolynomialDegree::P3,
-            PolynomialDegree::P2,
-            8,
-            Law::Linear,
-            c,
-        )?;
+    ];
+    let control_runs: Vec<_> = controls
+        .into_par_iter()
+        .map(|c| {
+            solve(
+                2,
+                PolynomialDegree::P3,
+                PolynomialDegree::P2,
+                8,
+                Law::Linear,
+                c,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut negative = f64::INFINITY;
+    for (c, m) in [
+        Control::NoInertia,
+        Control::NoDamping,
+        Control::NoMotionalEmf,
+        Control::NoLorentzPotential,
+        Control::NoZField,
+    ]
+    .iter()
+    .zip(control_runs.iter())
+    {
         println!("MHD {c:?}: {m:?}");
         negative = negative.min(m.history);
     }

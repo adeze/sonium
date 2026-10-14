@@ -944,34 +944,58 @@ fn run() -> Result<QaResult, String> {
     if exact > 1e-9 {
         return Err(format!("exact quartic/P2 patch error={exact:e}"));
     }
-    let mut spatial = Vec::new();
-    for n in [6, 9, 12] {
-        let m = solve(n, PolynomialDegree::P1, 8, Law::Linear, Control::Full)?;
+    // The spatial, temporal, and control legs are independent solves
+    // (own mesh, locals only); run them concurrently and rejoin in
+    // order. Each solve is deterministic, so results match the serial
+    // schedule up to floating-point summation order inside shared
+    // parallel kernels — well within the budgeted tolerances below.
+    use rayon::prelude::*;
+    let spatial: Vec<Metrics> = [6, 9, 12]
+        .into_par_iter()
+        .map(|n| solve(n, PolynomialDegree::P1, 8, Law::Linear, Control::Full))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (n, m) in [6, 9, 12].iter().zip(spatial.iter()) {
         println!("phase-field P1/P2 n={n}: {m:?}");
-        spatial.push(m);
     }
-    let mut temporal = Vec::new();
-    for steps in [16, 32, 64] {
-        let m = solve(
-            2,
-            PolynomialDegree::P2,
-            steps,
-            Law::Exponential,
-            Control::Full,
-        )?;
+    let temporal: Vec<Metrics> = [16, 32, 64]
+        .into_par_iter()
+        .map(|steps| {
+            solve(
+                2,
+                PolynomialDegree::P2,
+                steps,
+                Law::Exponential,
+                Control::Full,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    for (steps, m) in [16, 32, 64].iter().zip(temporal.iter()) {
         println!("phase-field P2 time={steps}: {m:?}");
-        temporal.push(m);
     }
-    let mut negative = f64::INFINITY;
-    for c in [
+    let controls = [
         Control::NoCapacity,
         Control::NoAdvection,
         Control::NoMobility,
         Control::NoBulk,
         Control::NoGradientEnergy,
         Control::NoCapillary,
-    ] {
-        let m = solve(2, PolynomialDegree::P2, 8, Law::Linear, c)?;
+    ];
+    let control_runs: Vec<Metrics> = controls
+        .into_par_iter()
+        .map(|c| solve(2, PolynomialDegree::P2, 8, Law::Linear, c))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut negative = f64::INFINITY;
+    for (c, m) in [
+        Control::NoCapacity,
+        Control::NoAdvection,
+        Control::NoMobility,
+        Control::NoBulk,
+        Control::NoGradientEnergy,
+        Control::NoCapillary,
+    ]
+    .iter()
+    .zip(control_runs.iter())
+    {
         println!("phase-field {c:?}: {m:?}");
         negative = negative.min(m.history);
     }
