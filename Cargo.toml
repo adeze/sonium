@@ -36,6 +36,7 @@ members = [
     "crates/sonium-meshlang/crates/meshlang-parser",
     "crates/sonium-meshlang/crates/meshlang-compiler",
     "crates/sonium-wasm",
+    "crates/sonium-speaker-designer",
 ]
 
 # Native crates only — excludes WASM-only targets

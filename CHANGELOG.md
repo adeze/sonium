@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-16 — Experimental GPUI speaker designer
+
+- Add the optional `sonium-speaker-designer` desktop crate using the sibling `adeze/gpui-toolkit` fork.
+- Connect a fixed editable two-way passive R/L/C network to imported complex driver response and impedance data through Sonium's existing MNA solver.
+- Add linked response, phase and impedance previews, explicit synthetic demonstration data, strict import validation and focused numerical tests. Predictions retain measurement-reference requirements and do not establish acoustic validity.
+- Keep the desktop target outside default workspace members; run it with `cargo run -p sonium-speaker-designer --features desktop`.
+
 All notable changes to the OpenCourant-parity crates (`sonium-qa`,
 `sonium-fem`, `sonium-compute`, `sonium-bench`). Dates are UTC.
 

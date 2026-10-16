@@ -1,0 +1,27 @@
+[package]
+name = "sonium-speaker-designer"
+version = "0.1.0"
+description = "Measured two-way passive crossover workbench using the adeze GPUI Toolkit"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+desktop = ["dep:gpui", "dep:gpui-ui-kit", "dep:gpui-miniapp"]
+
+[dependencies]
+sonium-fem = { workspace = true }
+num-complex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+gpui = { package = "sotf-gpui-toolkit-gpui", git = "https://github.com/pierreaubert/sotf-3rdparties", branch = "foreign-parent-win-linux", version = "0.2.3", default-features = false, optional = true }
+gpui-ui-kit = { path = "../../../gpui-toolkit/crates/gpui-ui-kit", default-features = false, optional = true }
+gpui-miniapp = { path = "../../../gpui-toolkit/crates/gpui-miniapp", default-features = false, optional = true }
+
+[[bin]]
+name = "sonium-speaker-designer"
+path = "src/main.rs"
+required-features = ["desktop"]
