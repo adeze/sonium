@@ -1,5 +1,3 @@
-mod desktop;
-
 fn main() {
-    desktop::run();
+    sonium_speaker_designer::desktop::run();
 }

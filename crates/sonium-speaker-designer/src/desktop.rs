@@ -1,8 +1,8 @@
+use crate::storage::{load_project, read_text, save_project_new};
+use crate::{Curve, CurveKind, Evaluation, Project};
 use gpui::*;
 use gpui_miniapp::{MiniApp, MiniAppConfig};
 use gpui_ui_kit::{Button, NumberInput, theme::ThemeExt};
-use sonium_speaker_designer::storage::{load_project, read_text, save_project_new};
-use sonium_speaker_designer::{Curve, CurveKind, Evaluation, Project};
 use std::{path::PathBuf, sync::Arc};
 
 actions!(speaker_designer, [UndoProject, RedoProject]);
@@ -27,26 +27,23 @@ pub fn run() {
             .min_size(1080.0, 760.0)
             .scrollable(false)
             .with_theme(true),
-        |cx| {
-            let entity = cx.new(Designer::new);
-            cx.bind_keys([
-                KeyBinding::new("secondary-z", UndoProject, None),
-                KeyBinding::new("secondary-shift-z", RedoProject, None),
-            ]);
-            let undo = entity.clone();
-            cx.on_action(move |_: &UndoProject, cx| {
-                undo.update(cx, |this, cx| this.history(false, cx))
-            });
-            let redo = entity.clone();
-            cx.on_action(move |_: &RedoProject, cx| {
-                redo.update(cx, |this, cx| this.history(true, cx))
-            });
-            entity
-        },
+        create,
     );
 }
 
-struct Designer {
+/// Creates the editor with shortcuts restricted to its focused subtree.
+pub fn create(cx: &mut App) -> Entity<Designer> {
+    let entity = cx.new(Designer::new);
+    cx.bind_keys([
+        KeyBinding::new("secondary-z", UndoProject, Some("SpeakerDesigner")),
+        KeyBinding::new("secondary-shift-z", RedoProject, Some("SpeakerDesigner")),
+    ]);
+    entity
+}
+
+/// Embeddable passive crossover editor over measured driver responses and impedances.
+pub struct Designer {
+    focus: FocusHandle,
     project: Project,
     evaluation: Option<Arc<Evaluation>>,
     message: String,
@@ -57,8 +54,10 @@ struct Designer {
 }
 
 impl Designer {
-    fn new(_: &mut Context<Self>) -> Self {
+    /// Creates an editor without application-wide keyboard bindings.
+    pub fn new(cx: &mut Context<Self>) -> Self {
         Self {
+            focus: cx.focus_handle().tab_stop(true),
             project: Project::default(),
             evaluation: None,
             message: "Import both drivers’ FRD and ZMA files to calculate.".into(),
@@ -67,6 +66,11 @@ impl Designer {
             undo: Vec::new(),
             redo: Vec::new(),
         }
+    }
+
+    /// Returns the current draft; callers must validate it before processing or export.
+    pub fn project(&self) -> &Project {
+        &self.project
     }
 
     fn replace(&mut self, project: Project, cx: &mut Context<Self>) {
@@ -361,6 +365,12 @@ impl Designer {
     }
 }
 
+impl Focusable for Designer {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus.clone()
+    }
+}
+
 impl Render for Designer {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -467,7 +477,15 @@ impl Render for Designer {
                 theme.border.into(),
             ));
         }
-        div().size_full().flex().flex_col().bg(theme.background).text_color(theme.text_primary)
+        div().id("speaker-designer").key_context("SpeakerDesigner").track_focus(&self.focus)
+            .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                if !this.focus.contains_focused(window, cx) {
+                    window.focus(&this.focus, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &UndoProject, _, cx| this.history(false, cx)))
+            .on_action(cx.listener(|this, _: &RedoProject, _, cx| this.history(true, cx)))
+            .size_full().flex().flex_col().bg(theme.background).text_color(theme.text_primary)
             .child(div().flex().flex_wrap().items_center().gap_3().p_3().border_b_1().border_color(theme.border)
                 .child(div().flex_1().text_lg().child("Sonium / Speaker Designer"))
                 .child(Button::new("new", "New project").on_click(click(cx, |this, _, cx| this.replace(Project::default(), cx))))
@@ -622,6 +640,26 @@ fn schematic(color: Hsla) -> impl IntoElement {
     )
     .w_full()
     .h(px(160.0))
+}
+
+/// Plots branch and summed responses. Invalid or empty response vectors render an empty plot.
+pub fn response_plot(
+    title: &'static str,
+    evaluation: Option<Arc<Evaluation>>,
+    border: Hsla,
+) -> impl IntoElement {
+    let evaluation = evaluation.filter(|e| {
+        let frequencies = &e.frequencies_hz;
+        frequencies.len() >= 2
+            && frequencies.iter().all(|f| f.is_finite() && *f > 0.0)
+            && frequencies.windows(2).all(|pair| pair[0] < pair[1])
+            && [&e.woofer_db, &e.tweeter_db, &e.sum_db]
+                .iter()
+                .all(|values| {
+                    values.len() == frequencies.len() && values.iter().all(|v| v.is_finite())
+                })
+    });
+    plot_panel(title, evaluation, 0, border)
 }
 
 fn plot_panel(

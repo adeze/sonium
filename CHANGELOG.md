@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-10-22 — Embeddable speaker designer
+
+- Expose the optional GPUI editor and response plot for the SOTF workbench without duplicating passive circuit calculations.
+- Scope undo/redo to the focused editor and preserve the standalone application.
+- Expose validated complex interpolation with explicit malformed-input and extrapolation errors.
+
 ## 2026-10-16 — Experimental GPUI speaker designer
 
 - Add the optional `sonium-speaker-designer` desktop crate using the sibling `adeze/gpui-toolkit` fork.

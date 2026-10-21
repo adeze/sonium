@@ -2,6 +2,9 @@
 
 pub mod storage;
 
+#[cfg(feature = "desktop")]
+pub mod desktop;
+
 use num_complex::Complex64;
 use serde::{Deserialize, Serialize};
 use sonium_fem::physics::coupled::lumped_circuit::network::{CircuitNetwork, ImpedanceFn};
@@ -75,7 +78,8 @@ impl Curve {
         Ok(curve)
     }
 
-    fn validate(&self, kind: CurveKind) -> Result<(), DesignerError> {
+    /// Validates ordered, finite samples and positive impedance magnitudes.
+    pub fn validate(&self, kind: CurveKind) -> Result<(), DesignerError> {
         if self.samples.len() < 2 {
             return Err(invalid(format!(
                 "{}: at least two samples required",
@@ -113,7 +117,13 @@ impl Curve {
         Ok(())
     }
 
-    fn interpolate(&self, frequency: f64, kind: CurveKind) -> Result<Complex64, DesignerError> {
+    /// Interpolates complex values over logarithmic frequency; never extrapolates.
+    /// Rejects invalid curves and non-finite or out-of-range frequencies.
+    pub fn interpolate(&self, frequency: f64, kind: CurveKind) -> Result<Complex64, DesignerError> {
+        self.validate(kind)?;
+        if !frequency.is_finite() {
+            return Err(invalid("Interpolation frequency must be finite"));
+        }
         let samples = &self.samples;
         if frequency < samples[0].frequency_hz
             || frequency > samples[samples.len() - 1].frequency_hz
@@ -427,6 +437,19 @@ pub struct Evaluation {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn public_interpolation_rejects_invalid_inputs_without_panicking() {
+        let empty = Curve {
+            source: "empty".into(),
+            samples: Vec::new(),
+        };
+        assert!(empty.interpolate(100.0, CurveKind::Response).is_err());
+        let curve = Curve::parse("20 85 0\n20000 85 0", CurveKind::Response, "driver").unwrap();
+        for frequency in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 0.0, 20001.0] {
+            assert!(curve.interpolate(frequency, CurveKind::Response).is_err());
+        }
+    }
 
     #[test]
     fn imports_require_unambiguous_ordered_finite_three_column_data() {
