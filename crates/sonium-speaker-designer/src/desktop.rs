@@ -73,6 +73,11 @@ impl Designer {
         &self.project
     }
 
+    /// Increases when a passive calculation starts, not on selection or completion.
+    pub fn calculation_generation(&self) -> u64 {
+        self.generation
+    }
+
     fn replace(&mut self, project: Project, cx: &mut Context<Self>) {
         if let Err(error) = project.validate_draft() {
             self.message = format!("Change rejected: {error}");
